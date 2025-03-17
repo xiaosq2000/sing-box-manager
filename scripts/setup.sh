@@ -431,10 +431,10 @@ if [[ $VERBOSE == "true" ]]; then
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_private_ip"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_public_ip"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_proxy_status"
-    echo 
+    echo
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} network_management_configure_all_shells"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} network_management_configure_zshrc"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} network_management_configure_bashrc"
-    echo 
+    echo
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_port_availability <PORT>"
 fi

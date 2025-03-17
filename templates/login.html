@@ -66,7 +66,7 @@
         const themeToggle = document.getElementById('themeToggle');
         const themeText = document.querySelector('.theme-text');
         const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
-        
+
         // Check for saved theme or use system preference
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme === 'dark' || (!savedTheme && prefersDarkScheme.matches)) {
@@ -76,7 +76,7 @@
             document.documentElement.setAttribute('data-theme', 'light');
             themeText.textContent = '切换深色';
         }
-        
+
         // Theme toggle functionality
         themeToggle.addEventListener('click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');

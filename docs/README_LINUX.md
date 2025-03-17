@@ -7,7 +7,7 @@
 >
 > If you believe in me, `./install.sh` will
 > 1. Install a systemd service. (why `sudo` is required)
-> 2. Add some handy shell functions by appending a line to your `~/.bashrc` or `~/.zshrc`. 
+> 2. Add some handy shell functions by appending a line to your `~/.bashrc` or `~/.zshrc`.
 
 If you are using `bash`, execute
 

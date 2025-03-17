@@ -11,7 +11,7 @@ Example `.env`:
 ```sh
 SING_BOX_VERSION=1.10.7
 
-CONFIG_GIT_REPO=./config # secrets! 
+CONFIG_GIT_REPO=./config # secrets!
 CONFIG_GIT_HASH=054d37e3
 
 TROJAN_CLIENT_CONFIG=./config/client/trojan-client.json

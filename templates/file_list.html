@@ -67,7 +67,7 @@
         </svg>
         <span class="theme-text">切换深色</span>
     </button>
-    
+
     <div class="container">
         <h1>文件列表</h1>
         {% if files %}
@@ -93,7 +93,7 @@
             <h3>准备工作</h3>
             <p>下载文件后解压到本地文件夹</p>
         </div>
-        
+
         <div class="instruction-card">
             <div class="instruction-icon">💻</div>
             <h3>Windows</h3>
@@ -129,7 +129,7 @@
         const themeToggle = document.getElementById('themeToggle');
         const themeText = document.querySelector('.theme-text');
         const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
-        
+
         // Check for saved theme or use system preference
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme === 'dark' || (!savedTheme && prefersDarkScheme.matches)) {
@@ -139,7 +139,7 @@
             document.documentElement.setAttribute('data-theme', 'light');
             themeText.textContent = '切换深色';
         }
-        
+
         // Theme toggle functionality
         themeToggle.addEventListener('click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');

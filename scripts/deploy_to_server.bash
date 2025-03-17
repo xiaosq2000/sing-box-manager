@@ -28,7 +28,7 @@ if [[ ! $? -eq 0 ]]; then
     printf "${BOLD}${RED}ERROR: ${RESET}%s\n" "SCP failed."
     exit 1;
 fi
-ssh ${SERVER_HOSTNAME} -t "cd ~ && tar -xf ${RELEASE_TAR} && rm ${RELEASE_TAR}" 
+ssh ${SERVER_HOSTNAME} -t "cd ~ && tar -xf ${RELEASE_TAR} && rm ${RELEASE_TAR}"
 if [[ ! $? -eq 0 ]]; then
     printf "${BOLD}${RED}ERROR: ${RESET}%s\n" "Extraction failed."
 fi
