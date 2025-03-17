@@ -5,8 +5,8 @@ After=network.target
 [Service]
 User=shuqixiao
 Group=shuqixiao
-WorkingDirectory=/home/shuqixiao/Projects/sing-box-docker
-ExecStart=/home/shuqixiao/.local/bin/uv run /home/shuqixiao/Projects/sing-box-docker/auth_service.py
+WorkingDirectory=/home/shuqixiao/Projects/sing-box-manager
+ExecStart=/home/shuqixiao/.local/bin/uv run /home/shuqixiao/Projects/sing-box-manager/auth_service.py
 Restart=always
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
