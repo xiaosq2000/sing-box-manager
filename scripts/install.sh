@@ -134,7 +134,7 @@ sudo mkdir -p "${XDG_PREFIX_DIR}/bin"
 sudo mkdir -p "${XDG_PREFIX_DIR}/etc/sing-box/${PROTOCOL}"
 sudo mkdir -p "/var/lib/sing-box/"
 
-if [[ -f "sing-box" ]]; then
+if [[ -f "${XDG_PREFIX_DIR}/bin/sing-box" ]]; then
     sudo rm "${XDG_PREFIX_DIR}/bin/sing-box"
 	sudo cp ${script_dir}/sing-box "${XDG_PREFIX_DIR}/bin/sing-box"
 	debug "${script_dir}/sing-box ${GREEN}${BOLD}->${RESET} ${XDG_PREFIX_DIR}/bin/sing-box"
