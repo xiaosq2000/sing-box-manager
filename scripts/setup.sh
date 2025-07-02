@@ -16,17 +16,6 @@ TRANSLATIONS=(
     ["WARNING"]="警告"
     ["INFO"]="信息"
     ["DEBUG"]="调试"
-    ["BASHRC_ALREADY_CONFIGURED"]="网络脚本已在 .bashrc 中配置。"
-    ["BASHRC_ADDED"]="已将网络脚本添加到 .bashrc 以便自动加载。"
-    ["BASHRC_BACKUP_CREATED"]="已为您的 .bashrc 文件创建备份。"
-    ["BASHRC_NOT_FOUND"]="在您的主目录中未找到 .bashrc 文件。"
-    ["ZSHRC_ALREADY_CONFIGURED"]="网络脚本已在 .zshrc 中配置。"
-    ["ZSHRC_ADDED"]="已将网络脚本添加到 .zshrc 以便自动加载。"
-    ["ZSHRC_BACKUP_CREATED"]="已为您的 .zshrc 文件创建备份。"
-    ["ZSHRC_NOT_FOUND"]="在您的主目录中未找到 .zshrc 文件。"
-    ["SCRIPT_NOT_FOUND"]="无法找到网络管理脚本文件本身。"
-    ["SHELL_RC_ADDED"]="已添加到 Shell 配置文件。"
-    ["NO_SHELL_RC_FOUND"]="未能找到 .bashrc 或 .zshrc 文件进行配置。"
     ["VPN_STATUS"]="VPN 服务状态"
     ["PROXY_ENV_VARS"]="代理环境变量"
     ["STOP_VPN"]="正在停止 VPN 客户端服务。"
@@ -74,7 +63,7 @@ _setup_colors() {
         RED="$(tput setaf 1 2>/dev/null || echo '')"
         GREEN="$(tput setaf 2 2>/dev/null || echo '')"
         YELLOW="$(tput setaf 3 2>/dev/null || echo '')"
-        BLUE="$(tput setaf 4 2>/dev/null || echo '')"
+        # BLUE="$(tput setaf 4 2>/dev/null || echo '')"
         MAGENTA="$(tput setaf 5 2>/dev/null || echo '')"
         RESET="$(tput sgr0 2>/dev/null || echo '')"
     else
@@ -83,7 +72,7 @@ _setup_colors() {
         RED=""
         GREEN=""
         YELLOW=""
-        BLUE=""
+        # BLUE=""
         MAGENTA=""
         RESET=""
     fi
@@ -110,7 +99,8 @@ _detect_language() {
 # Translation function with fallback - Bash and ZSH compatible
 _translate() {
     local text="$1"
-    local language=$(_detect_language)
+    local language
+    language=$(_detect_language)
 
     if [[ "$language" == "zh_CN" ]]; then
         echo "${TRANSLATIONS[$text]:-$text}"
@@ -139,32 +129,20 @@ _debug() {
     [[ $VERBOSE == true ]] && printf '%s\n' "[$(_translate 'Network Proxy')] ${BOLD}${GREY}$(_translate 'DEBUG'):${RESET} $*"
 }
 
-# Get script path - ZSH compatible
-_get_script_path() {
-    if [ -n "$BASH_VERSION" ]; then
-        echo "$(realpath "${BASH_SOURCE[0]}")"
-    elif [ -n "$ZSH_VERSION" ]; then
-        echo "${${(%):-%x}:A}"
-    else
-        echo "Unsupported shell type"
-        return 1
-    fi
-}
-
 check_public_ip() {
     local timeout=${1:-1} # Default timeout is 1 second
     local ipinfo
-    ipinfo=$(curl --silent --max-time "$timeout" ipinfo.io)
-
-    if [ $? -ne 0 ]; then
-        local error_msg=$(_translate 'FAILED_DETECT_PUBLIC_IP')
+    if ! ipinfo=$(curl --silent --max-time "$timeout" ipinfo.io); then
+        local error_msg
+        error_msg=$(_translate 'FAILED_DETECT_PUBLIC_IP')
         _warning "${error_msg//\{\}/$timeout}" # Replace {} with timeout value
         return 1
     fi
 
     if [ -z "$ipinfo" ]; then
         # Handle case where curl succeeds but returns empty output (less likely but possible)
-        local error_msg=$(_translate 'FAILED_DETECT_PUBLIC_IP')
+        local error_msg
+        error_msg=$(_translate 'FAILED_DETECT_PUBLIC_IP')
         _error "${error_msg//\{\}/$timeout}" # Replace {} with timeout value
         return 1
     fi
@@ -219,8 +197,9 @@ check_port_availability() {
     if _has ufw; then
         if [[ $(sudo ufw status | head -n 1 | awk '{ print $2;}') == "active" ]]; then
             _info "$(_translate 'ufw is active.')";
-            if [[ -z $(sudo ufw status | grep "$1") ]]; then
-                local msg=$(_translate 'port {} is not specified in the firewall rules and may not be allowed to use.')
+            if ! sudo ufw status | grep -q "$1"; then
+                local msg
+                msg=$(_translate 'port {} is not specified in the firewall rules and may not be allowed to use.')
                 _warning "${msg//\{\}/$1}"
             else
                 sudo ufw status | grep "$1"
@@ -229,11 +208,13 @@ check_port_availability() {
             _info "$(_translate 'ufw is inactive.')";
         fi
     fi
-    if [[ -z $(sudo lsof -i:$1) ]]; then
-        local msg=$(_translate 'port {} is not in use.')
+    if [[ -z $(sudo lsof -i:"$1") ]]; then
+        local msg
+        msg=$(_translate 'port {} is not in use.')
         _info "${msg//\{\}/$1}"
     else
-        local msg=$(_translate 'port {} is unavailable.')
+        local msg
+        msg=$(_translate 'port {} is unavailable.')
         _error "${msg//\{\}/$1}"
     fi
 }
@@ -316,8 +297,7 @@ set_proxy() {
             dconf write "/system/proxy/${protocol}/port" "${proxy_port}"
         done
         # Format no_proxy for dconf (GVariant string array)
-        local formatted_no_proxy
-        formatted_no_proxy=$(echo "$no_proxy" | sed "s/,/','/g")
+        local formatted_no_proxy="${no_proxy//,/','}"
         formatted_no_proxy="['${formatted_no_proxy}']"
         dconf write /system/proxy/ignore-hosts "${formatted_no_proxy}"
     fi
@@ -361,7 +341,7 @@ check_proxy_status() {
     fi
     echo
 
-    check_public_ip
+    check_public_ip $TIMEOUT
 
     if [[ $VERBOSE == true ]]; then
         echo "$(_translate 'PROXY_ENV_VARS'):"
@@ -384,104 +364,20 @@ check_proxy_status() {
     fi
 }
 
-# Generic function to configure shell RC files
-_network_management_configure_shell_rc() {
-    local rc_file="$1"
-    local rc_name="$2"
-    local translate_prefix="$3"
-
-    local script_path
-    script_path=$(_get_script_path) || return 1
-
-    if [[ ! -f "$script_path" ]]; then
-        _error "$(_translate 'SCRIPT_NOT_FOUND')"
-        return 1
-    fi
-
-    if [[ ! -f "$rc_file" ]]; then
-        _error "$(_translate "${translate_prefix}_NOT_FOUND")"
-        return 1
-    fi
-
-    # Create backup if it doesn't exist
-    local backup="${rc_file}.backup"
-    if [[ ! -f "$backup" ]]; then
-        cp "$rc_file" "$backup"
-        _info "$(_translate "${translate_prefix}_BACKUP_CREATED"): ${backup}"
-    fi
-
-    # Check if source line already exists
-    local source_line="[ -f ${script_path} ] && source ${script_path}"
-    if grep -q "^[[:space:]]*\[.*\].*&&.*source[[:space:]]*${script_path}" "$rc_file"; then
-        _info "$(_translate "${translate_prefix}_ALREADY_CONFIGURED")"
-        return 0
-    fi
-
-    # Add newline if the file doesn't end with one
-    [[ -s "$rc_file" && -z "$(tail -c1 "$rc_file")" ]] || echo "" >> "$rc_file"
-
-    {
-        echo "# Network proxy management configuration"
-        echo "$source_line"
-        echo ""
-    } >> "$rc_file"
-
-    _info "$(_translate "${translate_prefix}_ADDED")"
-
-    echo
-    _info "$(_translate 'To apply changes, run:')"
-    echo -e "\n${INDENT}$ source ${rc_file}"
-}
-
-# Function to configure bashrc
-_network_management_configure_bashrc() {
-    _network_management_configure_shell_rc "${HOME}/.bashrc" "bashrc" "BASHRC"
-}
-
-# Function to configure zshrc
-_network_management_configure_zshrc() {
-    _network_management_configure_shell_rc "${HOME}/.zshrc" "zshrc" "ZSHRC"
-}
-
-# Function to configure all available shell RC files
-_network_management_configure_all_shells() {
-    local configured=false
-
-    if [[ -f "${HOME}/.bashrc" ]]; then
-        _network_management_configure_bashrc
-        configured=true
-    fi
-
-    if [[ -f "${HOME}/.zshrc" ]]; then
-        _network_management_configure_zshrc
-        configured=true
-    fi
-
-    if [[ "$configured" == false ]]; then
-        _error "$(_translate 'NO_SHELL_RC_FOUND')"
-        return 1
-    fi
-
-    return 0
-}
 
 # Main script initialization
 _setup_colors
 INDENT='    '
 if [[ $VERBOSE == "true" ]]; then
     # Show available commands
-    echo "$(_translate "Available handy commands for networking proxy")"
-    echo "${INDENT}${GREEN}${BOLD}\$${RESET} set_proxy       # Global proxy with service management"
-    echo "${INDENT}${GREEN}${BOLD}\$${RESET} unset_proxy     # Remove global proxy config"
-    echo "${INDENT}${GREEN}${BOLD}\$${RESET} set_local_proxy # Set proxy for current shell only"
+    _translate "Available handy commands for networking proxy"
+    echo "${INDENT}${GREEN}${BOLD}\$${RESET} set_proxy         # Global proxy with service management"
+    echo "${INDENT}${GREEN}${BOLD}\$${RESET} unset_proxy       # Remove global proxy config"
+    echo "${INDENT}${GREEN}${BOLD}\$${RESET} set_local_proxy   # Set proxy for current shell only"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} unset_local_proxy # Remove current shell proxy"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_private_ip"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_public_ip"
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_proxy_status"
-    echo
-    echo "${INDENT}${GREEN}${BOLD}\$${RESET} network_management_configure_all_shells"
-    echo "${INDENT}${GREEN}${BOLD}\$${RESET} network_management_configure_zshrc"
-    echo "${INDENT}${GREEN}${BOLD}\$${RESET} network_management_configure_bashrc"
     echo
     echo "${INDENT}${GREEN}${BOLD}\$${RESET} check_port_availability <PORT>"
 fi

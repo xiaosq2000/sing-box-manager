@@ -2,3 +2,4 @@ releases/*
 !releases/*.sh
 !releases/*.service
 venv
+.aider*
