@@ -31,7 +31,7 @@ ssh "${SERVER_HOSTNAME}" -t "cd ~ && tar -xf ${RELEASE_TAR} && rm ${RELEASE_TAR}
 if [[ ! $? -eq 0 ]]; then
     printf "${BOLD}${RED}ERROR: ${RESET}%s\n" "Extraction failed."
 fi
-ssh "${SERVER_HOSTNAME}" -t "cd ${RELEASE_DIR}-server/ && sudo ./install.sh --no-rc"
+ssh "${SERVER_HOSTNAME}" -t "cd ${RELEASE_DIR}-server/ && ./install.sh --no-rc"
 if [[ ! $? -eq 0 ]]; then
     printf "${BOLD}${RED}ERROR: ${RESET}%s\n" "Install with systemd failed."
 fi
