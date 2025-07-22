@@ -21,8 +21,8 @@ TRANSLATIONS=(
     ["STOP_VPN"]="正在停止 VPN 客户端服务。"
     ["NETWORK_CHECK_FAILED"]="网络检查失败。您可能已离线。"
     ["TIMEOUT"]="超时"
-    ["Public Network:"]="公共网络详情："
-    ["Private Network:"]="私有网络详情："
+    ["Internet:"]="互联网："
+    ["LAN:"]="局域网："
     ["No public networking."]="无法确定公共 IP。您可能已离线。"
     ["This platform is not supported."]="此脚本不支持当前操作系统。"
     ["Make sure the VPN client is working on host."]="正在 WSL2/Docker 中运行。请确保代理客户端正在您的主机上运行。"
@@ -147,7 +147,7 @@ check_public_ip() {
         return 1
     fi
 
-    echo -e "${MAGENTA}$(_translate 'Public Network:')${RESET}\n${INDENT}$(echo "$ipinfo" | grep --color=never -e '\"ip\"' -e '\"city\"' | sed 's/^[ \t]*//' | awk '{print}' ORS=' ')"
+    echo -e "${MAGENTA}$(_translate 'Internet:')${RESET}\n${INDENT}$(echo "$ipinfo" | grep --color=never -e '\"ip\"' -e '\"city\"' | sed 's/^[ \t]*//' | awk '{print}' ORS=' ')"
     return 0
 }
 
@@ -158,7 +158,7 @@ check_private_ip() {
         return 1
     fi
 
-    echo -e "${MAGENTA}$(_translate 'Private Network:')${RESET}\n${INDENT}\"ip\": \"${private_ip}\","
+    echo -e "${MAGENTA}$(_translate 'LAN:')${RESET}\n${INDENT}\"ip\": \"${private_ip}\","
     return 0
 }
 
