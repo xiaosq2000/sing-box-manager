@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import os
-import sys
 import json
-import dotenv
+import os
 import shutil
 import subprocess
+import sys
+
+import dotenv
 from tqdm import tqdm
 
 root_dir = os.path.dirname(os.path.abspath(__file__))
@@ -56,6 +57,15 @@ official_releases = [
         + "/sing-box-"
         + sing_box_version
         + "-windows-amd64.zip",
+        "path": "",
+    },
+    {
+        "platform": "linux-arm64",
+        "url": "https://github.com/SagerNet/sing-box/releases/download/v"
+        + sing_box_version
+        + "/sing-box-"
+        + sing_box_version
+        + "-linux-arm64.tar.gz",
         "path": "",
     },
     {
@@ -127,6 +137,13 @@ for i, user in tqdm(enumerate(users)):
                     os.path.join(official_release_extraction, filename),
                     user_platform_dir,
                 )
+        elif official_release["platform"] == "linux-arm64":
+            official_release_extraction = official_release["path"].rstrip(".tar.gz")
+            for filename in os.listdir(official_release_extraction):
+                shutil.copy(
+                    os.path.join(official_release_extraction, filename),
+                    user_platform_dir,
+                )
         elif official_release["platform"] == "windows-amd64":
             official_release_extraction = official_release["path"].rstrip(".zip")
             for filename in os.listdir(official_release_extraction):
@@ -142,6 +159,66 @@ for i, user in tqdm(enumerate(users)):
 print("Prepare configuration files for all platforms for each user.")
 for official_release in official_releases:
     if official_release["platform"] == "linux-amd64":
+        print(official_release["platform"])
+        with open(file=trojan_client_config, mode="r") as trojan_client_config_file:
+            trojan_client_config_dict = json.loads(trojan_client_config_file.read())
+            for i, user in tqdm(enumerate(users)):
+                trojan_client_config_dict["inbounds"][0]["set_system_proxy"] = False
+                trojan_client_config_dict["outbounds"][0]["password"] = user["password"]
+                user_dir = os.path.join(
+                    release_dir, os.path.basename(release_dir) + "-" + str(user["name"])
+                )
+                user_trojan_client_config_path = os.path.join(
+                    user_dir,
+                    official_release["platform"],
+                    os.path.basename(trojan_client_config),
+                )
+                with open(
+                    file=user_trojan_client_config_path, mode="w"
+                ) as user_client_config_file:
+                    json.dump(
+                        trojan_client_config_dict, user_client_config_file, indent=4
+                    )
+
+                shutil.copy(
+                    os.path.join(root_dir, "scripts", "install.sh"),
+                    os.path.join(user_dir, official_release["platform"]),
+                )
+                shutil.copy(
+                    os.path.join(root_dir, "scripts", "tui_utils.sh"),
+                    os.path.join(user_dir, official_release["platform"]),
+                )
+                shutil.copy(
+                    os.path.join(root_dir, "docs", "README_LINUX.md"),
+                    os.path.join(user_dir, official_release["platform"]),
+                )
+                shutil.copy(
+                    os.path.join(root_dir, "scripts", "sing-box-trojan.service"),
+                    os.path.join(user_dir, official_release["platform"]),
+                )
+                shutil.copy(
+                    os.path.join(root_dir, "scripts", "sing-box-hysteria2.service"),
+                    os.path.join(user_dir, official_release["platform"]),
+                )
+                shutil.copy(
+                    os.path.join(root_dir, "scripts", "setup.sh"),
+                    os.path.join(user_dir, official_release["platform"]),
+                )
+
+                if user["name"] == "xiaoshuqi":
+                    user_hysteria2_client_config_path = os.path.join(
+                        user_dir,
+                        official_release["platform"],
+                        os.path.basename(hysteria2_client_config),
+                    )
+                    shutil.copy(
+                        os.path.join(
+                            root_dir, "config", "client", "hysteria2-client.json"
+                        ),
+                        user_hysteria2_client_config_path,
+                    )
+
+    elif official_release["platform"] == "linux-arm64":
         print(official_release["platform"])
         with open(file=trojan_client_config, mode="r") as trojan_client_config_file:
             trojan_client_config_dict = json.loads(trojan_client_config_file.read())
@@ -263,6 +340,17 @@ for i, user in tqdm(enumerate(users)):
         )
         shutil.make_archive(
             archive_base, "gztar", root_dir=user_dir, base_dir="linux-amd64"
+        )
+        shutil.move(archive_base + ".tar.gz", release_dir)
+
+    # Linux ARM64 package (tar.gz)
+    linux_arm64_dir = os.path.join(user_dir, "linux-arm64")
+    if os.path.isdir(linux_arm64_dir):
+        archive_base = os.path.join(
+            user_dir, os.path.basename(user_dir) + "-linux-arm64"
+        )
+        shutil.make_archive(
+            archive_base, "gztar", root_dir=user_dir, base_dir="linux-arm64"
         )
         shutil.move(archive_base + ".tar.gz", release_dir)
 
