@@ -249,22 +249,44 @@ for official_release in official_releases:
     else:
         sys.exit(1)
 
-print("Compress user releases by gzip.")
+print("Package per-platform releases.")
 for i, user in tqdm(enumerate(users)):
     user_dir = os.path.join(
         release_dir, os.path.basename(release_dir) + "-" + str(user["name"])
     )
-    os.chdir(os.path.dirname(user_dir))
-    subprocess.run(
-        (
-            [
-                "tar",
-                "-czf",
-                os.path.basename(user_dir) + ".tar.gz",
-                os.path.basename(user_dir),
-            ]
+
+    # Linux package (tar.gz)
+    linux_dir = os.path.join(user_dir, "linux-amd64")
+    if os.path.isdir(linux_dir):
+        archive_base = os.path.join(
+            user_dir, os.path.basename(user_dir) + "-linux-amd64"
         )
-    )
+        shutil.make_archive(
+            archive_base, "gztar", root_dir=user_dir, base_dir="linux-amd64"
+        )
+        shutil.move(archive_base + ".tar.gz", release_dir)
+
+    # Windows package (zip)
+    windows_dir = os.path.join(user_dir, "windows-amd64")
+    if os.path.isdir(windows_dir):
+        archive_base = os.path.join(
+            user_dir, os.path.basename(user_dir) + "-windows-amd64"
+        )
+        shutil.make_archive(
+            archive_base, "zip", root_dir=user_dir, base_dir="windows-amd64"
+        )
+        shutil.move(archive_base + ".zip", release_dir)
+
+    # Android package (zip)
+    android_dir = os.path.join(user_dir, "android-arm64")
+    if os.path.isdir(android_dir):
+        archive_base = os.path.join(
+            user_dir, os.path.basename(user_dir) + "-android-arm64"
+        )
+        shutil.make_archive(
+            archive_base, "zip", root_dir=user_dir, base_dir="android-arm64"
+        )
+        shutil.move(archive_base + ".zip", release_dir)
 
 print("Release for server.")
 server_dir = os.path.join(release_dir, os.path.basename(release_dir) + "-" + "server")

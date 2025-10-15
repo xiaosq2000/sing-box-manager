@@ -81,7 +81,7 @@ class SecureStaticFiles(StaticFiles):
 
 
 # Mount the files directory with custom handler
-app.mount("/files", SecureStaticFiles(directory=release_files_dir), name="files")
+# Removed to avoid route conflict with dynamic /files endpoints
 
 app.mount("/static", StaticFiles(directory="./static"), name="static")
 
@@ -118,8 +118,8 @@ def validate_session_token(token: str) -> Optional[str]:
         if secrets.compare_digest(token_hash, expected_hash):
             return username
         return None
-    except:
-        raise
+    except Exception:
+        return None
 
 
 # Load users with secure password comparison
@@ -218,7 +218,15 @@ async def handle_login(
 
         # Create session
         session_token = create_session_token(username)
-        response.set_cookie(
+        # Reset rate limit on successful login
+        login_attempts.pop(f"{username}:{client_ip}", None)
+
+        # Build the response we will return and set the cookie on it
+        files = await get_file_list(username)
+        resp = templates.TemplateResponse(
+            "file_list.html", {"request": request, "files": files}
+        )
+        resp.set_cookie(
             key="session",
             value=session_token,
             httponly=True,
@@ -226,8 +234,7 @@ async def handle_login(
             samesite="lax",
             max_age=3600,
         )
-
-        return await show_file_list(request, username)
+        return resp
 
     logger.info("Failed login attempt")
     return templates.TemplateResponse(
@@ -238,8 +245,9 @@ async def handle_login(
 async def get_file_list(username: str):
     # Safe pattern matching that avoids path traversal
     valid_files = []
+    allowed_exts = (".tar.gz", ".zip")
     for f in release_files_dir.iterdir():
-        if f.is_file() and f.name.endswith(f"{username}.tar.gz"):
+        if f.is_file() and f.name.endswith(allowed_exts) and f"-{username}-" in f.name:
             # Verify no directory traversal is possible in filename
             if ".." not in f.name and "/" not in f.name and "\\" not in f.name:
                 valid_files.append({"name": f.name})
@@ -282,8 +290,8 @@ async def download_file(
     if not username:
         raise HTTPException(status_code=401, detail="Session expired")
 
-    # Verify file belongs to the user
-    if not filename.endswith(f"{username}.tar.gz"):
+    # Verify file belongs to the user and has an allowed extension
+    if not (f"-{username}-" in filename and (filename.endswith(".tar.gz") or filename.endswith(".zip"))):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Prevent path traversal
