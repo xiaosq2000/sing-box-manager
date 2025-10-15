@@ -18,7 +18,7 @@ usage() {
     echo "${BOLD}$(_t 'Options'):${RESET}"
     echo "${INDENT}ssh-hostname                SSH hostname to deploy to"
     echo "${INDENT}protocol                    $(_t 'Specify which protocol to install'):"
-    echo "${INDENT}                            hysteria2 trojan (default: hysteria2)"
+    echo "${INDENT}                            hysteria2 trojan (default: trojan)"
     echo
 }
 
@@ -50,6 +50,7 @@ echo
 
 # Load environment and prepare release
 env_file="${script_dir}/../.env"
+# shellcheck disable=SC1090
 set -o allexport && source "${env_file}" && set +o allexport
 RELEASE_DIR="sing-box-v${SING_BOX_VERSION}-${CONFIG_GIT_HASH}"
 cd "${script_dir}/../releases/${RELEASE_DIR}"
@@ -76,6 +77,14 @@ if ! ssh "${SERVER_HOSTNAME}" -t "cd ~ && tar -xf ${RELEASE_TAR} && rm ${RELEASE
 fi
 success "Extraction complete"
 
+# Stop existing services on server
+progress "Stopping existing services"
+if ! ssh "${SERVER_HOSTNAME}" -t "sudo systemctl stop sing-box-trojan.service || true; sudo systemctl stop sing-box-hysteria2.service || true" 2>/dev/null; then
+    warning "$(_t 'Stopping existing services') $(_t 'FAILED')"
+else
+    success "Services stopped"
+fi
+
 # Install on server
 progress "Installing on server"
 if ! ssh "${SERVER_HOSTNAME}" -t "cd ${RELEASE_DIR}-server/ && ./install.sh -p ${PROTOCOL} --no-rc" 2>/dev/null; then
@@ -91,6 +100,14 @@ if ! ssh "${SERVER_HOSTNAME}" -t "sudo systemctl restart sing-box-${PROTOCOL}.se
     exit 1
 fi
 success "Service restarted"
+
+# Enable and start all services
+progress "Enabling and starting services"
+if ! ssh "${SERVER_HOSTNAME}" -t "sudo systemctl enable --now sing-box-trojan.service || true; sudo systemctl enable --now sing-box-hysteria2.service || true" 2>/dev/null; then
+    warning "$(_t 'Enable/start services') $(_t 'FAILED')"
+else
+    success "Services enabled and started"
+fi
 
 # Final success message
 echo
