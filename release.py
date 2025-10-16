@@ -5,8 +5,8 @@ import shutil
 import subprocess
 import sys
 
-import dotenv
-from tqdm import tqdm
+import dotenv  # type: ignore[import-not-found]
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 root_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(root_dir)
@@ -204,6 +204,14 @@ for official_release in official_releases:
                     os.path.join(root_dir, "scripts", "setup.sh"),
                     os.path.join(user_dir, official_release["platform"]),
                 )
+                os.makedirs(
+                    name=os.path.join(user_dir, official_release["platform"], "lib"),
+                    exist_ok=True,
+                )
+                shutil.copy(
+                    os.path.join(root_dir, "scripts", "lib", "ui.sh"),
+                    os.path.join(user_dir, official_release["platform"], "lib"),
+                )
 
                 if user["name"] == "xiaoshuqi":
                     user_hysteria2_client_config_path = os.path.join(
@@ -341,7 +349,10 @@ for i, user in tqdm(enumerate(users)):
         shutil.make_archive(
             archive_base, "gztar", root_dir=user_dir, base_dir="linux-amd64"
         )
-        shutil.move(archive_base + ".tar.gz", release_dir)
+        dest_path = archive_base + ".tar.gz"
+        if os.path.exists(os.path.join(release_dir, os.path.basename(dest_path))):
+            os.remove(os.path.join(release_dir, os.path.basename(dest_path)))
+        shutil.move(dest_path, release_dir)
 
     # Linux ARM64 package (tar.gz)
     linux_arm64_dir = os.path.join(user_dir, "linux-arm64")
@@ -352,7 +363,10 @@ for i, user in tqdm(enumerate(users)):
         shutil.make_archive(
             archive_base, "gztar", root_dir=user_dir, base_dir="linux-arm64"
         )
-        shutil.move(archive_base + ".tar.gz", release_dir)
+        dest_path = archive_base + ".tar.gz"
+        if os.path.exists(os.path.join(release_dir, os.path.basename(dest_path))):
+            os.remove(os.path.join(release_dir, os.path.basename(dest_path)))
+        shutil.move(dest_path, release_dir)
 
     # Windows package (zip)
     windows_dir = os.path.join(user_dir, "windows-amd64")
@@ -363,7 +377,10 @@ for i, user in tqdm(enumerate(users)):
         shutil.make_archive(
             archive_base, "zip", root_dir=user_dir, base_dir="windows-amd64"
         )
-        shutil.move(archive_base + ".zip", release_dir)
+        dest_path = archive_base + ".zip"
+        if os.path.exists(os.path.join(release_dir, os.path.basename(dest_path))):
+            os.remove(os.path.join(release_dir, os.path.basename(dest_path)))
+        shutil.move(dest_path, release_dir)
 
     # Android package (zip)
     android_dir = os.path.join(user_dir, "android-arm64")
@@ -374,14 +391,19 @@ for i, user in tqdm(enumerate(users)):
         shutil.make_archive(
             archive_base, "zip", root_dir=user_dir, base_dir="android-arm64"
         )
-        shutil.move(archive_base + ".zip", release_dir)
+        dest_path = archive_base + ".zip"
+        if os.path.exists(os.path.join(release_dir, os.path.basename(dest_path))):
+            os.remove(os.path.join(release_dir, os.path.basename(dest_path)))
+        shutil.move(dest_path, release_dir)
 
 print("Release for server.")
 server_dir = os.path.join(release_dir, os.path.basename(release_dir) + "-" + "server")
 os.makedirs(server_dir, exist_ok=True)
-official_release_extraction = official_releases[0].get("path").rstrip(".tar.gz")
-for filename in os.listdir(official_release_extraction):
-    shutil.copy(os.path.join(official_release_extraction, filename), server_dir)
+official_release_path = official_releases[0]["path"]
+if official_release_path and official_release_path.endswith(".tar.gz"):
+    official_release_extraction = official_release_path[:-7]
+    for filename in os.listdir(official_release_extraction):
+        shutil.copy(os.path.join(official_release_extraction, filename), server_dir)
 
 shutil.copy(hysteria2_server_config, server_dir)
 shutil.copy(trojan_server_config, server_dir)
