@@ -3,16 +3,17 @@
 # Load UI utilities for consistent CLI output
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" >/dev/null 2>&1 && pwd)"
 if [ -f "$SCRIPT_DIR/lib/ui.sh" ]; then
-    # shellcheck disable=SC1090
-    . "$SCRIPT_DIR/lib/ui.sh"
+    source "$SCRIPT_DIR/lib/ui.sh"
+else
+    echo "error: $SCRIPT_DIR/lib/ui.sh not found"
 fi
 
 # Script configuration
 VERBOSE=${VERBOSE:-false}
-PROTOCOL=${PROTOCOL:-trojan}
+VPN_PROTOCOL=${VPN_PROTOCOL:-trojan}
 DEFAULT_PROXY_HOST="127.0.0.1"
 DEFAULT_PROXY_PORT=1080
-TIMEOUT=10
+TIMEOUT=3
 
 # Chinese Support
 # Using typeset -A to ensure ZSH compatibility for associative arrays
@@ -23,14 +24,10 @@ TRANSLATIONS=(
     ["WARNING"]="警告"
     ["INFO"]="信息"
     ["DEBUG"]="调试"
-    ["VPN_STATUS"]="VPN 服务状态"
-    ["PROXY_ENV_VARS"]="代理环境变量"
-    ["STOP_VPN"]="正在停止 VPN 客户端服务。"
-    ["NETWORK_CHECK_FAILED"]="网络检查失败。您可能已离线。"
-    ["TIMEOUT"]="超时"
+    ["VPN Service Status"]="VPN 服务状态"
+    ["Related Environment Variables"]="涉及的环境变量"
     ["Internet:"]="互联网："
     ["LAN:"]="局域网："
-    ["No public networking."]="无法确定公共 IP。您可能已离线。"
     ["This platform is not supported."]="此脚本不支持当前操作系统。"
     ["Make sure the VPN client is working on host."]="正在 WSL2/Docker 中运行。请确保代理客户端正在您的主机上运行。"
     ["Start the VPN client service."]="正在启动 VPN 客户端服务。"
@@ -51,7 +48,7 @@ TRANSLATIONS=(
     ["Failed to determine WSL host IP address."]="未能确定 WSL 主机 IP 地址。无法设置代理。"
     ["Failed to get private IP"]="获取私有 IP 失败。"
     ["An argument, the port number, should be given."]="需要提供端口号作为参数。"
-    ["ufw is active."]="UFW 防火墙是活动的。"
+    ["ufw is active."]="UFW 防火墙是开启的。"
     ["ufw is inactive."]="UFW 防火墙是关闭的。"
     ["port {} is not specified in the firewall rules and may not be allowed to use."]="端口 {} 未在防火墙规则中指定，可能不允许使用。"
     ["port {} is not in use."]="端口 {} 未被使用。"
@@ -113,15 +110,13 @@ _translate() {
 
 
 # Logging functions - ZSH compatible
-_error() { msg_error "[$(_translate 'Network Proxy')] $*"; }
-_warning() { msg_warning "[$(_translate 'Network Proxy')] $*"; }
-_info() { msg_info "[$(_translate 'Network Proxy')] $*"; }
-_debug() {
-    [[ $VERBOSE == true ]] && msg_info "[$(_translate 'Network Proxy')] $(_translate 'DEBUG'): $*"
-}
+_error() { error "[$(_translate 'Network Proxy')] $*"; }
+_warning() { warning "[$(_translate 'Network Proxy')] $*"; }
+_info() { info "[$(_translate 'Network Proxy')] $*"; }
+_debug() { debug "[$(_translate 'Network Proxy')] $*"; }
 
 check_public_ip() {
-    local timeout=${1:-1} # Default timeout is 1 second
+    local timeout=${1:-$TIMEOUT} # Default timeout is 1 second
     local ipinfo
     local tmp_file
     tmp_file="$(mktemp)"
@@ -194,12 +189,12 @@ check_public_ip() {
     fi
 
     if [ -n "$city" ] && [ -n "$ip" ]; then
-        # msg_info "$(_translate 'Internet:')" "${city}, ${ip}"
-        msg_info "${city}, ${ip}"
+        # _info "$(_translate 'Internet:')" "${city}, ${ip}"
+        info "${city}, ${ip}"
     elif [ -n "$ip" ]; then
-        msg_info "$ip"
+        info "$ip"
     elif [ -n "$city" ]; then
-        msg_info "$city"
+        info "$city"
     else
         local error_msg
         error_msg=$(_translate 'Failed to detect public IP in {} seconds.')
@@ -212,12 +207,12 @@ check_public_ip() {
 check_private_ip() {
     local private_ip
     if ! private_ip=$(hostname -I 2>/dev/null | awk '{ print $1 }'); then
-        _error "$(_translate 'Failed to get private IP')"
+        error "$(_translate 'Failed to get private IP')"
         return 1
     fi
 
-    # msg_info "$(_translate 'LAN:')"
-    echo "${INDENT}\"ip\": \"${private_ip}\","
+    # info "$(_translate 'LAN:')"
+    info "${private_ip}"
     return 0
 }
 
@@ -381,8 +376,6 @@ set_local_proxy() {
     export GIT_CONFIG_VALUE_0="$http_proxy"
     export GIT_CONFIG_KEY_1="https.proxy"
     export GIT_CONFIG_VALUE_1="$https_proxy"
-
-    # _info "$(_translate 'Done!')"
 }
 
 # Unset proxy environment variables for current shell only
@@ -425,11 +418,6 @@ set_proxy() {
         formatted_no_proxy="['${formatted_no_proxy}']"
         dconf write /system/proxy/ignore-hosts "${formatted_no_proxy}"
     fi
-
-    # _info "$(_translate 'Done!')"
-    # _info "$(_translate 'If not working, wait a couple of seconds.')"
-    # _info "$(_translate 'If still not working, you are suggested to execute following commands to print log and ask for help.')"
-    # echo -e "${INDENT}${GREEN}${BOLD}\$${RESET} VERBOSE=true check_proxy_status \n${INDENT}${GREEN}${BOLD}\$${RESET} check_public_ip"
 }
 
 # Unset proxy configuration
@@ -460,48 +448,41 @@ check_proxy_status() {
     proxy_env=$(env | grep -i proxy)
 
     if [[ -n $proxy_env ]]; then
-        _info "$(_translate 'The shell is using network proxy.')"
+        info "$(_translate 'The shell is using network proxy.')"
     else
-        _info "$(_translate 'The shell is NOT using network proxy.')"
+        info "$(_translate "The shell is ${BOLD}${RED}NOT${RESET} using network proxy.")"
     fi
-    echo
+
+    info "$(_translate 'Related Environment Variables'):"
+    echo "$proxy_env" | while read -r line; do
+        echo "${INDENT}${line}"
+    done
+
+    info "$(_translate 'VPN Service Status'):"
+    if [[ $(uname -r) =~ WSL2 ]]; then
+        warning "$(_translate 'Unknown. For WSL2, the VPN client is probably running on the host machine. Please check manually.')"
+    elif [[ -f /.dockerenv ]]; then
+        warning "$(_translate 'Unknown. For a Docker container, the VPN client is probably running on the host machine. Please check manually.')"
+    elif command -v systemctl >/dev/null 2>&1; then
+        echo "${INDENT}$(systemctl is-active "sing-box-${VPN_PROTOCOL}.service")"
+    else
+        warning "$(_translate 'Cannot determine VPN status - systemctl not available')"
+    fi
 
     check_public_ip $TIMEOUT
-
-    if [[ $VERBOSE == true ]]; then
-        echo "$(_translate 'PROXY_ENV_VARS'):"
-        echo "$proxy_env" | while read -r line; do
-            echo "${INDENT}${line}"
-        done
-        echo
-
-        msg_info "$(_translate 'VPN_STATUS'):"
-        if [[ $(uname -r) =~ WSL2 ]]; then
-            _warning "$(_translate 'Unknown. For WSL2, the VPN client is probably running on the host machine. Please check manually.')"
-        elif [[ -f /.dockerenv ]]; then
-            _warning "$(_translate 'Unknown. For a Docker container, the VPN client is probably running on the host machine. Please check manually.')"
-        elif command -v systemctl >/dev/null 2>&1; then
-            echo "${INDENT}$(systemctl is-active "sing-box-${PROTOCOL}.service")"
-        else
-            _warning "$(_translate 'Cannot determine VPN status - systemctl not available')"
-        fi
-        echo
-    fi
 }
 
 
-# Main script initialization
-INDENT='    '
-if [[ $VERBOSE == "true" ]]; then
+proxy_help() {
     # Show available commands
-    msg_header "$(_translate 'Available handy commands for networking proxy')"
+    header "$(_translate 'Available handy commands for networking proxy')"
     echo "${INDENT}${GREEN}${BOLD}\$${NC} set_proxy         # Global proxy with service management"
     echo "${INDENT}${GREEN}${BOLD}\$${NC} unset_proxy       # Remove global proxy config"
     echo "${INDENT}${GREEN}${BOLD}\$${NC} set_local_proxy   # Set proxy for current shell only"
     echo "${INDENT}${GREEN}${BOLD}\$${NC} unset_local_proxy # Remove current shell proxy"
+
     echo "${INDENT}${GREEN}${BOLD}\$${NC} check_private_ip"
     echo "${INDENT}${GREEN}${BOLD}\$${NC} check_public_ip"
     echo "${INDENT}${GREEN}${BOLD}\$${NC} check_proxy_status"
-    echo
     echo "${INDENT}${GREEN}${BOLD}\$${NC} check_port_availability <PORT>"
-fi
+}

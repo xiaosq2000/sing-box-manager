@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Simple UI library for consistent CLI output across scripts
 # Automatically detects interactive vs headless environments
@@ -10,43 +10,52 @@ else
     INTERACTIVE=false
 fi
 
-# Style and color setup (prefer tput; fall back to empty). Colors disabled when not interactive.
-DEBUG=false
-INDENT='    '
-BOLD="$(tput bold 2>/dev/null || printf '')"
-GREY="$(tput setaf 0 2>/dev/null || printf '')"
-UNDERLINE="$(tput smul 2>/dev/null || printf '')"
-RED="$(tput setaf 1 2>/dev/null || printf '')"
-GREEN="$(tput setaf 2 2>/dev/null || printf '')"
-YELLOW="$(tput setaf 3 2>/dev/null || printf '')"
-BLUE="$(tput setaf 4 2>/dev/null || printf '')"
-MAGENTA="$(tput setaf 5 2>/dev/null || printf '')"
-RESET="$(tput sgr0 2>/dev/null || printf '')"
 
-if [ "$INTERACTIVE" != true ]; then
-    BOLD=""; GREY=""; UNDERLINE=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; RESET=""
+if [ "$INTERACTIVE" = true ]; then
+    # Style and color setup (prefer tput; fall back to empty). Colors disabled when not interactive.
+    BOLD="$(tput bold 2>/dev/null || printf '')"
+    DIM="$(tput dim 2>/dev/null || printf '')"
+    GREY="$(tput setaf 0 2>/dev/null || printf '')"
+    UNDERLINE="$(tput smul 2>/dev/null || printf '')"
+    RED="$(tput setaf 1 2>/dev/null || printf '')"
+    GREEN="$(tput setaf 2 2>/dev/null || printf '')"
+    YELLOW="$(tput setaf 3 2>/dev/null || printf '')"
+    BLUE="$(tput setaf 4 2>/dev/null || printf '')"
+    MAGENTA="$(tput setaf 5 2>/dev/null || printf '')"
+    RESET="$(tput sgr0 2>/dev/null || printf '')"
+else
+    BOLD=""
+    DIM=""
+    GREY=""
+    UNDERLINE=""
+    RED=""
+    GREEN=""
+    YELLOW=""
+    BLUE=""
+    MAGENTA=""
+    RESET=""
 fi
 
 # Detect Nerd Font support
-has_nerd_font() {
+_has_nerd_font() {
     # Check if terminal supports UTF-8
-    if [[ "$LANG" != *"UTF-8"* ]] && [[ "${LC_ALL:-}" != *"UTF-8"* ]]; then
+    if [[ "${LANG-}" != *"UTF-8"* ]] && [[ "${LC_ALL-}" != *"UTF-8"* ]]; then
         return 1
     fi
 
     # Check for known terminals/fonts that support Nerd Fonts
-    if [[ -n "$KITTY_WINDOW_ID" ]] || \
-        [[ -n "$ALACRITTY_SOCKET" ]] || \
-        [[ -n "$WEZTERM_EXECUTABLE" ]] || \
-        [[ "$TERM_PROGRAM" == "iTerm.app" ]] || \
-        [[ "$TERM_PROGRAM" == "WezTerm" ]] || \
-        [[ "$TERM" == *"kitty"* ]] || \
-        [[ "$TERM" == *"alacritty"* ]]; then
+    if [[ -n "${KITTY_WINDOW_ID-}" ]] || \
+        [[ -n "${ALACRITTY_SOCKET-}" ]] || \
+        [[ -n "${WEZTERM_EXECUTABLE-}" ]] || \
+        [[ "${TERM_PROGRAM-}" == "iTerm.app" ]] || \
+        [[ "${TERM_PROGRAM-}" == "WezTerm" ]] || \
+        [[ "${TERM-}" == *"kitty"* ]] || \
+        [[ "${TERM-}" == *"alacritty"* ]]; then
         return 0
     fi
 
     # Check if a Nerd Font is explicitly set
-    if [[ -n "$NERD_FONT" ]] || [[ "${USE_NERD_FONT:-}" == "true" ]]; then
+    if [[ -n "${NERD_FONT-}" ]] || [[ "${USE_NERD_FONT-}" == "true" ]]; then
         return 0
     fi
 
@@ -54,12 +63,13 @@ has_nerd_font() {
 }
 
 # Set icons based on Nerd Font support
-if has_nerd_font; then
+if _has_nerd_font; then
     ICON_ERROR="󰅚 "
     ICON_WARNING="󰀪 "
     ICON_INFO="󰋽 "
     ICON_DEBUG="󰃤 "
     ICON_SUCCESS="󰄬 "
+    ICON_HINT="󰛿 "
     ICON_STEP="󰛿 "
 else
     ICON_ERROR=""
@@ -67,23 +77,21 @@ else
     ICON_INFO=""
     ICON_DEBUG=""
     ICON_SUCCESS=""
+    ICON_HINT=""
     ICON_STEP=""
 fi
 
 # Core message helpers (prefer snippet style)
-error() {
-    printf '%s\n' "${BOLD}${RED}${ICON_ERROR}error:${RESET} $*" >&2
-}
-warning() {
-    printf '%s\n' "${BOLD}${YELLOW}${ICON_WARNING}warning:${RESET} $*"
-}
-info() {
-    printf '%s\n' "${BOLD}${BLUE}${ICON_INFO}info:${RESET} $*"
-}
+error() { printf '%s\n' "${BOLD}${RED}${UNDERLINE}${ICON_ERROR}error:${RESET} $*" >&2; }
+warning() { printf '%s\n' "${BOLD}${YELLOW}${UNDERLINE}${ICON_WARNING}warning:${RESET} $*"; }
+info() { printf '%s\n' "${BOLD}${MAGENTA}${UNDERLINE}${ICON_INFO}info:${RESET} $*"; }
+completed() { printf '%s\n' "${BOLD}${GREEN}${UNDERLINE}${ICON_SUCCESS}success:${RESET} $*"; }
+success() { completed "$@"; }
+hint() { printf '%s\n' "${BOLD}${BLUE}${UNDERLINE}${ICON_HINT}hint:${RESET} $*"; }
 debug() {
     local debug_enabled=false
-    for var in DEBUG debug VERBOSE verbose; do
-        eval "local value=\"\$$var\""
+    local value
+    for value in "${DEBUG-}" "${debug-}" "${VERBOSE-}" "${verbose-}"; do
         case "$value" in
             [Tt][Rr][Uu][Ee]|1|[Oo][Nn]|[Yy][Ee][Ss])
                 debug_enabled=true
@@ -92,40 +100,8 @@ debug() {
         esac
     done
     if [ "$debug_enabled" = "true" ]; then
-        printf '%s\n' "${BOLD}${ICON_DEBUG}debug:${RESET} $*"
+        printf '%s\n' "${BOLD}${DIM}${UNDERLINE}${ICON_DEBUG}debug:${RESET} $*"
     fi
-}
-completed() {
-    printf '%s\n' "${BOLD}${GREEN}${ICON_SUCCESS}success:${RESET} $*"
-}
-
-# Display a step/action being performed
-msg_step() {
-    if [ "$INTERACTIVE" = true ]; then
-        printf '\n%s\n' "${BLUE}${ICON_STEP:-→} ${BOLD}$*${RESET}"
-    else
-        printf 'step: %s\n' "$*"
-    fi
-}
-
-# Display a success message
-msg_success() {
-    completed "$@"
-}
-
-# Display an error message
-msg_error() {
-    error "$@"
-}
-
-# Display a warning message
-msg_warning() {
-    warning "$@"
-}
-
-# Display an info message
-msg_info() {
-    info "$@"
 }
 
 # Simple spinner for long-running operations
@@ -149,8 +125,17 @@ spinner() {
     fi
 }
 
+# Display a step/action being performed
+step() {
+    if [ "$INTERACTIVE" = true ]; then
+        printf '\n%s\n' "${BLUE}${ICON_STEP} ${BOLD}$*${RESET}"
+    else
+        printf 'step: %s\n' "$*"
+    fi
+}
+
 # Display a header (for main scripts)
-msg_header() {
+header() {
     if [ "$INTERACTIVE" = true ]; then
         printf '\n%s\n\n' "${BOLD}${BLUE}==> $*${RESET}"
     else
@@ -159,7 +144,7 @@ msg_header() {
 }
 
 # Display a footer (for main scripts)
-msg_footer() {
+footer() {
     if [ "$INTERACTIVE" = true ]; then
         printf '\n%s\n\n' "${BOLD}${GREEN}<== $*${RESET}"
     else
