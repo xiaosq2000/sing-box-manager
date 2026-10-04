@@ -1,0 +1,116 @@
+[workspace]
+authors = ["Shuqi Xiao <xiaosq2000@gmail.com>"]
+channels = ["conda-forge"]
+name = "sing-box-manager"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[dependencies]
+age = ">=1.3.1,<2"
+argon2-cffi = "25.1.0.*"
+fastapi = "0.115.8.*"
+go-sops = ">=3.12.2,<4"
+httpx = "0.27.0.*"
+jinja2 = "3.1.5.*"
+pygal = ">=3.1.3,<4"
+python = "3.12.*"
+python-dotenv = ">=1.2.2,<2"
+python-multipart = "0.0.20.*"
+pyyaml = "6.0.3.*"
+rich = ">=14.3.3,<15"
+rsync = ">=3.4.3,<4"
+uvicorn = "0.34.0.*"
+
+[pypi-dependencies]
+# Floor tracks GRPC_GENERATED_VERSION in sing_box_manager/proto/*_pb2_grpc.py:
+# the generated module raises at import against an older grpcio. Keep this and
+# the grpcio-tools dev pin moving together.
+grpcio = ">=1.81.1,<2"
+protobuf = ">=6.33.0,<7"
+pygithub = ">=2.9.0, <3"
+tyro = ">=1.0.11, <2"
+
+[feature.dev.dependencies]
+act = ">=0.2.87,<0.3"
+codespell = ">=2.4.2,<3"
+go-shfmt = ">=3.13.0,<4"
+pre-commit = ">=4.5.1,<5"
+prettier = ">=3.8.1,<4"
+pytest = ">=9.0.2,<10"
+ruff = ">=0.15.9,<0.16"
+shellcheck = ">=0.11.0,<0.12"
+taplo = ">=0.10.0,<0.11"
+ty = ">=0.0.28,<0.0.29"
+
+[feature.dev.tasks]
+ci = "act -P ubuntu-latest=catthehacker/ubuntu:act-latest"
+
+check = [
+  { task = "format" },
+  { task = "lint" },
+  { task = "typecheck" },
+  { task = "test" },
+  { task = "test-go" },
+]
+style = [{ task = "format" }, { task = "lint" }]
+
+format = [
+  { task = "format-python" },
+  { task = "format-toml" },
+  { task = "format-prettier" },
+  { task = "format-shell" },
+  { task = "format-go" },
+]
+lint = [
+  { task = "lint-python" },
+  { task = "lint-codespell" },
+  { task = "lint-shell" },
+  { task = "lint-go" },
+]
+
+format-go = { cmd = "git ls-files -z '*.go' | xargs -0 gofmt -w", default-environment = "style" }
+format-prettier = { cmd = "prettier --write --ignore-unknown --log-level warn .", default-environment = "style" }
+format-python = { cmd = "ruff format", default-environment = "style" }
+format-shell = { cmd = "bash scripts/dev/run-on-tracked-shell-files.sh shfmt -w", default-environment = "style" }
+format-toml = { cmd = "git ls-files -z '*.toml' | xargs -0 taplo fmt", default-environment = "style", env = { RUST_LOG = "WARN" } }
+lint-codespell = { cmd = "git ls-files | grep -v '^third_party/' | xargs codespell --config .codespellrc", default-environment = "style" }
+lint-go = { cmd = "go vet ./...", default-environment = "style" }
+lint-python = { cmd = "ruff check --fix .", default-environment = "style" }
+lint-shell = { cmd = "bash scripts/dev/run-on-tracked-shell-files.sh shellcheck", default-environment = "style" }
+
+# Run from the workspace root so the generated _pb2_grpc module imports its
+# _pb2 sibling by full package path rather than as a bare top-level module.
+gen-proto = "python -m grpc_tools.protoc --proto_path=. --python_out=. --pyi_out=. --grpc_python_out=. sing_box_manager/proto/sing_box_api.proto"
+
+precommit-install = "pre-commit install --hook-type commit-msg --hook-type pre-commit --hook-type pre-push"
+precommit-run = { cmd = "pre-commit run --all-files --show-diff-on-failure" }
+precommit-uninstall = "pre-commit uninstall --hook-type commit-msg --hook-type pre-commit --hook-type pre-push"
+
+test = { cmd = "pytest -q" }
+# Downloads the sing-box release the example inventory pins, for tests that
+# run a real binary.
+fetch-sing-box = "python -m tests.fetch_sing_box"
+fetch-sing-box-server = "python -m tests.fetch_sing_box --server"
+test-go = { cmd = "go test ./..." }
+typecheck = { cmd = "ty check" }
+
+[feature.dev.pypi-dependencies]
+docstale = { git = "https://github.com/xiaosq2000/docstale.git" }
+grpcio-tools = ">=1.81.1,<2"
+pytest-gitignore = ">=1.3, <2"
+
+# Go never downloads another toolchain, and cgo stays off. The style environment
+# includes Go so the hooks can format Go code.
+[feature.go.dependencies]
+go = ">=1.25.5,<1.26"
+
+[feature.go.activation.env]
+CGO_ENABLED = "0"
+GOTOOLCHAIN = "local"
+
+[environments]
+default = { features = ["dev", "go"] }
+style = { features = ["dev", "go"], no-default-feature = true }
+
+[tasks.sbm]
+cmd = "python -m sing_box_manager"

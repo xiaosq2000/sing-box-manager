@@ -1,0 +1,119 @@
+sing_box_version: 1.14.2
+# Signs the manifest of sbc downloads. It stays on the build machine; see
+# docs/SECRET_HANDLING.md for how to generate one.
+# client_signing_key: base64-of-32-random-bytes
+default_protocol: trojan
+upstream_cache_root: .cache/sing-box-manager/upstream
+web:
+  host: 127.0.0.1
+  port: 47070
+  # Signs web sessions and installer machine tokens. `sbm serve` refuses to
+  # start without it. When this is unset, bootstrap generates the server's
+  # value, and later deploys keep whatever the server holds.
+  session_secret: change-me-with-a-long-random-secret
+  # Keys subscription links. When this is unset, the next deploy generates the
+  # server's value, and later deploys keep it. Without it, `sbm serve` turns
+  # subscription links off.
+  # subscription_secret: change-me-with-another-long-random-secret
+  # Each user's link reset counter. The default is in the services' state directory.
+  # subscription_database_path: /var/lib/sing-box-manager/subscriptions.sqlite3
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
+# Unix clients check the public portal metadata at most once per day. "suggested"
+# hints once for each new client build; "required" warns in every new shell until
+# upgraded; "off" disables upgrade notices. The message is reserved for
+# `proxy check update`, not the shell notice. Keep it public and secret-free.
+client_upgrade:
+  policy: suggested
+  message: ""
+traffic_stats:
+  enabled: true
+  # Defaults to /var/lib/sing-box-manager/traffic-stats.sqlite3, which the
+  # systemd units own as their StateDirectory. Leave it unset so usage history
+  # survives wiping and reprovisioning the deploy root. A relative path resolves
+  # against the project root, which is useful when running the portal locally.
+  # database_path: data/traffic-stats.sqlite3
+  timezone: Asia/Shanghai
+  # How much of the host's bandwidth counter one relayed byte consumes. A byte
+  # crosses the VPS interface twice -- once on the client leg, once on the origin
+  # leg -- so a host billing inbound plus outbound charges double what the
+  # per-user counters record. Use 1 on a host that bills egress only. Raise it
+  # slightly (2.05, 2.1) to absorb protocol overhead once a full cycle of data
+  # shows the real ratio.
+  relay_multiplier: 2
+  # The V2Ray stats API: cumulative per-user byte counters, polled every five
+  # minutes. Authoritative for quota.
+  api_listen: 127.0.0.1:19080
+  # The sing-box 1.14.0 API service: a per-connection event stream carrying the
+  # destination and username together, which is what the domain breakdown is
+  # built from. Its port must not collide with api_listen.
+  connection_api_listen: 127.0.0.1:19090
+  # Bearer token for the API service. Empty disables authentication, which is
+  # acceptable only while the listeners stay on loopback. Set one before moving
+  # any of them off 127.0.0.1.
+  # connection_api_secret: change-me
+  # Domains retained per user per day. The rest are folded into a single
+  # __other__ row, so totals still reconcile with the per-user counters.
+  domain_top_n: 50
+  # Whether ordinary users see their own top domains on the download page.
+  # Admins always see the breakdown at /admin.
+  show_user_domains: false
+deployment:
+  # Direct routing and DNS for these apex domains and their subdomains.
+  # The exact deployment host is included automatically.
+  direct_domain_suffixes: []
+  host: vpn.example.com
+  ip: 8.8.8.8
+  trojan_port: 8443
+  hysteria2_port: 58080
+  # Optional: enable Hysteria2 port hopping (sing-box >= 1.11). The client
+  # rotates its destination UDP port across this range for extra resilience
+  # against port-based blocking. REQUIRES a server-side firewall redirect of
+  # the whole range to hysteria2_port -- see docs/VPS_DEPLOYMENT.md. Leave
+  # unset to keep a single fixed port.
+  # hysteria2_port_range: 20000:50000
+  naive_port: 9443
+  tls:
+    enabled: true
+    key_path: /etc/letsencrypt/live/vpn.example.com/privkey.pem
+    certificate_path: /etc/letsencrypt/live/vpn.example.com/fullchain.pem
+    self_signed_cert: false
+web_portal:
+  users:
+    - username: alice
+      password_hash:
+        "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQxMjM0NTY$c29tZWhhc2h2\
+        YWx1ZXNvbWVoaXN0b3J5"
+      admin: true
+    - username: bob
+      password_hash:
+        "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQxMjM0NTY$c29tZWhhc2h2\
+        YWx1ZXNvbWVoaXN0b3J5"
+trojan:
+  users:
+    - username: alice
+      password: change-me
+      enabled: true
+hysteria2:
+  obfs_password: change-me-obfs
+  # Optional: set the client's line speed (Mbps) to switch congestion control
+  # from BBR to Hysteria Brutal, which holds throughput on lossy links. Use
+  # ~80-90% of the real line speed; too high causes bufferbloat. Applies to all
+  # generated hysteria2 client configs. Leave unset to use BBR (the default).
+  # up_mbps: 50
+  # down_mbps: 200
+  users:
+    - username: bob
+      password: change-me
+      enabled: true
+naive:
+  users:
+    - username: alice
+      password: change-me
+      enabled: true
+# Optional: KiwiVM API credentials for the VPS info dashboard widget.
+# Find your VEID and API key in the KiwiVM control panel.
+# vps_info:
+#   kiwi_veid: "123456"
+#   kiwi_api_key: "your-api-key-here"

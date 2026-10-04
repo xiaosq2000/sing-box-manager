@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.pixi/envs/default/bin/docstale\" hook",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.pixi/envs/default/bin/docstale\" hook",
+            "timeout": 30,
+            "statusMessage": "Checking documentation impact..."
+          }
+        ]
+      }
+    ]
+  }
+}

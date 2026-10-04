@@ -1,0 +1,4 @@
+exclude = [".pixi/**"]
+
+[formatting]
+reorder_keys = true

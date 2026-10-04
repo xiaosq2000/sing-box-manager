@@ -1,0 +1,29 @@
+**/.env*
+!**/.env.example
+
+# Operator configuration and state must never enter the public repository.
+/.sops.yaml
+**/*.sops.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+
+.cache
+**/__pycache__
+
+.pixi/
+
+/releases/
+
+.worktrees/
+
+data
+
+# go build ./cmd/sbc writes the binary here.
+/sbc
+/sbc.exe

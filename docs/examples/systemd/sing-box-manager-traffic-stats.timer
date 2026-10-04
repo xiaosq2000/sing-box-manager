@@ -1,0 +1,10 @@
+[Unit]
+Description=Run sing-box-manager traffic stats collection every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

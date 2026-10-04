@@ -1,0 +1,91 @@
+[project]
+dynamic = ["version"]
+name = "sing-box-manager"
+requires-python = ">=3.12,<3.13"
+
+[tool.ruff]
+# The *_pb2* modules are written by protoc in its own style and are rewritten
+# wholesale by `pixi run gen-proto`, so formatting or linting them here only
+# makes the regeneration check fail. Same reasoning as .prettierignore.
+exclude = [
+  "tests",
+  "sing_box_manager/proto/*_pb2.py",
+  "sing_box_manager/proto/*_pb2.pyi",
+  "sing_box_manager/proto/*_pb2_grpc.py",
+]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = [
+  "ANN",
+  "ARG001",
+  "ARG002",
+  "B008",
+  "BLE001",
+  "COM812",
+  "CPY001",
+  "D",
+  "D203",
+  "D213",
+  "DOC201",
+  "DOC402",
+  "DTZ005",
+  "E501",
+  "EM101",
+  "EM102",
+  "FAST002",
+  "FIX002",
+  "FBT001",
+  "G004",
+  "ISC001",
+  "PIE810",
+  "PLC0415",
+  "PLR2004",
+  "PTH105",
+  "PTH119",
+  "PTH123",
+  "RUF013",
+  "S404",
+  "S105",
+  "S202",
+  "S603",
+  "S607",
+  "SIM103",
+  "SIM108",
+  "SIM115",
+  "T201",
+  "TC001",
+  "TC002",
+  "TC003",
+  "TD002",
+  "TD003",
+  "TRY004",
+  "TRY003",
+  "TRY300",
+]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D", "INP001", "PLC0415", "S101", "S603", "T201"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ty.src]
+exclude = [
+  "tests",
+  "sing_box_manager/proto/*_pb2.py",
+  "sing_box_manager/proto/*_pb2.pyi",
+  "sing_box_manager/proto/*_pb2_grpc.py",
+]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.terminal]
+error-on-warning = true
+output-format = "concise"

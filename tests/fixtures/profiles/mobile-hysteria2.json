@@ -1,0 +1,165 @@
+{
+  "dns": {
+    "rules": [
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "aliyun"
+      },
+      {
+        "query_type": ["A", "AAAA"],
+        "server": "remote"
+      }
+    ],
+    "servers": [
+      {
+        "server": "8.8.8.8",
+        "tag": "google",
+        "type": "tls"
+      },
+      {
+        "server": "223.5.5.5",
+        "tag": "local",
+        "type": "udp"
+      },
+      {
+        "inet4_range": "198.18.0.0/15",
+        "inet6_range": "fc00::/18",
+        "tag": "remote",
+        "type": "fakeip"
+      },
+      {
+        "server": "223.5.5.5",
+        "tag": "aliyun",
+        "type": "udp"
+      }
+    ]
+  },
+  "http_clients": [
+    {
+      "detour": "proxy",
+      "tag": "rule-downloads"
+    }
+  ],
+  "inbounds": [
+    {
+      "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+      "auto_route": true,
+      "strict_route": true,
+      "type": "tun"
+    }
+  ],
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "ntp": {
+    "enabled": true,
+    "interval": "30m",
+    "server": "time.apple.com",
+    "server_port": 123
+  },
+  "outbounds": [
+    {
+      "obfs": {
+        "password": "change-me-obfs",
+        "type": "salamander"
+      },
+      "password": "change-me",
+      "server": "8.8.8.8",
+      "server_port": 58080,
+      "tag": "proxy",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "type": "hysteria2"
+    },
+    {
+      "domain_resolver": {
+        "server": "aliyun"
+      },
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "default_domain_resolver": {
+      "server": "local"
+    },
+    "default_http_client": "rule-downloads",
+    "rule_set": [
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "tag": "geoip-cn",
+        "type": "remote",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "tag": "geosite-geolocation-cn",
+        "type": "remote",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-cn.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "mode": "or",
+        "rules": [
+          {
+            "protocol": "dns"
+          },
+          {
+            "port": 53
+          }
+        ],
+        "type": "logical"
+      },
+      {
+        "action": "reject",
+        "mode": "or",
+        "rules": [
+          {
+            "port": 853
+          },
+          {
+            "network": "udp",
+            "port": 443
+          },
+          {
+            "protocol": "stun"
+          }
+        ],
+        "type": "logical"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "Direct",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "Global",
+        "outbound": "proxy"
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["geoip-cn", "geosite-geolocation-cn"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,121 @@
+{# The shared page frame: head, theme toggle, and the theme script. These were
+byte-duplicated across every page. Adding a fourth copy for the per-user traffic
+page is what made extracting this worthwhile -- the theme script in particular
+had no single home, so any fix to it had to be made three times or drift.
+Children still import _icons.html themselves; a parent's import is not in scope
+inside a child's blocks. #} {% import "_icons.html" as icons %}
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}sing-box manager{% endblock %}</title>
+    <link rel="stylesheet" href="{{ portal_stylesheet_url }}" />
+    {# For pages that need a meta refresh. The portal ships no JavaScript to
+    poll with, so a self-refreshing view has to say so in the head. #} {% block
+    head_extra %}{% endblock %}
+  </head>
+  <body>
+    <button id="themeToggle" class="theme-toggle" aria-label="切换主题">
+      <span class="theme-icon theme-icon-moon">{{ icons.icon('moon') }}</span>
+      <span class="theme-icon theme-icon-sun">{{ icons.icon('sun') }}</span>
+    </button>
+
+    <main class="page-shell {% block shell_modifier %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </main>
+
+    {% if portal_release %}
+    <footer class="release-footer">
+      <span>
+        版本
+        <code
+          >{{ portal_release.commit_sha }}{% if portal_release.dirty %}-dirty{%
+          endif %}</code
+        >
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>
+        最近部署：{% if portal_release.deployed_at %}<time
+          datetime="{{ portal_release.deployed_at }}"
+          data-local-time
+          >{{ portal_release.deployed_at }}</time
+        >{% else %}尚无成功部署记录{% endif %}
+      </span>
+      {% if portal_release.upgrade_policy != 'off' and
+      portal_release.upgrade_message %}
+      <span aria-hidden="true">·</span>
+      <span
+        class="release-policy release-policy--{{ portal_release.upgrade_policy }}"
+      >
+        {% if portal_release.upgrade_policy == 'required' %}需要升级{% else
+        %}建议升级{% endif %}：{{ portal_release.upgrade_message }}
+      </span>
+      {% endif %}
+    </footer>
+    {% endif %}
+
+    <script>
+      const toggle = document.getElementById("themeToggle");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+      const saved = localStorage.getItem("theme");
+
+      if (saved === "dark" || (!saved && prefersDark.matches)) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+
+      toggle.addEventListener("click", () => {
+        const next =
+          document.documentElement.getAttribute("data-theme") === "dark"
+            ? "light"
+            : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        localStorage.setItem("theme", next);
+      });
+
+      document.querySelectorAll(".btn-copy").forEach((copyBtn) => {
+        let resetIconTimer;
+
+        const setCopyState = (state) => {
+          copyBtn.dataset.state = state;
+          window.clearTimeout(resetIconTimer);
+          if (state !== "default") {
+            resetIconTimer = window.setTimeout(() => {
+              copyBtn.dataset.state = "default";
+            }, 1500);
+          }
+        };
+
+        copyBtn.addEventListener("click", async () => {
+          const text = copyBtn.dataset.copyText || "";
+          try {
+            if (navigator.clipboard) {
+              await navigator.clipboard.writeText(text);
+            } else {
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.left = "-9999px";
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand("copy");
+              document.body.removeChild(ta);
+            }
+            setCopyState("success");
+          } catch {
+            setCopyState("error");
+          }
+        });
+      });
+
+      document.querySelectorAll("time[data-local-time]").forEach((element) => {
+        const value = new Date(element.dateTime);
+        if (!Number.isNaN(value.getTime())) {
+          element.textContent = value.toLocaleString();
+          element.title = element.dateTime;
+        }
+      });
+    </script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

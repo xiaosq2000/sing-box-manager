@@ -1,0 +1,6 @@
+sbm.yaml
+generated/
+
+# Only the example schema belongs in public source control.
+/inventory/*
+!/inventory/example.yaml

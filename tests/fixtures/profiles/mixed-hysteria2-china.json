@@ -1,0 +1,262 @@
+{
+  "dns": {
+    "final": "google",
+    "optimistic": false,
+    "rules": [
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "aliyun"
+      },
+      {
+        "rule_set": ["AI-Services", "AI-Geosite"],
+        "server": "google"
+      },
+      {
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
+      }
+    ],
+    "servers": [
+      {
+        "detour": "proxy",
+        "server": "8.8.8.8",
+        "tag": "google",
+        "type": "tls"
+      },
+      {
+        "server": "223.5.5.5",
+        "tag": "aliyun",
+        "type": "udp"
+      }
+    ]
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "cache-hysteria2-china.db",
+      "store_dns": true
+    }
+  },
+  "http_clients": [
+    {
+      "detour": "proxy",
+      "tag": "rule-downloads"
+    }
+  ],
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 1080,
+      "set_system_proxy": false,
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "ntp": {
+    "detour": "proxy",
+    "enabled": true,
+    "interval": "30m",
+    "server": "time.apple.com",
+    "server_port": 123
+  },
+  "outbounds": [
+    {
+      "domain_resolver": {
+        "server": "google"
+      },
+      "obfs": {
+        "password": "change-me-obfs",
+        "type": "salamander"
+      },
+      "password": "change-me",
+      "server": "8.8.8.8",
+      "server_port": 58080,
+      "tag": "proxy",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "type": "hysteria2"
+    },
+    {
+      "domain_resolver": {
+        "server": "aliyun"
+      },
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "default_http_client": "rule-downloads",
+    "final": "proxy",
+    "rule_set": [
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/be923102d393b70598cc08a57abdde878aae666c9c5116a56da8167a9728b777.srs",
+        "tag": "AdGuard-DNS-Filter",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/filter.txt.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/26532516f1b4f6ca8f95a66fa62cb27808eecbabebd8aee1b7c533335a734b60.srs",
+        "tag": "AI-Geosite",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs"
+      },
+      {
+        "rules": [
+          {
+            "domain_keyword": ["anthropic", "openai"],
+            "domain_suffix": [
+              "accounts.google.com",
+              "anthropic.com",
+              "apis.google.com",
+              "arkoselabs.com",
+              "auth0.com",
+              "challenges.cloudflare.com",
+              "chat.com",
+              "chatgpt.com",
+              "clau.de",
+              "claude.ai",
+              "claude.com",
+              "claudeusercontent.com",
+              "identrust.com",
+              "oaistatic.com",
+              "oaistatsig.com",
+              "oaiusercontent.com",
+              "oauth2.googleapis.com",
+              "openai.com",
+              "recaptcha.net",
+              "sora.com",
+              "ssl.gstatic.com"
+            ]
+          }
+        ],
+        "tag": "AI-Services",
+        "type": "inline"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/6f37c053125cea788f3d9bd82b9ac3610653cce3db66bbd32324ff51d7098737.srs",
+        "tag": "GFWList",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/gfwlist.txt.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/56a3c0517911ad27c0c3665c7215f87a907d71e33b450344534a24d1312f42f5.srs",
+        "tag": "GeoSite-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/accelerated-domains.china.conf.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/e14b39f826a08b567fd0856766a01641f76975953d634f310aa21ac7f041e527.srs",
+        "tag": "GeoSite-Apple-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/apple.china.conf.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/b46fbd1a365ed9c81e82ee4ef119ebe2e1464a33876f8e2c8300dc45a9e350fd.srs",
+        "tag": "GeoIP-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "action": "hijack-dns",
+        "mode": "or",
+        "rules": [
+          {
+            "protocol": "dns"
+          },
+          {
+            "port": 53
+          }
+        ],
+        "type": "logical"
+      },
+      {
+        "action": "reject",
+        "mode": "or",
+        "rules": [
+          {
+            "port": 853
+          },
+          {
+            "network": "udp",
+            "port": 443
+          },
+          {
+            "protocol": "stun"
+          }
+        ],
+        "type": "logical"
+      },
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct"
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": ["AI-Services", "AI-Geosite"]
+      },
+      {
+        "action": "reject",
+        "rule_set": ["AdGuard-DNS-Filter"]
+      },
+      {
+        "clash_mode": "Direct",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "Global",
+        "outbound": "proxy"
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": ["GFWList"]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["GeoIP-CN"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "domain_keyword": ["anthropic", "openai"],
+      "domain_suffix": [
+        "accounts.google.com",
+        "anthropic.com",
+        "apis.google.com",
+        "arkoselabs.com",
+        "auth0.com",
+        "challenges.cloudflare.com",
+        "chat.com",
+        "chatgpt.com",
+        "clau.de",
+        "claude.ai",
+        "claude.com",
+        "claudeusercontent.com",
+        "identrust.com",
+        "oaistatic.com",
+        "oaistatsig.com",
+        "oaiusercontent.com",
+        "oauth2.googleapis.com",
+        "openai.com",
+        "recaptcha.net",
+        "sora.com",
+        "ssl.gstatic.com"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "inbounds": [
+    {
+      "listen": "::",
+      "listen_port": 8443,
+      "multiplex": {
+        "enabled": true
+      },
+      "tag": "trojan",
+      "tls": {
+        "certificate_path": "/etc/letsencrypt/live/vpn.example.com/fullchain.pem",
+        "enabled": true,
+        "key_path": "/etc/letsencrypt/live/vpn.example.com/privkey.pem",
+        "server_name": "vpn.example.com"
+      },
+      "type": "trojan",
+      "users": [
+        {
+          "name": "trojan:alice",
+          "password": "change-me"
+        }
+      ]
+    },
+    {
+      "listen": "::",
+      "listen_port": 58080,
+      "obfs": {
+        "password": "change-me-obfs",
+        "type": "salamander"
+      },
+      "tag": "hysteria2",
+      "tls": {
+        "certificate_path": "/etc/letsencrypt/live/vpn.example.com/fullchain.pem",
+        "enabled": true,
+        "key_path": "/etc/letsencrypt/live/vpn.example.com/privkey.pem",
+        "server_name": "vpn.example.com"
+      },
+      "type": "hysteria2",
+      "users": [
+        {
+          "name": "hysteria2:alice",
+          "password": "change-me"
+        }
+      ]
+    },
+    {
+      "listen": "::",
+      "listen_port": 9443,
+      "network": "tcp",
+      "tag": "naive",
+      "tls": {
+        "certificate_path": "/etc/letsencrypt/live/vpn.example.com/fullchain.pem",
+        "enabled": true,
+        "key_path": "/etc/letsencrypt/live/vpn.example.com/privkey.pem",
+        "server_name": "vpn.example.com"
+      },
+      "type": "naive",
+      "users": [
+        {
+          "password": "change-me",
+          "username": "alice"
+        }
+      ]
+    }
+  ],
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  }
+}

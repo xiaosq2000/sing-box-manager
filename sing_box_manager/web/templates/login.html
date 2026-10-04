@@ -1,0 +1,150 @@
+{% extends "_base.html" %} {% import "_icons.html" as icons %} {% block title
+%}sing-box manager{% endblock %} {% block shell_modifier %}page-shell--wide{%
+endblock %} {% block content %}
+<h1 class="site-title site-title--center">sing-box manager</h1>
+
+{% if vps_hostname or (vps_info and not vps_info.error) %}
+<section class="card vps-card">
+  {% if vps_hostname %}
+  <div class="vps-item">
+    {{ icons.icon('server', 'vps-item-icon') }}
+    <span class="vps-item-value vps-item-value--strong"
+      >{{ vps_hostname }}</span
+    >
+  </div>
+  {% endif %} {% if vps_info and not vps_info.error and vps_info.location %}
+  <div class="vps-item">
+    {{ icons.icon('map-pin', 'vps-item-icon') }}
+    <span class="vps-item-value">{{ vps_info.location }}</span>
+  </div>
+  {% endif %} {% if vps_info and not vps_info.error %}
+  <div class="vps-item">
+    {{ icons.icon('activity', 'vps-item-icon') }}
+    <span class="vps-item-value"
+      >{{ "%.2f"|format(vps_info.bandwidth_used_gb) }} / {{
+      vps_info.bandwidth_total_gb|int }} GB{% if vps_info.bandwidth_reset_date
+      %} (Resets: {{ vps_info.bandwidth_reset_date }}){% endif %}</span
+    >
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+  <form action="/login" method="post" class="auth-form">
+    <div class="input-group">
+      {{ icons.icon('person', 'input-icon') }}
+      <input
+        type="text"
+        id="username"
+        name="username"
+        placeholder="用户名"
+        required
+        autocomplete="username"
+        class="form-input"
+      />
+    </div>
+    <div class="input-group">
+      {{ icons.icon('lock', 'input-icon') }}
+      <input
+        type="password"
+        id="password"
+        name="password"
+        placeholder="密码"
+        required
+        autocomplete="current-password"
+        class="form-input"
+      />
+    </div>
+    <button type="submit" class="btn btn-primary">
+      {{ icons.icon('login') }} 登录
+    </button>
+  </form>
+</section>
+
+<section class="card install-card">
+  <div class="install-header">
+    {{ icons.icon('terminal') }} One-liner Installation
+  </div>
+  <!-- Without JavaScript every platform's panel stays visible under its own
+             heading, so the page never hides a command it cannot switch to. -->
+  <div class="install-tabs" id="installTabs" hidden>
+    {% for target in install_targets %}
+    <button
+      type="button"
+      class="install-tab"
+      data-os="{{ target.id }}"
+      aria-pressed="false"
+    >
+      {{ target.label }}
+    </button>
+    {% endfor %}
+  </div>
+  {% for target in install_targets %}
+  <div class="install-panel" data-os="{{ target.id }}">
+    <div class="install-os-label">{{ target.label }}</div>
+    <div class="command-row">
+      <div class="command-scroll" tabindex="0" aria-label="安装命令">
+        <code class="command-text">{{ target.command }}</code>
+      </div>
+      <button
+        type="button"
+        class="btn-copy"
+        data-copy-text="{{ target.command }}"
+        data-state="default"
+        aria-label="复制命令"
+      >
+        <span class="copy-icon-state copy-icon-state--default"
+          >{{ icons.icon('copy') }}</span
+        >
+        <span class="copy-icon-state copy-icon-state--success"
+          >{{ icons.icon('check') }}</span
+        >
+        <span class="copy-icon-state copy-icon-state--error"
+          >{{ icons.icon('circle-alert') }}</span
+        >
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+{% endblock %} {% block scripts %}
+<script>
+  // Only now that JS is running does it become safe to collapse the panels
+  // down to one; the tab strip is hidden in the markup for the same reason.
+  const installTabs = document.getElementById("installTabs");
+  const installPanels = document.querySelectorAll(".install-panel");
+  if (installTabs && installPanels.length) {
+    const detectOs = () => {
+      const platform =
+        (navigator.userAgentData && navigator.userAgentData.platform) ||
+        navigator.platform ||
+        "";
+      return /win/i.test(platform) ? "windows" : "unix";
+    };
+
+    const selectOs = (os) => {
+      installPanels.forEach((panel) => {
+        panel.hidden = panel.dataset.os !== os;
+      });
+      installTabs.querySelectorAll(".install-tab").forEach((tab) => {
+        const active = tab.dataset.os === os;
+        tab.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    };
+
+    document.querySelectorAll(".install-os-label").forEach((label) => {
+      label.hidden = true;
+    });
+    installTabs.hidden = false;
+    installTabs.querySelectorAll(".install-tab").forEach((tab) => {
+      tab.addEventListener("click", () => selectOs(tab.dataset.os));
+    });
+    selectOs(detectOs());
+  }
+</script>
+{% endblock %}

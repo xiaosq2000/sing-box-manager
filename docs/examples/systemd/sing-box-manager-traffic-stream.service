@@ -1,0 +1,19 @@
+[Unit]
+Description=sing-box-manager connection stats stream
+After=network-online.target sing-box.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sbm
+Group=sbm
+WorkingDirectory=/opt/sing-box-manager
+StateDirectory=sing-box-manager
+StateDirectoryMode=0750
+ExecStart=/opt/sing-box-manager/.pixi/envs/default/bin/python -m sing_box_manager --config config/inventory/runtime.yaml stats-stream
+Restart=always
+RestartSec=5s
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

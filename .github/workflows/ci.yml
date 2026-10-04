@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR pushes are worth cancelling; a push to main is not, because
+  # cancelling it would leave that commit permanently unvalidated.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          locked: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Check public-file policy
+        run: pixi run python scripts/dev/check-public-tree.py --history
+      - name: Scan Git history for secrets
+        run: bash scripts/dev/check-secrets.sh
+      - name: Check formatting
+        run: |
+          ruff format --check
+          RUST_LOG=warn taplo fmt --check
+          prettier --check --ignore-unknown .
+          bash scripts/dev/run-on-tracked-shell-files.sh shfmt -d
+          unformatted=$(git ls-files -z '*.go' | xargs -0 gofmt -l)
+          if [ -n "$unformatted" ]; then echo "gofmt would change: $unformatted"; exit 1; fi
+        shell: pixi run bash -e {0}
+      - name: Run linters
+        run: |
+          ruff check .
+          git ls-files | grep -v '^third_party/' | xargs codespell --config .codespellrc
+          bash scripts/dev/run-on-tracked-shell-files.sh shellcheck
+          go vet ./...
+        shell: pixi run bash -e {0}
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          locked: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - run: pixi run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          lfs: true
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          locked: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      # Fetch both pinned builds; real-binary tests must not skip in CI.
+      - run: pixi run fetch-sing-box
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: pixi run fetch-sing-box-server
+      - run: pixi run test
+        env:
+          SBM_REQUIRE_SING_BOX: "1"
+          SBM_TEST_SING_BOX_SERVER: ${{ github.workspace }}/.cache/sing-box-manager/server/sing-box
+      - run: pixi run test-go
+      - name: Build sbc for each release platform
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/sbc
+          done
+          go build -ldflags "-X main.version=ci" -o "$RUNNER_TEMP/sbc" ./cmd/sbc
+          test "$("$RUNNER_TEMP/sbc" version)" = "sbc ci"
+        shell: pixi run bash -e {0}

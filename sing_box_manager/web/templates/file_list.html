@@ -1,0 +1,170 @@
+{% extends "_base.html" %} {% import "_icons.html" as icons %} {% macro
+render_file_icon(kind, name) -%} {{ icons.icon(name, 'file-icon') }} {%-
+endmacro %} {% block title %}文件{% endblock %} {% block shell_modifier
+%}page-shell--wide{% endblock %} {% block content %}
+<div class="page-header">
+  <h1 class="site-title">文件</h1>
+  <div class="page-actions">
+    {% if is_admin %}
+    <a class="btn-icon" href="/admin" aria-label="管理员流量">
+      {{ icons.icon('activity') }}
+    </a>
+    {% endif %}
+    <a class="btn-icon" href="/" aria-label="首页">
+      {{ icons.icon('home') }}
+    </a>
+  </div>
+</div>
+
+{% if traffic_stats %}
+<section class="card traffic-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('activity') }} <span>本月流量</span>
+    </div>
+    <span class="traffic-cycle">{{ traffic_stats.cycle_label }}</span>
+  </div>
+  <div class="traffic-grid">
+    <div class="traffic-metric">
+      <span class="traffic-label">上传</span>
+      <strong class="traffic-value">{{ traffic_stats.upload }}</strong>
+    </div>
+    <div class="traffic-metric">
+      <span class="traffic-label">下载</span>
+      <strong class="traffic-value">{{ traffic_stats.download }}</strong>
+    </div>
+    <div class="traffic-metric traffic-metric--total">
+      <span class="traffic-label">总计</span>
+      <strong class="traffic-value">{{ traffic_stats.total }}</strong>
+    </div>
+    {% if traffic_stats.plan_usage %}
+    <div class="traffic-metric traffic-metric--plan">
+      <span class="traffic-label">套餐占用</span>
+      <strong class="traffic-value">{{ traffic_stats.plan_usage }}</strong>
+    </div>
+    {% endif %}
+  </div>
+  <p class="traffic-footnote">最近更新：{{ traffic_stats.last_updated }}</p>
+</section>
+{% endif %} {% if subscription_url %}
+<section class="card subscription-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('lock') }} <span>订阅链接</span>
+    </div>
+  </div>
+  <div class="command-row">
+    <div class="command-scroll" tabindex="0" aria-label="订阅链接">
+      <code class="command-text">{{ subscription_url }}</code>
+    </div>
+    <button
+      type="button"
+      class="btn-copy"
+      data-copy-text="{{ subscription_url }}"
+      data-state="default"
+      aria-label="复制链接"
+    >
+      <span class="copy-icon-state copy-icon-state--default"
+        >{{ icons.icon('copy') }}</span
+      >
+      <span class="copy-icon-state copy-icon-state--success"
+        >{{ icons.icon('check') }}</span
+      >
+      <span class="copy-icon-state copy-icon-state--error"
+        >{{ icons.icon('circle-alert') }}</span
+      >
+    </button>
+  </div>
+  <p class="traffic-footnote">
+    链接就是凭据，不要分享。换新链接后，旧链接立即失效，每台设备都要改用新链接。
+  </p>
+  <p class="traffic-footnote">
+    安装
+    sbc：运行对应系统的命令，按提示粘贴链接。已装旧版客户端的机器会自动迁移。
+    Linux 或 macOS 上也可运行 <code>proxy upgrade</code>。
+  </p>
+  {% for target in install_targets %}
+  <p class="traffic-footnote">{{ target.label }}</p>
+  <div class="command-row">
+    <div class="command-scroll" tabindex="0" aria-label="安装命令">
+      <code class="command-text">{{ target.command }}</code>
+    </div>
+    <button
+      type="button"
+      class="btn-copy"
+      data-copy-text="{{ target.command }}"
+      data-state="default"
+      aria-label="复制命令"
+    >
+      <span class="copy-icon-state copy-icon-state--default"
+        >{{ icons.icon('copy') }}</span
+      >
+      <span class="copy-icon-state copy-icon-state--success"
+        >{{ icons.icon('check') }}</span
+      >
+      <span class="copy-icon-state copy-icon-state--error"
+        >{{ icons.icon('circle-alert') }}</span
+      >
+    </button>
+  </div>
+  {% endfor %}
+  <form method="post" action="/subscription/reset">
+    <button type="submit" class="btn">换新链接</button>
+  </form>
+</section>
+{% endif %} {% if domain_rows %}
+<section class="card admin-table-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('chart-bar') }} <span>近 30 天域名</span>
+    </div>
+  </div>
+  <div class="admin-table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>域名</th>
+          <th>总计</th>
+          <th>占比</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in domain_rows %}
+        <tr class="{{ 'admin-row--reserved' if row.reserved else '' }}">
+          <td>{{ row.domain }}</td>
+          <td>{{ row.total }}</td>
+          <td>{{ row.share }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "_domain_note.html" %}
+</section>
+{% endif %} {% if files %}
+<section class="card file-list">
+  {% for file in files %}
+  <a class="file-row" href="/files/{{ file.name }}" download>
+    <span
+      class="file-icon-pair {{ file.icon_class }}"
+      title="{{ file.platform_label }}"
+      aria-hidden="true"
+    >
+      <span class="file-icon-cell">
+        {{ render_file_icon(file.icon_left_kind, file.icon_left_name) }}
+      </span>
+      <span class="file-icon-cell">
+        {{ render_file_icon(file.icon_right_kind, file.icon_right_name) }}
+      </span>
+    </span>
+    <span class="file-name">{{ file.name }}</span>
+    {{ icons.icon('download', 'download-icon') }}
+  </a>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card empty-card">
+  {{ icons.icon('inventory_2') }}
+  <p>暂无可用文件</p>
+</section>
+{% endif %} {% endblock %}

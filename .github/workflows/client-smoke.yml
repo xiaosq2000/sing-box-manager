@@ -1,0 +1,41 @@
+name: Client smoke
+
+# Split out of ci.yml so these run only when the client scripts they exercise
+# change. Native macOS checks do not add coverage for docs or Python-only changes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/client-smoke.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/client-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR pushes are worth cancelling; a push to main is not, because
+  # cancelling it would leave that commit permanently unvalidated.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The suite covers the macOS code paths on Linux by shimming uname, launchctl
+  # and networksetup onto PATH. This job checks what a shim cannot: the stock
+  # bash 3.2, the BSD userland, dscl, and real networksetup output. It does not
+  # use pixi, whose lockfile targets linux-64 only.
+  macos-smoke:
+    runs-on: macos-latest
+    # The smoke script reads a child process to completion, so a child that
+    # never exits hangs the job until the 6-hour default -- billed at the
+    # runner's multiplier the whole way. It finishes in well under a minute.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: bash scripts/dev/macos-smoke.sh

@@ -1,0 +1,112 @@
+name: sbc
+
+# ci.yml runs the Go checks on Linux through pixi. This workflow adds macOS,
+# and the end-to-end test on Linux, macOS and Windows. These jobs run only when
+# sbc, its installer or the
+# sing-box it installs changes. It does not use pixi, whose lockfile targets
+# linux-64 only; setup-go installs the Go version go.mod names.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "sing_box_manager/web/client/install.sh"
+      - "sing_box_manager/web/client/install.ps1"
+      - "scripts/dev/test-install-ps1.ps1"
+      - "config/inventory/example.yaml"
+      - ".github/workflows/sbc.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "sing_box_manager/web/client/install.sh"
+      - "sing_box_manager/web/client/install.ps1"
+      - "scripts/dev/test-install-ps1.ps1"
+      - "config/inventory/example.yaml"
+      - ".github/workflows/sbc.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR pushes are worth cancelling; a push to main is not, because
+  # cancelling it would leave that commit permanently unvalidated.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "0"
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          # sbc has no module dependencies, so there is no go.sum to key a
+          # cache on.
+          cache: false
+      - run: go vet ./...
+      - run: go test ./...
+      # The unit tests stand sing-box in with shell scripts, so Windows gets
+      # the compile check here and the end-to-end test below.
+      - run: GOOS=windows go vet ./...
+
+  e2e:
+    # Installs sbc through the hosted installers and drives the real service
+    # manager on disposable runners.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: "0"
+      GOTOOLCHAIN: local
+      SBC_E2E: "1"
+      # The test fetches the pinned sing-box from GitHub's API.
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Start a systemd user manager
+        if: runner.os == 'Linux'
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          runtime_dir="/run/user/$(id -u)"
+          echo "XDG_RUNTIME_DIR=$runtime_dir" >> "$GITHUB_ENV"
+          for _ in $(seq 30); do
+            if XDG_RUNTIME_DIR=$runtime_dir systemctl --user show-environment >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the systemd user manager did not start" >&2
+          exit 1
+      - name: Test Windows settings with a disposable registry key
+        if: runner.os == 'Windows'
+        run: go test -count=1 ./internal/winsettings ./internal/desktop ./internal/powershell
+      - name: Test bootstrapper fixtures on Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/dev/test-install-ps1.ps1
+      - name: Test bootstrapper fixtures on PowerShell 7
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: ./scripts/dev/test-install-ps1.ps1
+      - run: go test -tags e2e -count=1 -v ./internal/e2e

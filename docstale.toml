@@ -1,0 +1,133 @@
+# Maps each document to the source paths that may require a review.
+# Keep the mappings aligned with the context table in AGENTS.md.
+# Run `pixi run docstale check`, and stamp each document you review; agent
+# hooks report documents that go stale during a session.
+
+[sets]
+cli = [
+  "sing_box_manager/cli.py",
+  "sing_box_manager/__main__.py",
+  "pixi.toml",
+  "pyproject.toml",
+]
+client-install = [
+  "scripts/client-install.sh",
+  "scripts/client-uninstall.sh",
+  "scripts/setup.sh",
+  "scripts/lib/platform.sh",
+  "scripts/lib/system-proxy.sh",
+  "scripts/lib/ui.sh",
+  "sing_box_manager/web/client/install.sh",
+]
+harness = [
+  "docstale.toml",
+  ".claude/agents/",
+  ".claude/settings.json",
+  ".codex/hooks.json",
+  ".github/workflows/",
+  "scripts/dev/",
+  ".gitleaks.toml",
+  ".gitignore",
+  "config/.gitignore",
+  "tests/test_public_repository.py",
+  "tests/test_shell_compat.py",
+  "tests/test_powershell_compat.py",
+  "tests/test_sing_box_114.py",
+]
+traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
+tun = ["scripts/lib/tun.sh"]
+
+[documents]
+"README.md" = [
+  "@cli",
+  "go.mod",
+  "sing_box_manager/settings.py",
+  "sing_box_manager/release/",
+]
+
+"AGENTS.md" = ["@cli", "@harness"]
+
+"CONTRIBUTING.md" = ["@cli", "@harness", ".pre-commit-config.yaml"]
+
+"SECURITY.md" = ["@harness", ".sops.example.yaml"]
+
+"docs/DEVELOPMENT.md" = [
+  "@cli",
+  "@harness",
+  "@traffic",
+  "tests/test_traffic_*.py",
+  "tests/test_connection*.py",
+  "tests/test_desktop_config.py",
+  "tests/test_m3_profiles.py",
+  "tests/test_m3_runtime.py",
+  "tests/test_server_install.py",
+  "tests/fetch_sing_box.py",
+  "go.mod",
+  "cmd/",
+  "internal/",
+]
+
+"docs/SECRET_HANDLING.md" = [
+  "sing_box_manager/models.py",
+  "sing_box_manager/settings.py",
+  "config/inventory/",
+  "sing_box_manager/release/profiles.py",
+  "sing_box_manager/release/renderers.py",
+  "sing_box_manager/desktop_config.py",
+  ".sops.example.yaml",
+  "config/.gitignore",
+]
+
+"docs/RELEASE_AND_PORTAL.md" = [
+  "@traffic",
+  "sing_box_manager/release/",
+  "sing_box_manager/desktop_config.py",
+  "sing_box_manager/subscription.py",
+  "sing_box_manager/web/",
+  "sing_box_manager/kiwivm.py",
+  "sing_box_manager/proto/",
+]
+
+"docs/*_DEPLOYMENT.md" = [
+  "sing_box_manager/deploy.py",
+  "sing_box_manager/ssh.py",
+  "sing_box_manager/provision.py",
+  "sing_box_manager/remote_config.py",
+  "sing_box_manager/runtime_env.py",
+  "scripts/server-install.sh",
+  "scripts/server-uninstall.sh",
+  "scripts/*.service",
+  "docs/examples/",
+]
+
+"docs/README_LINUX.md" = ["@client-install", "@tun"]
+
+"docs/README_MACOS.md" = ["@client-install"]
+
+"docs/TUN_MODE.md" = [
+  "@tun",
+  "scripts/setup.sh",
+  "sing_box_manager/release/profiles.py",
+]
+
+"docs/README_WIN.md" = [
+  "internal/cli/",
+  "internal/desktop/",
+  "internal/winsettings/",
+  "internal/powershell/",
+  "internal/paths/",
+  "internal/service/",
+  "sing_box_manager/web/client/install.ps1",
+]
+
+"docs/REFACTOR_SPEC.md" = [
+  "sing_box_manager/release/",
+  "sing_box_manager/settings.py",
+  "sing_box_manager/desktop_config.py",
+  "sing_box_manager/deploy.py",
+  "sing_box_manager/provision.py",
+  "scripts/server-install.sh",
+  "scripts/sing-box.service",
+  "cmd/",
+  "internal/",
+]

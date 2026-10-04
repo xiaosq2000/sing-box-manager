@@ -1,0 +1,51 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.3.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: []
+  - repo: local
+    hooks:
+      - id: public-files
+        name: reject operational files in public source control
+        entry: pixi run python scripts/dev/check-public-tree.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: secrets
+        name: scan staged changes for secrets (redacted)
+        entry: bash scripts/dev/check-secrets.sh --staged
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true
+      - id: format
+        name: format (ruff, taplo, prettier, shfmt, gofmt)
+        entry: pixi run -e style format
+        language: system
+        pass_filenames: false
+        files: \.(py|toml|json|md|ya?ml|sh|js|jsx|ts|tsx|css|scss|less|html|graphql|vue|go)$
+      - id: lint
+        name: lint (ruff, codespell, shellcheck, go vet)
+        entry: pixi run -e style lint
+        language: system
+        pass_filenames: false
+      - id: typecheck
+        name: typecheck (ty)
+        entry: pixi run typecheck
+        language: system
+        pass_filenames: false

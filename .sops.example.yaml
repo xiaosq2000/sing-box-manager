@@ -1,0 +1,5 @@
+# Copy to .sops.yaml (gitignored), then replace the placeholder with your own
+# public Age recipient before encrypting an inventory. Never put a private key here.
+creation_rules:
+  - path_regex: \.sops\.yaml$
+    age: REPLACE_WITH_YOUR_PUBLIC_AGE_RECIPIENT

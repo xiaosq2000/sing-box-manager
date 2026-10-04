@@ -1,0 +1,33 @@
+title = "Public source secret scanning"
+
+[extend]
+useDefault = true
+
+# These exceptions require both the exact fixture path and a known synthetic
+# value. Do not exempt entire test directories or production key formats.
+# Target a rule: global path allowlists can skip a file before value checks.
+[[allowlists]]
+condition = "AND"
+description = "Public Ed25519 verification key derived from test seed bytes 0..31"
+paths = ['''(^|/)internal/trust/trust_test\.go$''']
+regexTarget = "secret"
+regexes = ['''^A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=$''']
+targetRules = ["generic-api-key"]
+
+[[allowlists]]
+condition = "AND"
+description = "Literal synthetic protocol credentials in fixture tests"
+paths = ['''(^|/)tests/test_(config_loader|renderers|traffic_stats)\.py$''']
+regexTarget = "secret"
+regexes = [
+  '''^(hy2-obfs-secret|bob-hysteria2-secret|carol-hysteria2-secret)(\\n)?$''',
+]
+targetRules = ["generic-api-key"]
+
+[[allowlists]]
+condition = "AND"
+description = "Synthetic API key used to test error-message redaction"
+paths = ['''(^|/)tests/test_kiwivm\.py$''']
+regexTarget = "secret"
+regexes = ['''^private-api-key-0123456789$''']
+targetRules = ["generic-api-key"]

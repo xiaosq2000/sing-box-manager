@@ -1,0 +1,163 @@
+{% extends "_base.html" %} {% import "_icons.html" as icons %} {% block title
+%}管理员流量{% endblock %} {% block shell_modifier %}page-shell--admin{%
+endblock %} {% block content %}
+<div class="page-header">
+  <h1 class="site-title">管理员流量</h1>
+  <div class="page-actions">
+    <a class="btn-icon" href="/files" aria-label="文件">
+      {{ icons.icon('download') }}
+    </a>
+    <a class="btn-icon" href="/" aria-label="首页">
+      {{ icons.icon('home') }}
+    </a>
+  </div>
+</div>
+
+{% if not traffic_stats_available %}
+<section class="card empty-card">
+  {{ icons.icon('activity') }}
+  <p>流量统计未启用</p>
+</section>
+{% elif admin_traffic_stats %}
+<section class="card traffic-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('activity') }} <span>本月总流量</span>
+    </div>
+    <span class="traffic-cycle">{{ admin_traffic_stats.cycle_label }}</span>
+  </div>
+  <div class="traffic-grid">
+    <div class="traffic-metric">
+      <span class="traffic-label">上传</span>
+      <strong class="traffic-value">{{ admin_traffic_stats.upload }}</strong>
+    </div>
+    <div class="traffic-metric">
+      <span class="traffic-label">下载</span>
+      <strong class="traffic-value">{{ admin_traffic_stats.download }}</strong>
+    </div>
+    <div class="traffic-metric traffic-metric--total">
+      <span class="traffic-label">总计</span>
+      <strong class="traffic-value">{{ admin_traffic_stats.total }}</strong>
+    </div>
+    {% if admin_traffic_stats.plan_usage %}
+    <div class="traffic-metric traffic-metric--plan">
+      <span class="traffic-label">套餐占用</span>
+      <strong class="traffic-value"
+        >{{ admin_traffic_stats.plan_usage }}</strong
+      >
+    </div>
+    {% endif %}
+  </div>
+  <p class="traffic-footnote">
+    最近更新：{{ admin_traffic_stats.last_updated }}
+  </p>
+</section>
+
+<section class="card chart-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('chart-bar') }} <span>用户排行</span>
+    </div>
+  </div>
+  {{ charts.ranking | safe }}
+</section>
+
+<section class="card chart-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('trending-up') }} <span>流量趋势</span>
+    </div>
+    <div class="range-pills">
+      {% for option in range_options %}
+      <a
+        class="range-pill{% if option.active %} range-pill--active{% endif %}"
+        href="{{ option.url }}"
+        >{{ option.label }}</a
+      >
+      {% endfor %}
+    </div>
+  </div>
+  {{ charts.trend | safe }}
+</section>
+
+<section class="card chart-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('chart-pie') }} <span>协议分布</span>
+    </div>
+  </div>
+  {{ charts.protocols | safe }}
+</section>
+
+<section class="card chart-card">
+  <div class="traffic-header">
+    <div class="traffic-title">
+      {{ icons.icon('chart-bar') }} <span>域名排行</span>
+    </div>
+    <a class="range-pill" href="/admin/connections">实时连接</a>
+  </div>
+  {{ charts.domains | safe }} {% include "_domain_note.html" %}
+</section>
+
+{% if domain_rows %}
+<section class="card admin-table-card">
+  <div class="admin-table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>域名</th>
+          <th>上传</th>
+          <th>下载</th>
+          <th>总计</th>
+          <th>占比</th>
+          <th>连接数</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in domain_rows %}
+        <tr class="{{ 'admin-row--reserved' if row.reserved else '' }}">
+          <td>{{ row.domain }}</td>
+          <td>{{ row.upload }}</td>
+          <td>{{ row.download }}</td>
+          <td>{{ row.total }}</td>
+          <td>{{ row.share }}</td>
+          <td>{{ row.connections }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card admin-table-card">
+  <div class="admin-table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>用户</th>
+          <th>上传</th>
+          <th>下载</th>
+          <th>总计</th>
+          <th>最近更新</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in admin_traffic_stats.users %}
+        <tr class="admin-user-row">
+          <td class="admin-username">
+            <a class="admin-user-link" href="{{ user.detail_url }}">
+              {{ user.username }} {{ icons.icon('chevron-right') }}
+            </a>
+          </td>
+          <td>{{ user.upload }}</td>
+          <td>{{ user.download }}</td>
+          <td>{{ user.total }}</td>
+          <td>{{ user.last_updated }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %} {% endblock %}
