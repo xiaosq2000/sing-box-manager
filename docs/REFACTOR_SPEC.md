@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-04.
+Checked on 2026-10-05.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -146,18 +146,18 @@ current location.
 
 ## Milestones
 
-| Milestone | Name                                       | Status                             |
-| --------- | ------------------------------------------ | ---------------------------------- |
-| M0        | Security fixes                             | Done                               |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done                               |
-| M1b       | Linux TUN in the client CLI                | Deferred                           |
-| M2        | Client CLI for Windows                     | Done                               |
-| M3        | Configs in code, one server process        | Implemented; VPS migration pending |
-| M4        | Control plane and subscriptions            | Planned                            |
-| M5        | Node agent and traffic                     | Planned                            |
-| M6        | Multiple nodes                             | Planned                            |
-| M7        | Invites, plans and quota enforcement       | Planned                            |
-| M8        | Paid plans                                 | Planned                            |
+| Milestone | Name                                       | Status   |
+| --------- | ------------------------------------------ | -------- |
+| M0        | Security fixes                             | Done     |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done     |
+| M1b       | Linux TUN in the client CLI                | Deferred |
+| M2        | Client CLI for Windows                     | Done     |
+| M3        | Configs in code, one server process        | Done     |
+| M4        | Control plane and subscriptions            | Planned  |
+| M5        | Node agent and traffic                     | Planned  |
+| M6        | Multiple nodes                             | Planned  |
+| M7        | Invites, plans and quota enforcement       | Planned  |
+| M8        | Paid plans                                 | Planned  |
 
 ### M0: Security fixes
 
@@ -433,8 +433,12 @@ usable. Old listener keys are accepted for one release, using the Trojan address
 new inventories use `api_listen` and `connection_api_listen`.
 
 Done when rendered configs pass `sing-box check`, a golden-output test covers each
-profile, and the VPS runs one sing-box process. The last condition requires a
-separately authorized release and deploy; no live migration has been performed.
+profile, and the VPS runs one sing-box process.
+
+The separately authorized live migration is complete: the VPS runs one
+`sing-box.service`, the three legacy protocol units are inactive, and the portal
+and both traffic collectors are healthy. An existing subscription refreshed
+successfully, and every protocol available to that client passed connection tests.
 
 ### M4: Control plane and subscriptions
 
