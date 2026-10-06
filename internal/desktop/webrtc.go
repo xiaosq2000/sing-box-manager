@@ -14,72 +14,10 @@ const (
 	macSafariPFRule   = "block drop out proto udp to any port {3478, 19302, 5349}\n"
 )
 
-var windowsBrowserKeys = []string{
-	winsettings.ChromePolicyKey,
-	winsettings.EdgePolicyKey,
-	winsettings.BravePolicyKey,
-}
-
 var macBrowserDomains = []string{
 	"com.google.Chrome",
 	"com.microsoft.Edge",
 	"com.brave.Browser",
-}
-
-// applyWindowsBrowserPolicies configures Chrome, Edge, Brave and Firefox policies under HKCU
-// and updates Firefox user.js profiles.
-func applyWindowsBrowserPolicies(reg winsettings.Registry) {
-	for _, key := range windowsBrowserKeys {
-		current, err := reg.Read(key, []string{winsettings.WebRtcPolicyName})
-		if err == nil {
-			val := current[winsettings.WebRtcPolicyName].Text
-			if val == "" || val == winsettings.WebRtcDisableNonProxiedUDP {
-				_ = reg.Apply(key, map[string]winsettings.Value{
-					winsettings.WebRtcPolicyName: {Text: winsettings.WebRtcDisableNonProxiedUDP, Kind: "String"},
-				}, "")
-			}
-		}
-	}
-	current, err := reg.Read(winsettings.FirefoxPolicyKey, winsettings.FirefoxWebRtcPrefs)
-	if err == nil {
-		toApply := make(map[string]winsettings.Value)
-		for _, pref := range winsettings.FirefoxWebRtcPrefs {
-			val := current[pref].Text
-			if val == "" || val == "true" {
-				toApply[pref] = winsettings.Value{Text: "true", Kind: "String"}
-			}
-		}
-		if len(toApply) > 0 {
-			_ = reg.Apply(winsettings.FirefoxPolicyKey, toApply, "")
-		}
-	}
-	_ = applyFirefoxWebRTC("windows")
-}
-
-// revertWindowsBrowserPolicies removes WebRTC leak prevention policies set by sbc under HKCU
-// and restores Firefox user.js profiles.
-func revertWindowsBrowserPolicies(reg winsettings.Registry) {
-	for _, key := range windowsBrowserKeys {
-		current, err := reg.Read(key, []string{winsettings.WebRtcPolicyName})
-		if err == nil && current[winsettings.WebRtcPolicyName].Text == winsettings.WebRtcDisableNonProxiedUDP {
-			_ = reg.Apply(key, map[string]winsettings.Value{
-				winsettings.WebRtcPolicyName: {},
-			}, "")
-		}
-	}
-	current, err := reg.Read(winsettings.FirefoxPolicyKey, winsettings.FirefoxWebRtcPrefs)
-	if err == nil {
-		toDelete := make(map[string]winsettings.Value)
-		for _, pref := range winsettings.FirefoxWebRtcPrefs {
-			if current[pref].Text == "true" {
-				toDelete[pref] = winsettings.Value{}
-			}
-		}
-		if len(toDelete) > 0 {
-			_ = reg.Apply(winsettings.FirefoxPolicyKey, toDelete, "")
-		}
-	}
-	_ = revertFirefoxWebRTC("windows")
 }
 
 // setMacBrowserPolicies configures WebRTC policy for Chrome, Edge and Brave on macOS.

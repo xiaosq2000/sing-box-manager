@@ -71,11 +71,18 @@ changes. The unit tests stand sing-box in with shell scripts, so Windows gets a
 `GOOS=windows go vet` there and the end-to-end test below; the `internal/service`
 tests cover the scheduled tasks with a recorded `schtasks.exe` and PowerShell.
 Windows settings tests use an in-memory registry on Linux and macOS, covering
-environment variables, desktop proxy toggles, and browser WebRTC leak prevention policies.
-The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`. Its native
-registry test uses a disposable HKCU key to check Unicode, value types, deletion
-and rollback after a write fails. It leaves the actual environment and desktop
-settings alone.
+environment variables and desktop proxy toggles. Browser-policy fixtures separate
+registry keys and cover permission failures, declined approval, read-back
+verification, ownership, interrupted cleanup, persistent opt-out and repair while
+the proxy is already on. CLI tests verify that failed browser cleanup leaves the
+client and proxy available for retry. Firefox fixtures use temporary profiles.
+The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
+Native registry tests use disposable keys, not browser or environment keys. They
+check registry types and rollback, and run the fixed WebRTC payload in a disposable
+namespace to check ownership and cleanup. These tests do not exercise the UAC dialog.
+Validate approval, cancellation and different-administrator hive targeting from an
+unelevated Windows account: an elevated runner can hide the `Access is denied`
+failure under `HKCU\Software\Policies`.
 
 `internal/e2e` installs `sbc` through `install.sh` on Unix and the hosted
 `/install.ps1` on Windows, using a stand-in portal and the real systemd, launchd
@@ -89,8 +96,21 @@ installer runs with `Restricted` execution policy, and the test checks that it
 leaves the policy unchanged. `internal/powershell` clears `PSModulePath` when
 starting Windows PowerShell to avoid inheriting incompatible PowerShell 7 modules.
 Windows also checks user PATH, persistent proxy variables, current-session
-PowerShell output, desktop switching and port changes. It restores the runner's
-settings even after a failure.
+PowerShell output, desktop switching and port changes. It checks that browser
+protection survives proxy toggles, explicit WebRTC opt-out persists until re-enabled,
+and uninstall removes owned policies and ownership records. Its Chrome regression check
+removes the WebRTC policy while the desktop proxy remains on, then runs `sbc on`
+to repair it. Fresh headless Chrome profiles use loopback HTTP and STUN fixtures:
+the unprotected control must gather a fixture server-reflexive candidate; the
+protected run must complete ICE gathering without direct STUN. The runner needs
+Chrome installed. This IPv4 UDP check runs only in the gated Windows lifecycle.
+The fixture responder alone can be checked without changing host settings:
+
+```sh
+pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTCSTUNFixture$' -count=1
+```
+
+Windows restores the runner's registry settings even after a failure.
 The stand-in's protocols reach a local sing-box that sends traffic out directly. The
 test changes the current user's services, so it builds only with `-tags e2e`, runs
 only with `SBC_E2E=1`, and refuses to run where `sbc` is installed. The `sbc`

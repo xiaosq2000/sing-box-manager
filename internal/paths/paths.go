@@ -86,6 +86,9 @@ func (l Layout) EnvFile() string { return filepath.Join(l.Config, "env.sh") }
 // along with the shells.
 func (l Layout) DesktopFile() string { return filepath.Join(l.Config, "desktop") }
 
+// WebRTCFile records an explicit opt-out from Windows browser policy setup.
+func (l Layout) WebRTCFile() string { return filepath.Join(l.Config, "webrtc-mode") }
+
 // UpgradeHint exists while a newer sbc or sing-box is available.
 func (l Layout) UpgradeHint() string { return filepath.Join(l.Config, "upgrade-available") }
 

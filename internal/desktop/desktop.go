@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
+	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
@@ -82,7 +83,16 @@ var ErrUnsupported = i18n.New("sbc sets the desktop proxy in GNOME on Linux, on 
 func New(goos string, getenv func(string) string, run Runner) (Desktop, error) {
 	switch goos {
 	case "windows":
-		return &Windows{Registry: winsettings.PowerShell{}}, nil
+		layout, err := paths.Default()
+		if err != nil {
+			return nil, err
+		}
+		registry := winsettings.PowerShell{}
+		return &Windows{Registry: registry, Privacy: &winsettings.WebRTC{
+			Registry: registry, StateFile: layout.WebRTCFile(),
+			ApplyProfiles:  func() error { return applyFirefoxWebRTC("windows") },
+			RevertProfiles: func() error { return revertFirefoxWebRTC("windows") },
+		}}, nil
 	case "linux":
 		if !isGNOME(getenv) {
 			return nil, ErrUnsupported

@@ -90,6 +90,7 @@ func TestGNOMEStateTellsOursFromSomeoneElses(t *testing.T) {
 }
 
 func TestGNOMEOnSwitchesTheModeLastAndOffKeepsTheHosts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	settings := newGSettings(map[string]string{})
 	gnome := &GNOME{Run: settings.run}
 
@@ -170,6 +171,7 @@ func TestMacOSFindsTheServiceOfTheDefaultRoute(t *testing.T) {
 }
 
 func TestMacOSStateAndChanges(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	mac := &fakeMac{proxies: map[string]string{}}
 	desktop := &MacOS{Service: "Wi-Fi", Run: mac.run}
 	if state, _ := desktop.State(1080); state != Off {

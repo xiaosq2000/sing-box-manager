@@ -16,13 +16,17 @@ import (
 func prepareWindowsSettings(t *testing.T) {
 	t.Helper()
 	registry := winsettings.PowerShell{}
+	owned, err := registry.Read(winsettings.WebRTCMetadataKey, webRTCOwnershipNames())
+	if err != nil || len(owned) != 0 {
+		t.Fatalf("WebRTC ownership state exists here; use a clean disposable runner: %v", err)
+	}
 	for key, names := range map[string][]string{
 		winsettings.EnvironmentKey:   {"HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "SOCKS_PROXY", "ALL_PROXY", "NO_PROXY", "Path"},
 		winsettings.InternetKey:      {"ProxyEnable", "ProxyServer", "ProxyOverride", "AutoConfigURL"},
 		winsettings.ChromePolicyKey:  {winsettings.WebRtcPolicyName},
 		winsettings.EdgePolicyKey:    {winsettings.WebRtcPolicyName},
 		winsettings.BravePolicyKey:   {winsettings.WebRtcPolicyName},
-		winsettings.FirefoxPolicyKey: {winsettings.FirefoxProxyOnlyName},
+		winsettings.FirefoxPolicyKey: winsettings.FirefoxWebRtcPrefs,
 	} {
 		saved, err := registry.Read(key, names)
 		if err != nil {
@@ -73,7 +77,10 @@ func checkWindowsSwitches(t *testing.T, layout paths.Layout) {
 		"& '"+strings.ReplaceAll(sbc, "'", "''")+"' env | Invoke-Expression; [Console]::Write($env:HTTP_PROXY)"), proxy.String())
 	run(t, nil, sbc, "desktop", "on")
 	expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
+	checkWindowsBrowserPolicies(t, true)
+	checkWindowsWebRTC(t, sbc)
 	run(t, nil, sbc, "off")
+	checkWindowsBrowserPolicies(t, true)
 	values, err = registry.Read(winsettings.EnvironmentKey, []string{"HTTP_PROXY"})
 	if err != nil || len(values) != 0 {
 		t.Fatalf("off left user environment: %v", err)
@@ -82,6 +89,15 @@ func checkWindowsSwitches(t *testing.T, layout paths.Layout) {
 	expect(t, run(t, nil, sbc, "status"), "service:  running")
 	run(t, nil, sbc, "on")
 	expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
+	checkWindowsBrowserPolicies(t, true)
+	// Explicit reset persists across proxy toggles; only explicit enable restores it.
+	run(t, nil, sbc, "webrtc", "off")
+	checkWindowsBrowserPolicies(t, false)
+	run(t, nil, sbc, "off")
+	run(t, nil, sbc, "on")
+	checkWindowsBrowserPolicies(t, false)
+	run(t, nil, sbc, "webrtc", "on")
+	checkWindowsBrowserPolicies(t, true)
 	// Port changes must move both desktop and environment with the running proxy.
 	oldPort := proxy.Port()
 	port := freePort(t)
@@ -111,6 +127,53 @@ func checkWindowsSettingsRemoved(t *testing.T, layout paths.Layout) {
 	values, err = registry.Read(winsettings.InternetKey, []string{"ProxyEnable"})
 	if err != nil || values["ProxyEnable"].Text != "0" {
 		t.Fatalf("uninstall left desktop proxy enabled: %v", err)
+	}
+	checkWindowsBrowserPolicies(t, false)
+	owned, err := registry.Read(winsettings.WebRTCMetadataKey, webRTCOwnershipNames())
+	if err != nil || len(owned) != 0 {
+		t.Fatalf("uninstall left WebRTC ownership records: %v", err)
+	}
+}
+
+func webRTCOwnershipNames() []string {
+	return []string{
+		winsettings.WebRTCChromeOwnerName, winsettings.WebRTCEdgeOwnerName,
+		winsettings.WebRTCBraveOwnerName, winsettings.WebRTCFirefoxNoHostName,
+		winsettings.WebRTCFirefoxAddressName, winsettings.WebRTCFirefoxProxyName,
+		winsettings.WebRTCFirefoxBehindName,
+	}
+}
+
+func checkWindowsBrowserPolicies(t *testing.T, enabled bool) {
+	t.Helper()
+	registry := winsettings.PowerShell{}
+	policies := map[string]map[string]winsettings.Value{}
+	for _, key := range []string{winsettings.ChromePolicyKey, winsettings.EdgePolicyKey, winsettings.BravePolicyKey} {
+		policies[key] = map[string]winsettings.Value{
+			winsettings.WebRtcPolicyName: {Text: winsettings.WebRtcDisableNonProxiedUDP, Kind: "String"},
+		}
+	}
+	policies[winsettings.FirefoxPolicyKey] = map[string]winsettings.Value{}
+	for _, name := range winsettings.FirefoxWebRtcPrefs {
+		policies[winsettings.FirefoxPolicyKey][name] = winsettings.Value{Text: "true", Kind: "String"}
+	}
+	for key, expected := range policies {
+		names := make([]string, 0, len(expected))
+		for name := range expected {
+			names = append(names, name)
+		}
+		actual, err := registry.Read(key, names)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, want := range expected {
+			if !enabled {
+				want = winsettings.Value{}
+			}
+			if actual[name] != want {
+				t.Errorf("HKCU\\%s: %s = %+v, want %+v", key, name, actual[name], want)
+			}
+		}
 	}
 }
 

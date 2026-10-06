@@ -49,7 +49,10 @@ user_pref("browser.tabs.warnOnClose", false);
 	}
 
 	// 1. Discovery
-	profiles := findFirefoxProfiles(tempDir)
+	profiles, err := findFirefoxProfiles(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d: %v", len(profiles), profiles)
 	}
@@ -136,6 +139,36 @@ func TestFirefoxProfilesPreservesForeignPreference(t *testing.T) {
 	contentAfter, _ := os.ReadFile(filepath.Join(profile, "user.js"))
 	if string(contentAfter) != foreignUserJS {
 		t.Fatalf("foreign preference modified after revert: %s", string(contentAfter))
+	}
+}
+
+func TestFirefoxProfileFailuresAreReported(t *testing.T) {
+	base := t.TempDir()
+	profile := filepath.Join(base, "Profiles", "fixture")
+	// A directory at the file path gives a portable read failure, including
+	// when tests run as an administrator or root.
+	if err := os.MkdirAll(filepath.Join(profile, "user.js"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyFirefoxProfiles(base); err == nil {
+		t.Fatal("setup ignored an unreadable user.js")
+	}
+	if err := revertFirefoxProfiles(base); err == nil {
+		t.Fatal("cleanup reported success without reading user.js")
+	}
+	if err := writeFirefoxUserJS(filepath.Join(profile, "user.js"), []byte("fixture")); err == nil {
+		t.Fatal("replacement moved an unusable target aside")
+	}
+	entries, err := os.ReadDir(profile)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "user.js" || !entries[0].IsDir() {
+		t.Fatalf("failed replacement left staging files or changed the original: %v, %v", entries, err)
+	}
+	badBase := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(badBase, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := revertFirefoxProfiles(badBase); err == nil {
+		t.Fatal("cleanup ignored a profile discovery failure")
 	}
 }
 

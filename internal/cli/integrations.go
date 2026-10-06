@@ -115,7 +115,9 @@ func switchDesktop(env Env, layout paths.Layout, local singbox.Local, on bool) e
 	switch {
 	case state == desktop.Other:
 		fmt.Fprintf(env.Stdout, i18n.T("The desktop proxy (%s) points at another proxy, so sbc left it alone.\n"), desk.Name())
-	case on && state == desktop.Off:
+	// Windows must also repair missing browser policies after an upgrade or a
+	// manual deletion, even when WinINet already points at this proxy.
+	case on && (state == desktop.Off || env.OS == "windows"):
 		if local.Username != "" {
 			return errPasswordOnDesktop
 		}
@@ -128,6 +130,49 @@ func switchDesktop(env Env, layout paths.Layout, local singbox.Local, on bool) e
 			return err
 		}
 		fmt.Fprintf(env.Stdout, i18n.T("The desktop proxy (%s) is off.\n"), desk.Name())
+	}
+	return nil
+}
+
+// runWebRTC is separate from proxy switching so an explicit opt-out persists.
+// It can also clean browser settings after an interrupted installation.
+func runWebRTC(env Env, args []string) int {
+	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
+		fmt.Fprintln(env.Stderr, i18n.T("sbc: webrtc takes on or off"))
+		return 2
+	}
+	if env.OS != "windows" {
+		return fail(env, i18n.New("sbc webrtc is available only on Windows"))
+	}
+	desk, err := env.Desktop()
+	if err != nil {
+		return fail(env, err)
+	}
+	privacy, ok := desk.(desktop.BrowserPrivacy)
+	if !ok {
+		return fail(env, i18n.New("Windows WebRTC settings are unavailable"))
+	}
+	if err := privacy.SetWebRTC(args[0] == "on"); err != nil {
+		return fail(env, err)
+	}
+	if args[0] == "on" {
+		fmt.Fprintln(env.Stdout, i18n.T("WebRTC protection is set up and stays enabled across proxy toggles. Reload browser policies; restart Firefox."))
+	} else {
+		fmt.Fprintln(env.Stdout, i18n.T("Managed WebRTC settings were removed. Automatic setup is off; 'sbc webrtc on' enables it again. Reload browser policies."))
+		if err := reportRemainingWebRTC(env, privacy); err != nil {
+			return fail(env, err)
+		}
+	}
+	return 0
+}
+
+func reportRemainingWebRTC(env Env, privacy desktop.BrowserPrivacy) error {
+	remaining, err := privacy.RemainingWebRTC()
+	if err != nil {
+		return err
+	}
+	if len(remaining) != 0 {
+		fmt.Fprintf(env.Stdout, i18n.T("Browser settings not removed automatically:\n  %s\nSee the Windows guide's manual WebRTC cleanup instructions. Keep policies required by your administrator.\n"), strings.Join(remaining, "\n  "))
 	}
 	return nil
 }
