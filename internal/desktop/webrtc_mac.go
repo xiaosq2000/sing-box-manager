@@ -16,6 +16,15 @@ func (p *unixPrivacy) macOwners(policy unixPolicy) string {
 // defaults returns exit 1 for an absent key. Other failures must propagate.
 // Use the C locale so the absence diagnostic is independent of the UI language.
 func readMacDefault(run Runner, domain, name string) (string, bool, error) {
+	// An unreadable plist is not an absent preference. defaults can report the
+	// same diagnostic for both, so check file access independently.
+	if filepath.IsAbs(domain) {
+		if _, err := privateFile(domain + ".plist"); os.IsNotExist(err) {
+			return "", false, nil
+		} else if err != nil {
+			return "", false, err
+		}
+	}
 	value, err := run("/usr/bin/env", "LC_ALL=C", "/usr/bin/defaults", "read", domain, name)
 	if err != nil {
 		if strings.Contains(err.Error(), "The domain/default pair of ("+domain+", "+name+") does not exist") {
@@ -49,11 +58,16 @@ func writeMacDefault(run Runner, domain, name string, remove bool) error {
 			return err
 		}
 	}
+	_, beforeErr := os.Stat(domain + ".plist")
 	args := []string{"write", domain, name, "-string", winsettings.WebRtcDisableNonProxiedUDP}
 	if remove {
 		args = []string{"delete", domain, name}
 	}
 	_, err := run("sudo", append([]string{"/usr/bin/defaults"}, args...)...)
+	if err == nil && !remove && os.IsNotExist(beforeErr) {
+		// Browsers and unelevated sbc must be able to read a newly created plist.
+		_, err = run("sudo", "/bin/chmod", "0644", domain+".plist")
+	}
 	return err
 }
 func (p *unixPrivacy) setMacPolicy(policy unixPolicy, enabled bool) error {

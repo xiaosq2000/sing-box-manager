@@ -98,6 +98,14 @@ jobs:
           done
           echo "the systemd user manager did not start" >&2
           exit 1
+      - name: Repair the packaged Edge sandbox permissions
+        if: runner.os == 'Linux'
+        run: |
+          sandbox=/opt/microsoft/msedge/msedge-sandbox
+          if [ -f "$sandbox" ]; then
+            sudo chown root:root "$sandbox"
+            sudo chmod 4755 "$sandbox"
+          fi
       - name: Test Windows settings with a disposable registry key
         if: runner.os == 'Windows'
         run: go test -count=1 ./internal/winsettings ./internal/desktop ./internal/powershell

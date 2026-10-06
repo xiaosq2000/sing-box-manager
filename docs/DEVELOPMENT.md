@@ -121,7 +121,9 @@ gated lifecycle. Unix runners require Chrome and also probe Edge and Brave when
 installed. They check positive controls, protection after proxy toggles, explicit
 opt-out, repair after policy deletion, and cleanup after uninstall. Browser
 processes use disposable profiles. Unix process groups and Windows taskkill stop
-only the probe's processes.
+only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
+helper's root ownership and setuid mode before launching Edge. Browser sandboxing
+stays enabled.
 The fixture responder alone can be checked without changing host settings:
 
 ```sh

@@ -196,7 +196,7 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 	if name == "/usr/bin/env" {
 		args = args[2:]
 	} else if name == "sudo" {
-		if args[0] == "/bin/mkdir" {
+		if args[0] == "/bin/mkdir" || args[0] == "/bin/chmod" {
 			return "", nil
 		}
 		args = args[1:]
@@ -217,6 +217,11 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 	case "write":
 		if !f.ignore {
 			f.values[key] = args[4]
+			if filepath.IsAbs(args[1]) {
+				if err := os.WriteFile(args[1]+".plist", []byte("fixture"), 0644); err != nil {
+					return "", err
+				}
+			}
 		}
 	case "delete":
 		if !f.ignore {
@@ -230,12 +235,19 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 func TestMacWebRTCOwnershipAndFailures(t *testing.T) {
 	p := fixturePrivacy(t, "darwin")
 	p.policies = unixBrowserPolicies("darwin")
+	base := t.TempDir()
+	for i := range p.policies {
+		p.policies[i].location = filepath.Join(base, filepath.Base(p.policies[i].location))
+		if err := os.WriteFile(p.policies[i].location+".plist", []byte("fixture"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	f := &macDefaultFixture{values: map[string]string{}}
 	p.run = f.run
-	chrome := "/Library/Managed Preferences/com.google.Chrome/WebRtcIPHandling"
-	edge := "/Library/Managed Preferences/com.microsoft.Edge/WebRtcLocalhostIpHandling"
-	legacy := "/Library/Managed Preferences/com.microsoft.Edge/WebRtcIPHandling"
-	brave := "/Library/Managed Preferences/com.brave.Browser/WebRtcIPHandling"
+	chrome := filepath.Join(base, "com.google.Chrome") + "/WebRtcIPHandling"
+	edge := filepath.Join(base, "com.microsoft.Edge") + "/WebRtcLocalhostIpHandling"
+	legacy := filepath.Join(base, "com.microsoft.Edge") + "/WebRtcIPHandling"
+	brave := filepath.Join(base, "com.brave.Browser") + "/WebRtcIPHandling"
 	f.values[chrome] = winsettings.WebRtcDisableNonProxiedUDP
 	f.values[legacy] = winsettings.WebRtcDisableNonProxiedUDP
 	if err := p.Ensure(); err != nil {

@@ -41,6 +41,9 @@ func TestMacNativeDefaultsOwnership(t *testing.T) {
 	if err := p.Set(true); err != nil {
 		t.Fatal(err)
 	}
+	if info, err := os.Stat(policy.location + ".plist"); err != nil || info.Mode().Perm() != 0644 {
+		t.Fatalf("new managed plist must be readable by browsers: %v, %v", info, err)
+	}
 	if err := p.Ensure(); err != nil {
 		t.Fatal(err)
 	}
