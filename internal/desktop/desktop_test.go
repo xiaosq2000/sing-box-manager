@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
+	"github.com/xiaosq2000/sing-box-manager/internal/browserprivacy"
 )
 
 // fakeGSettings keeps keys the way gsettings prints them.
@@ -129,11 +129,13 @@ func TestUnixDesktopReportsFirefoxErrors(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(healthy), 0700); err != nil {
 				t.Fatal(err)
 			}
+			privacy := &unixPrivacy{goos: goos}
+			privacy.Manager = browserprivacy.Manager{StateFile: filepath.Join(t.TempDir(), "mode"), Lock: func() (func(), error) { return func() {}, nil }, Enable: privacy.enable, Remove: privacy.remove}
 			var desk Desktop
 			if goos == "linux" {
-				desk = &GNOME{Run: newGSettings(map[string]string{}).run}
+				desk = &GNOME{Run: newGSettings(map[string]string{}).run, Privacy: privacy}
 			} else {
-				desk = &MacOS{Service: "Wi-Fi", Run: (&fakeMac{proxies: map[string]string{}}).run}
+				desk = &MacOS{Service: "Wi-Fi", Run: (&fakeMac{proxies: map[string]string{}}).run, Privacy: privacy}
 			}
 			if err := desk.On(2080); err == nil || !strings.Contains(err.Error(), broken) {
 				t.Errorf("desktop on lost Firefox error: %v", err)
@@ -142,8 +144,14 @@ func TestUnixDesktopReportsFirefoxErrors(t *testing.T) {
 			if err != nil || !strings.Contains(string(data), firefoxMarker) {
 				t.Fatalf("desktop on skipped healthy profile: %s, %v", data, err)
 			}
-			if err := desk.Off(); err == nil || !strings.Contains(err.Error(), broken) {
-				t.Errorf("desktop off lost Firefox error: %v", err)
+			if err := desk.Off(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(healthy); err != nil {
+				t.Fatal("proxy shutdown removed protection")
+			}
+			if err := privacy.Cleanup(); err == nil || !strings.Contains(err.Error(), broken) {
+				t.Fatalf("cleanup lost Firefox error: %v", err)
 			}
 			if _, err := os.Stat(healthy); !os.IsNotExist(err) {
 				t.Fatalf("desktop off skipped healthy profile: %v", err)
@@ -233,90 +241,16 @@ func TestMacOSStateAndChanges(t *testing.T) {
 	if err := desktop.Off(); err != nil {
 		t.Fatal(err)
 	}
-	ruleFile := filepath.Join(os.TempDir(), "sbc-webrtc.pf")
 	want := []string{
 		"sudo networksetup -setwebproxy Wi-Fi 127.0.0.1 2080",
 		"sudo networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 2080",
 		"sudo networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 2080",
 		"sudo networksetup -setproxybypassdomains Wi-Fi localhost 127.0.0.0/8 ::1 host.docker.internal",
-		"defaults write com.google.Chrome WebRtcIPHandling -string disable_non_proxied_udp",
-		"defaults write com.microsoft.Edge WebRtcIPHandling -string disable_non_proxied_udp",
-		"defaults write com.brave.Browser WebRtcIPHandling -string disable_non_proxied_udp",
-		"sudo pfctl -a com.xiaosq2000.sbc.webrtc -f " + ruleFile,
-		"sudo pfctl -e",
 		"sudo networksetup -setwebproxystate Wi-Fi off",
 		"sudo networksetup -setsecurewebproxystate Wi-Fi off",
 		"sudo networksetup -setsocksfirewallproxystate Wi-Fi off",
-		"defaults read com.google.Chrome WebRtcIPHandling",
-		"defaults delete com.google.Chrome WebRtcIPHandling",
-		"defaults read com.microsoft.Edge WebRtcIPHandling",
-		"defaults delete com.microsoft.Edge WebRtcIPHandling",
-		"defaults read com.brave.Browser WebRtcIPHandling",
-		"defaults delete com.brave.Browser WebRtcIPHandling",
-		"sudo pfctl -a com.xiaosq2000.sbc.webrtc -F all",
 	}
 	if strings.Join(mac.calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(mac.calls, "\n"), strings.Join(want, "\n"))
-	}
-}
-
-func TestLinuxChromiumPoliciesLifecycle(t *testing.T) {
-	tempDir := t.TempDir()
-	policyDir := filepath.Join(tempDir, "policies", "managed")
-	origDirs := linuxChromiumDirs
-	origInstalled := isLinuxBrowserInstalled
-	defer func() {
-		linuxChromiumDirs = origDirs
-		isLinuxBrowserInstalled = origInstalled
-	}()
-	linuxChromiumDirs = []string{policyDir}
-	isLinuxBrowserInstalled = func(dir string) bool { return true }
-
-	var calls []string
-	run := func(name string, args ...string) (string, error) {
-		calls = append(calls, name+" "+strings.Join(args, " "))
-		if name == "sudo" && len(args) >= 3 && args[0] == "cp" {
-			src := args[1]
-			dst := args[2]
-			data, err := os.ReadFile(src)
-			if err != nil {
-				return "", err
-			}
-			return "", os.WriteFile(dst, data, 0644)
-		}
-		if name == "sudo" && len(args) >= 3 && args[0] == "mkdir" {
-			return "", os.MkdirAll(args[2], 0755)
-		}
-		if name == "sudo" && len(args) >= 3 && args[0] == "rm" {
-			return "", os.Remove(args[2])
-		}
-		return "", nil
-	}
-
-	// 1. Initial apply writes policy file
-	setLinuxChromiumPolicies(run)
-	targetFile := filepath.Join(policyDir, "webrtc.json")
-	data, err := os.ReadFile(targetFile)
-	if err != nil {
-		t.Fatalf("target policy file not created: %v", err)
-	}
-	if !strings.Contains(string(data), winsettings.WebRtcPolicyName) {
-		t.Fatalf("unexpected content: %s", string(data))
-	}
-	callCount := len(calls)
-	if callCount != 2 {
-		t.Fatalf("expected 2 calls, got %d: %v", callCount, calls)
-	}
-
-	// 2. Second apply is idempotent and does not run sudo
-	setLinuxChromiumPolicies(run)
-	if len(calls) != callCount {
-		t.Fatalf("expected idempotent no-op, got additional calls: %v", calls[callCount:])
-	}
-
-	// 3. Revert removes the policy file
-	revertLinuxChromiumPolicies(run)
-	if _, err := os.Stat(targetFile); !os.IsNotExist(err) {
-		t.Fatalf("policy file should be removed, got err: %v", err)
 	}
 }

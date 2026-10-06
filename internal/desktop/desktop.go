@@ -5,7 +5,6 @@
 package desktop
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -61,6 +60,9 @@ func Exec(name string, args ...string) (string, error) {
 		if detail == "" {
 			detail = err.Error()
 		}
+		if name == "sudo" && len(args) > 2 && args[2] == linuxPolicyScript {
+			return "", i18n.Errorf("could not change WebRTC browser policies: %s", detail)
+		}
 		return "", fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), detail)
 	}
 	return string(output), nil
@@ -98,13 +100,15 @@ func New(goos string, getenv func(string) string, run Runner) (Desktop, error) {
 		if !isGNOME(getenv) {
 			return nil, ErrUnsupported
 		}
-		return &GNOME{Run: run}, nil
+		privacy, err := newPrivacy("linux", run)
+		return &GNOME{Run: run, Privacy: privacy}, err
 	case "darwin":
 		service, err := activeService(run)
 		if err != nil {
 			return nil, err
 		}
-		return &MacOS{Service: service, Run: run}, nil
+		privacy, err := newPrivacy("darwin", run)
+		return &MacOS{Service: service, Run: run, Privacy: privacy}, err
 	default:
 		return nil, ErrUnsupported
 	}
@@ -119,7 +123,8 @@ func isGNOME(getenv func(string) string) bool {
 
 // GNOME changes org.gnome.system.proxy through gsettings.
 type GNOME struct {
-	Run Runner
+	Privacy WebRTCSettings
+	Run     Runner
 }
 
 const gnomeSchema = "org.gnome.system.proxy"
@@ -175,6 +180,11 @@ func (g *GNOME) State(port int) (State, error) {
 // On writes the hosts first and switches the mode last, so the desktop never
 // uses a half-written proxy.
 func (g *GNOME) On(port int) error {
+	if g.Privacy != nil {
+		if err := g.Privacy.Ensure(); err != nil {
+			return err
+		}
+	}
 	for _, scheme := range gnomeSchemes {
 		if err := g.set(gnomeSchema+"."+scheme, "host", "'"+Host+"'"); err != nil {
 			return err
@@ -186,24 +196,18 @@ func (g *GNOME) On(port int) error {
 	if err := g.set(gnomeSchema, "ignore-hosts", "['"+strings.Join(NoProxy, "', '")+"']"); err != nil {
 		return err
 	}
-	profileErr := applyFirefoxWebRTC("linux")
-	setLinuxChromiumPolicies(g.Run)
-	if profileErr != nil {
-		return profileErr
-	}
 	return g.set(gnomeSchema, "mode", "'manual'")
 }
 
 // Off switches the mode back and keeps the hosts, as the bash client did.
 func (g *GNOME) Off() error {
-	profileErr := revertFirefoxWebRTC("linux")
-	revertLinuxChromiumPolicies(g.Run)
-	return errors.Join(profileErr, g.set(gnomeSchema, "mode", "'none'"))
+	return g.set(gnomeSchema, "mode", "'none'")
 }
 
 // MacOS changes the proxies of one network service through networksetup,
 // which needs administrator rights to change them.
 type MacOS struct {
+	Privacy WebRTCSettings
 	Service string
 	Run     Runner
 }
@@ -272,6 +276,11 @@ func (m *MacOS) State(port int) (State, error) {
 }
 
 func (m *MacOS) On(port int) error {
+	if m.Privacy != nil {
+		if err := m.Privacy.Ensure(); err != nil {
+			return err
+		}
+	}
 	value := strconv.Itoa(port)
 	for _, setter := range []string{"-setwebproxy", "-setsecurewebproxy", "-setsocksfirewallproxy"} {
 		if _, err := m.Run("sudo", "networksetup", setter, m.Service, Host, value); err != nil {
@@ -281,10 +290,7 @@ func (m *MacOS) On(port int) error {
 	if _, err := m.Run("sudo", append([]string{"networksetup", "-setproxybypassdomains", m.Service}, NoProxy...)...); err != nil {
 		return err
 	}
-	setMacBrowserPolicies(m.Run)
-	profileErr := applyFirefoxWebRTC("darwin")
-	setMacSafariSTUNFilter(m.Run)
-	return profileErr
+	return nil
 }
 
 func (m *MacOS) Off() error {
@@ -293,8 +299,5 @@ func (m *MacOS) Off() error {
 			return err
 		}
 	}
-	revertMacBrowserPolicies(m.Run)
-	profileErr := revertFirefoxWebRTC("darwin")
-	revertMacSafariSTUNFilter(m.Run)
-	return profileErr
+	return nil
 }

@@ -41,7 +41,7 @@ Shells and programs:
                      and the desktop too after 'desktop on'; Windows applies to new programs
   env [on|off]       Print shell variables; PowerShell: sbc env | Invoke-Expression
   desktop [on|off]   Show or switch the desktop proxy (GNOME, macOS, Windows)
-  webrtc on|off      Set up or remove sbc's Windows WebRTC protection; may request UAC
+  webrtc on|off      Set up or remove persistent WebRTC protection; may request approval
   docker [on|off] [--yes]
                      Show or switch the Docker daemon's proxy (Linux); restarts Docker
 
@@ -77,7 +77,7 @@ shell 与程序：
                      运行过 'desktop on' 后桌面也一起切换；Windows 对新程序生效
   env [on|off]       输出 shell 代理变量；PowerShell：sbc env | Invoke-Expression
   desktop [on|off]   显示或切换桌面代理（GNOME、macOS、Windows）
-  webrtc on|off      设置或移除 sbc 的 Windows WebRTC 保护，可能需要 UAC 授权
+  webrtc on|off      设置或移除持久 WebRTC 保护，可能需要管理员授权
   docker [on|off] [--yes]
                      显示或切换 Docker 守护进程的代理（Linux），会重启 Docker
 
@@ -123,6 +123,8 @@ type Env struct {
 	Home func() (string, error)
 	// Desktop returns the proxy settings of the desktop this session runs in.
 	Desktop func() (desktop.Desktop, error)
+	// Privacy manages browser settings without a desktop session.
+	Privacy func() (desktop.BrowserPrivacy, error)
 	// Docker returns the Docker daemon's proxy drop-in.
 	Docker func() (*docker.Daemon, error)
 	// Sites are the pages 'sbc ip' asks and 'sbc speed --download' fetches.
@@ -161,6 +163,7 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 		Desktop: func() (desktop.Desktop, error) {
 			return desktop.New(runtime.GOOS, os.Getenv, desktop.Exec)
 		},
+		Privacy: func() (desktop.BrowserPrivacy, error) { return desktop.NewBrowserPrivacy(runtime.GOOS, desktop.Exec) },
 		Docker: func() (*docker.Daemon, error) {
 			return docker.New(runtime.GOOS, docker.Exec)
 		},
@@ -594,29 +597,30 @@ func runUninstall(env Env, args []string) int {
 	if env.OS == "windows" && deskErr != nil {
 		return fail(env, deskErr)
 	}
+	var state desktop.State
+	var stateErr error
 	if deskErr == nil && localErr == nil {
-		state, err := desk.State(local.ListenPort)
-		if env.OS == "windows" && err != nil {
-			return fail(env, err)
-		}
-		if env.OS == "windows" {
-			privacy, ok := desk.(desktop.BrowserPrivacy)
-			if !ok {
-				return fail(env, i18n.New("Windows WebRTC settings are unavailable"))
-			}
-			if err := privacy.CleanupWebRTC(); err != nil {
-				return fail(env, i18n.Errorf("WebRTC cleanup failed; sbc is still installed. Retry 'sbc webrtc off' or uninstall: %w", err))
-			}
-			if err := reportRemainingWebRTC(env, privacy); err != nil {
-				return fail(env, err)
-			}
-		}
-		if err == nil && state == desktop.On {
-			if err := desk.Off(); err != nil {
-				return fail(env, err)
-			}
+		state, stateErr = desk.State(local.ListenPort)
+		if env.OS == "windows" && stateErr != nil {
+			return fail(env, stateErr)
 		}
 	}
+	privacy, err := env.Privacy()
+	if err != nil {
+		return fail(env, err)
+	}
+	if err := privacy.CleanupWebRTC(); err != nil {
+		return fail(env, i18n.Errorf("WebRTC cleanup failed; sbc is still installed. Retry 'sbc webrtc off' or uninstall: %w", err))
+	}
+	if err := reportRemainingWebRTC(env, privacy); err != nil {
+		return fail(env, err)
+	}
+	if deskErr == nil && localErr == nil && stateErr == nil && state == desktop.On {
+		if err := desk.Off(); err != nil {
+			return fail(env, err)
+		}
+	}
+
 	if env.OS == "windows" {
 		if err := env.Windows.Move(local.ListenPort, 0, local.Username, local.Password); err != nil {
 			return fail(env, err)

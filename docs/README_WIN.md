@@ -235,6 +235,8 @@ its recovery state. Resolve the error and retry `sbc uninstall`; do not delete i
 folder first. Pre-existing or externally changed browser policies are retained and
 listed. Firefox profiles can retain saved preferences; follow the reset steps below.
 
+See [cross-platform WebRTC behavior](WEBRTC.md) for the shared command contract.
+
 ### Manual WebRTC cleanup
 
 To stop `sbc` from reapplying protection without uninstalling it:
