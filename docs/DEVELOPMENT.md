@@ -107,10 +107,10 @@ PowerShell output, desktop switching and port changes. It checks that browser
 protection survives proxy toggles, explicit WebRTC opt-out persists until re-enabled,
 and uninstall removes owned policies and ownership records. The Chrome and Edge
 regression checks remove each browser policy while the desktop proxy remains on.
-They then run `sbc on` to repair it. Fresh headless browser profiles use loopback HTTP and STUN fixtures:
-the unprotected control must gather a fixture server-reflexive candidate; the
-protected run must complete ICE gathering without direct STUN. The runner needs
-Chrome and Edge installed. Each probe starts a new process, including after an
+They then run `sbc on` to repair the missing policy. Each headless browser probe
+uses a fresh profile with loopback HTTP and STUN fixtures. The unprotected control
+must gather a fixture server-reflexive candidate. The protected run must complete
+ICE gathering without direct STUN. The runner needs Chrome and Edge installed. Each probe starts a new process, including after an
 Edge policy change that requires a restart. This IPv4 UDP check runs only in the
 gated Windows lifecycle.
 The fixture responder alone can be checked without changing host settings:

@@ -35,15 +35,13 @@ func lockWebRTCMutex(name string) (func(), error) {
 	// Windows assigns mutex ownership to a thread, so release on that thread.
 	runtime.LockOSThread()
 	status, err := syscall.WaitForSingleObject(syscall.Handle(handle), syscall.INFINITE)
+	if err == nil && status != syscall.WAIT_OBJECT_0 && status != syscall.WAIT_ABANDONED {
+		err = syscall.EINVAL
+	}
 	if err != nil {
 		syscall.CloseHandle(syscall.Handle(handle))
 		runtime.UnlockOSThread()
 		return nil, err
-	}
-	if status != syscall.WAIT_OBJECT_0 && status != syscall.WAIT_ABANDONED {
-		syscall.CloseHandle(syscall.Handle(handle))
-		runtime.UnlockOSThread()
-		return nil, syscall.EINVAL
 	}
 	// An abandoned mutex transfers ownership. The caller rechecks mode state,
 	// policies and ownership records before completing or retrying any change.

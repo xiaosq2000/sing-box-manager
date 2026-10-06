@@ -2,6 +2,7 @@ package winsettings
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -20,15 +21,16 @@ func TestWebRTCPolicyScriptUsesOriginalSIDAndFixedAllowlist(t *testing.T) {
 	if !strings.Contains(script, "$sid = '"+original+"'") || !strings.Contains(script, "[Microsoft.Win32.Registry]::Users.OpenSubKey($sid, $true)") {
 		t.Fatal("helper did not target the original process-user hive")
 	}
-	for _, forbidden := range []string{administrator, "CurrentUser", "HKCU", "@@", "ReadToEnd", "Invoke-Expression", "Start-Process", "Set-Acl", "$args", "$env:USERNAME", "-File"} {
-		// Comments explain why HKCU is forbidden; only inspect executable code.
-		var code strings.Builder
-		for _, line := range strings.Split(script, "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-				code.WriteString(line)
-			}
+	// Comments explain why HKCU is forbidden; only inspect executable code.
+	var code strings.Builder
+	for _, line := range strings.Split(script, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			code.WriteString(line)
 		}
-		if strings.Contains(code.String(), forbidden) {
+	}
+	executableCode := code.String()
+	for _, forbidden := range []string{administrator, "CurrentUser", "HKCU", "@@", "ReadToEnd", "Invoke-Expression", "Start-Process", "Set-Acl", "$args", "$env:USERNAME", "-File"} {
+		if strings.Contains(executableCode, forbidden) {
 			t.Fatalf("helper includes forbidden input/operation %q", forbidden)
 		}
 	}
@@ -142,7 +144,7 @@ func TestWebRTCEncodedCommandAndLauncherFitWindowsLimits(t *testing.T) {
 	}
 	units := make([]uint16, len(data)/2)
 	for index := range units {
-		units[index] = uint16(data[index*2]) | uint16(data[index*2+1])<<8
+		units[index] = binary.LittleEndian.Uint16(data[index*2:])
 	}
 	if string(utf16.Decode(units)) != script {
 		t.Fatal("EncodedCommand did not preserve UTF-16LE script")

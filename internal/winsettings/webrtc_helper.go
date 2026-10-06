@@ -3,6 +3,7 @@ package winsettings
 import (
 	_ "embed"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -71,8 +72,7 @@ func encodedWebRTCCommand(script string) string {
 	units := utf16.Encode([]rune(script))
 	data := make([]byte, len(units)*2)
 	for index, unit := range units {
-		data[index*2] = byte(unit)
-		data[index*2+1] = byte(unit >> 8)
+		binary.LittleEndian.PutUint16(data[index*2:], unit)
 	}
 	return base64.StdEncoding.EncodeToString(data)
 }

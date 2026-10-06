@@ -399,10 +399,9 @@ Pull requests, in order:
    Edge uses `WebRtcLocalhostIpHandling` and requires a browser restart. Migration
    removes an owned obsolete `WebRtcIPHandling` value without claiming manual policies.
    A per-user lock serializes mode state, policy changes and profile changes across
-   concurrent setup and cleanup commands. Uninstall
-   removes owned policies and stops on cleanup failure before deleting the client.
-   Pre-existing policies are preserved; the Windows guide gives manual reset steps,
-   including Firefox's saved preferences. Fixture tests cover permission failures,
+   concurrent setup and cleanup commands. Uninstall removes owned policies. It stops
+   on cleanup failure before deleting the client. `sbc` preserves pre-existing policies.
+   The Windows guide gives manual reset steps, including Firefox's saved preferences. Fixture tests cover permission failures,
    ownership and retries. Native unelevated UAC validation is still pending.
 3. Done. `/install.ps1` downloads `sbc` and migrates the PowerShell client:
    exchange its saved machine token for a link, keep port, route and protocol,

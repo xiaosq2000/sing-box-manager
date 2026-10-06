@@ -73,10 +73,9 @@ try {
             throw 'Untrusted ownership key'
         }
         foreach ($policy in $policies) {
-            if ($metadata.GetValueNames() -contains $policy.Owner) {
-                if ($metadata.GetValueKind($policy.Owner) -ne [Microsoft.Win32.RegistryValueKind]::DWord -or
-                    $metadata.GetValue($policy.Owner) -ne 1) { throw 'Invalid ownership intent' }
-            }
+            if (($metadata.GetValueNames() -contains $policy.Owner) -and
+                ($metadata.GetValueKind($policy.Owner) -ne [Microsoft.Win32.RegistryValueKind]::DWord -or
+                 $metadata.GetValue($policy.Owner) -ne 1)) { throw 'Invalid ownership intent' }
         }
     }
 
