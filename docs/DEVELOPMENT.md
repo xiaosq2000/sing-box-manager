@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-04.
+Checked on 2026-10-06.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -75,11 +75,16 @@ environment variables and desktop proxy toggles. Browser-policy fixtures separat
 registry keys and cover permission failures, declined approval, read-back
 verification, ownership, interrupted cleanup, persistent opt-out and repair while
 the proxy is already on. CLI tests verify that failed browser cleanup leaves the
-client and proxy available for retry. Firefox fixtures use temporary profiles.
+client and proxy available for retry. Concurrency fixtures pause policy or profile
+setup and check that opt-out and uninstall cleanup wait for completion.
+Firefox fixtures use temporary profiles. They check that profile failures do not
+skip healthy profiles and that Unix desktop commands return those failures.
 The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
 Native registry tests use disposable keys, not browser or environment keys. They
 check registry types and rollback, and run the fixed WebRTC payload in a disposable
-namespace to check ownership and cleanup. These tests do not exercise the UAC dialog.
+namespace to check ownership and cleanup. Subprocess tests use disposable mutex
+names to check serialization and recovery after the owning process exits.
+These tests do not exercise the UAC dialog.
 Validate approval, cancellation and different-administrator hive targeting from an
 unelevated Windows account: an elevated runner can hide the `Access is denied`
 failure under `HKCU\Software\Policies`.

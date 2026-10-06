@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // This fixture separates keys, and models the restricted helper's intent /
@@ -603,5 +605,136 @@ func TestWebRTCPreconfiguredPoliciesAndUnownedOffNeedNoApproval(t *testing.T) {
 	remaining, err := w.Remaining()
 	if err != nil || len(remaining) != len(webRTCPolicies) {
 		t.Fatalf("pre-existing policies removed: %v %v", remaining, err)
+	}
+}
+
+func awaitWebRTCOperation(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WebRTC operation did not finish")
+	}
+}
+
+func TestWebRTCCleanupWaitsForCompleteSetup(t *testing.T) {
+	for _, setup := range []string{"automatic", "explicit"} {
+		for _, stage := range []string{"policies", "profiles"} {
+			for _, cleanup := range []string{"off", "uninstall"} {
+				t.Run(setup+"/"+stage+"/"+cleanup, func(t *testing.T) {
+					w, registry, _ := webRTCFixture(t)
+					entered, resume := make(chan struct{}), make(chan struct{})
+					unblock := sync.OnceFunc(func() { close(resume) })
+					defer unblock()
+					pause := func() {
+						close(entered)
+						<-resume
+					}
+					profile := filepath.Join(filepath.Dir(w.StateFile), "profile.js")
+					w.Change = func(action string) error {
+						if action == "on" && stage == "policies" {
+							pause()
+						}
+						return registry.change(action)
+					}
+					w.ApplyProfiles = func() error {
+						if stage == "profiles" {
+							pause()
+						}
+						return os.WriteFile(profile, []byte("fixture protection"), 0600)
+					}
+					w.RevertProfiles = func() error {
+						err := os.Remove(profile)
+						if os.IsNotExist(err) {
+							return nil
+						}
+						return err
+					}
+					if err := os.MkdirAll(filepath.Dir(w.StateFile), 0700); err != nil {
+						t.Fatal(err)
+					}
+					other := *w // Separate managers must share the operation lock.
+					setupDone := make(chan error, 1)
+					go func() {
+						if setup == "automatic" {
+							setupDone <- w.Ensure()
+						} else {
+							setupDone <- w.Set(true)
+						}
+					}()
+					select {
+					case <-entered:
+					case <-time.After(5 * time.Second):
+						t.Fatal("setup did not reach the paused stage")
+					}
+					cleanupDone := make(chan error, 1)
+					go func() {
+						if cleanup == "off" {
+							cleanupDone <- other.Set(false)
+						} else {
+							cleanupDone <- other.Cleanup()
+						}
+					}()
+					select {
+					case err := <-cleanupDone:
+						t.Errorf("cleanup returned before setup finished: %v", err)
+						cleanupDone <- err
+					case <-time.After(50 * time.Millisecond):
+					}
+					unblock()
+					awaitWebRTCOperation(t, setupDone)
+					awaitWebRTCOperation(t, cleanupDone)
+					if cleanup == "off" {
+						assertOffMarker(t, w, true)
+						if err := other.Ensure(); err != nil {
+							t.Fatal(err)
+						}
+					}
+					for _, policy := range webRTCPolicies {
+						if registry.values[policy.key][policy.name].Kind != "" || registry.values[WebRTCMetadataKey][policy.owner].Kind != "" {
+							t.Error("setup recreated policies after cleanup")
+						}
+					}
+					if _, err := os.Stat(profile); !os.IsNotExist(err) {
+						t.Errorf("setup recreated the profile after cleanup: %v", err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestWebRTCQueuedSetupRespectsCompletedOptOut(t *testing.T) {
+	w, registry, changes := webRTCFixture(t)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(resume) })
+	defer unblock()
+	w.RevertProfiles = func() error { close(entered); <-resume; return nil }
+	other := *w
+	offDone := make(chan error, 1)
+	go func() { offDone <- w.Set(false) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("off did not reach profile cleanup")
+	}
+	registry.readError = errors.New("opt-out must prevent registry access")
+	setupDone := make(chan error, 1)
+	go func() { setupDone <- other.Ensure() }()
+	select {
+	case err := <-setupDone:
+		t.Errorf("setup returned before cleanup finished: %v", err)
+		setupDone <- err
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	awaitWebRTCOperation(t, offDone)
+	awaitWebRTCOperation(t, setupDone)
+	assertOffMarker(t, w, true)
+	if len(*changes) != 0 {
+		t.Fatalf("automatic setup reversed opt-out: %v", *changes)
 	}
 }

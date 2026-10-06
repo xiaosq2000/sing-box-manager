@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
@@ -56,6 +57,23 @@ type WebRTC struct {
 	RevertProfiles func() error
 }
 
+// All managers in this process share the lock. Windows also locks across
+// processes for the original user, independently of the elevated helper lock.
+var webRTCOperationMu sync.Mutex
+
+func lockWebRTC() (func(), error) {
+	webRTCOperationMu.Lock()
+	unlock, err := lockWebRTCProcess()
+	if err != nil {
+		webRTCOperationMu.Unlock()
+		return nil, i18n.Errorf("could not lock WebRTC settings: %w", err)
+	}
+	return func() {
+		unlock()
+		webRTCOperationMu.Unlock()
+	}, nil
+}
+
 func (w *WebRTC) registry() Registry {
 	if w.Registry != nil {
 		return w.Registry
@@ -89,6 +107,11 @@ func (w *WebRTC) optedOut() (bool, error) {
 
 // Ensure defaults to enabled, but never reverses an explicit opt-out.
 func (w *WebRTC) Ensure() error {
+	unlock, err := lockWebRTC()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	off, err := w.optedOut()
 	if err != nil || off {
 		return err
@@ -164,6 +187,11 @@ func (w *WebRTC) enable() error {
 // cleanup must not let a later automatic Ensure recreate removed policies.
 // Set(true) clears that choice only after verified setup and profile success.
 func (w *WebRTC) Set(enabled bool) error {
+	unlock, err := lockWebRTC()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if enabled {
 		if err := w.enable(); err != nil {
 			return err
@@ -185,6 +213,11 @@ func (w *WebRTC) Set(enabled bool) error {
 // Pre-existing or externally changed policies survive; Remaining lists their
 // locations without including values.
 func (w *WebRTC) Cleanup() error {
+	unlock, err := lockWebRTC()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return w.cleanupSettings()
 }
 

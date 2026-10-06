@@ -172,6 +172,53 @@ func TestFirefoxProfileFailuresAreReported(t *testing.T) {
 	}
 }
 
+func TestFirefoxProfilesContinueAfterErrors(t *testing.T) {
+	for _, discoveryFailure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "profile reads", true: "discovery and profile reads"}[discoveryFailure], func(t *testing.T) {
+			base := t.TempDir()
+			var failedPaths []string
+			if discoveryFailure {
+				path := filepath.Join(base, "profiles.ini")
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+				failedPaths = append(failedPaths, path)
+			}
+			for _, name := range []string{"a-broken", "b-broken", "c-healthy"} {
+				profile := filepath.Join(base, "Profiles", name)
+				if err := os.MkdirAll(profile, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if name != "c-healthy" {
+					path := filepath.Join(profile, "user.js")
+					if err := os.Mkdir(path, 0700); err != nil {
+						t.Fatal(err)
+					}
+					failedPaths = append(failedPaths, path)
+				}
+			}
+			checkErrors := func(err error) {
+				t.Helper()
+				for _, path := range failedPaths {
+					if err == nil || !strings.Contains(err.Error(), path) {
+						t.Errorf("missing error for %s: %v", path, err)
+					}
+				}
+			}
+			checkErrors(applyFirefoxProfiles(base))
+			healthy := filepath.Join(base, "Profiles", "c-healthy", "user.js")
+			data, err := os.ReadFile(healthy)
+			if err != nil || !strings.Contains(string(data), firefoxMarker) {
+				t.Fatalf("healthy profile was not protected: %s, %v", data, err)
+			}
+			checkErrors(revertFirefoxProfiles(base))
+			if _, err := os.Stat(healthy); !os.IsNotExist(err) {
+				t.Fatalf("healthy profile was not cleaned: %v", err)
+			}
+		})
+	}
+}
+
 func TestFirefoxDataDirs(t *testing.T) {
 	t.Setenv("HOME", "/custom/home")
 	t.Setenv("APPDATA", `C:\Users\User\AppData\Roaming`)

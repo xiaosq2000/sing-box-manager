@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-05.
+Checked on 2026-10-06.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -309,7 +309,9 @@ Client:
   `disable_non_proxied_udp` for Chromium browsers, WebRTC proxy preferences for
   Firefox, and `pfctl` STUN filtering for Safari on macOS) so browsers do not
   leak real IPs over WebRTC STUN requests. `sbc desktop off` and `sbc uninstall`
-  cleanly revert these browser settings. `sbc docker on`
+  revert these browser settings. Firefox setup and cleanup continue through healthy
+  profiles and report errors from failed profiles or profile discovery.
+  `sbc docker on`
   writes the Docker daemon's systemd drop-in on Linux and restarts Docker, after
   asking, or with `--yes` where nobody can answer. Both take over the settings the
   bash client wrote, leave settings that point elsewhere alone, and refuse while
@@ -393,7 +395,9 @@ Pull requests, in order:
    commands for the current session. Port changes and uninstall preserve foreign
    settings; desktop proxy use remains opt-in. WebRTC protection persists across
    proxy toggles. `sbc webrtc off` removes owned settings and opts out of automatic
-   setup; `sbc webrtc on` enables it again. Setup verifies policy writes. Uninstall
+   setup; `sbc webrtc on` enables it again. Setup verifies policy writes.
+   A per-user lock serializes mode state, policy changes and profile changes across
+   concurrent setup and cleanup commands. Uninstall
    removes owned policies and stops on cleanup failure before deleting the client.
    Pre-existing policies are preserved; the Windows guide gives manual reset steps,
    including Firefox's saved preferences. Fixture tests cover permission failures,

@@ -5,6 +5,7 @@
 package desktop
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -185,16 +186,19 @@ func (g *GNOME) On(port int) error {
 	if err := g.set(gnomeSchema, "ignore-hosts", "['"+strings.Join(NoProxy, "', '")+"']"); err != nil {
 		return err
 	}
-	_ = applyFirefoxWebRTC("linux")
+	profileErr := applyFirefoxWebRTC("linux")
 	setLinuxChromiumPolicies(g.Run)
+	if profileErr != nil {
+		return profileErr
+	}
 	return g.set(gnomeSchema, "mode", "'manual'")
 }
 
 // Off switches the mode back and keeps the hosts, as the bash client did.
 func (g *GNOME) Off() error {
-	_ = revertFirefoxWebRTC("linux")
+	profileErr := revertFirefoxWebRTC("linux")
 	revertLinuxChromiumPolicies(g.Run)
-	return g.set(gnomeSchema, "mode", "'none'")
+	return errors.Join(profileErr, g.set(gnomeSchema, "mode", "'none'"))
 }
 
 // MacOS changes the proxies of one network service through networksetup,
@@ -278,9 +282,9 @@ func (m *MacOS) On(port int) error {
 		return err
 	}
 	setMacBrowserPolicies(m.Run)
-	_ = applyFirefoxWebRTC("darwin")
+	profileErr := applyFirefoxWebRTC("darwin")
 	setMacSafariSTUNFilter(m.Run)
-	return nil
+	return profileErr
 }
 
 func (m *MacOS) Off() error {
@@ -290,7 +294,7 @@ func (m *MacOS) Off() error {
 		}
 	}
 	revertMacBrowserPolicies(m.Run)
-	_ = revertFirefoxWebRTC("darwin")
+	profileErr := revertFirefoxWebRTC("darwin")
 	revertMacSafariSTUNFilter(m.Run)
-	return nil
+	return profileErr
 }

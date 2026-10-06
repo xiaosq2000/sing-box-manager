@@ -151,7 +151,6 @@ func findFirefoxProfiles(baseDir string) ([]string, error) {
 	return profiles, discoveryErr
 }
 
-// applyFirefoxProfiles injects WebRTC leak prevention settings into user.js for all profiles under baseDir.
 // Replace only the profile file. Unlike executable replacement, a locked
 // Firefox file must fail without moving the original to a leftover .old file.
 func writeFirefoxUserJS(path string, data []byte) error {
@@ -174,15 +173,13 @@ func writeFirefoxUserJS(path string, data []byte) error {
 }
 
 func applyFirefoxProfiles(baseDir string) error {
-	profiles, err := findFirefoxProfiles(baseDir)
-	if err != nil {
-		return err
-	}
+	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
 		userJSPath := filepath.Join(profile, "user.js")
 		content, err := os.ReadFile(userJSPath)
 		if err != nil && !os.IsNotExist(err) {
-			return err
+			result = errors.Join(result, err)
+			continue
 		}
 		text := string(content)
 		if strings.Contains(text, "media.peerconnection.ice.proxy_only") || strings.Contains(text, firefoxMarker) {
@@ -200,18 +197,15 @@ func applyFirefoxProfiles(baseDir string) error {
 			newContent.WriteString(pref + "\n")
 		}
 		if err := writeFirefoxUserJS(userJSPath, []byte(newContent.String())); err != nil {
-			return err
+			result = errors.Join(result, err)
 		}
 	}
-	return nil
+	return result
 }
 
 // revertFirefoxProfiles removes sbc-managed settings from user.js for all profiles under baseDir.
 func revertFirefoxProfiles(baseDir string) error {
-	profiles, err := findFirefoxProfiles(baseDir)
-	if err != nil {
-		return err
-	}
+	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
 		userJSPath := filepath.Join(profile, "user.js")
 		content, err := os.ReadFile(userJSPath)
@@ -219,7 +213,8 @@ func revertFirefoxProfiles(baseDir string) error {
 			continue
 		}
 		if err != nil {
-			return err
+			result = errors.Join(result, err)
+			continue
 		}
 		text := string(content)
 		if !strings.Contains(text, firefoxMarker) {
@@ -246,11 +241,11 @@ func revertFirefoxProfiles(baseDir string) error {
 		remaining := strings.TrimSpace(strings.Join(lines, "\n"))
 		if remaining == "" {
 			if err := os.Remove(userJSPath); err != nil {
-				return err
+				result = errors.Join(result, err)
 			}
 		} else if err := writeFirefoxUserJS(userJSPath, []byte(strings.Join(lines, "\n"))); err != nil {
-			return err
+			result = errors.Join(result, err)
 		}
 	}
-	return nil
+	return result
 }

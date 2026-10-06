@@ -127,6 +127,8 @@ The Windows desktop proxy is opt-in via `sbc desktop on`. Once enabled, it follo
   This can restrict WebRTC calls while the proxy is off. `sbc webrtc off` removes
   owned settings and disables automatic setup; only `sbc webrtc on` enables it
   again. Removing protected settings can require administrator approval.
+  Concurrent setup and cleanup commands wait for each other, including Firefox
+  profile changes. Automatic setup cannot reverse a completed opt-out.
 - **Safety**: `sbc` preserves foreign proxies, PAC scripts and pre-existing browser
   policies. A conflicting Chromium policy or failed setup makes `sbc desktop on`
   fail before enabling a new desktop proxy. Policy writes are read back. A protected

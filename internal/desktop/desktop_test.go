@@ -116,6 +116,45 @@ func TestGNOMEOnSwitchesTheModeLastAndOffKeepsTheHosts(t *testing.T) {
 	}
 }
 
+func TestUnixDesktopReportsFirefoxErrors(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin"} {
+		t.Run(goos, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			base := firefoxDataDirs(goos)[0]
+			broken := filepath.Join(base, "Profiles", "a-broken", "user.js")
+			healthy := filepath.Join(base, "Profiles", "b-healthy", "user.js")
+			if err := os.MkdirAll(broken, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(healthy), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var desk Desktop
+			if goos == "linux" {
+				desk = &GNOME{Run: newGSettings(map[string]string{}).run}
+			} else {
+				desk = &MacOS{Service: "Wi-Fi", Run: (&fakeMac{proxies: map[string]string{}}).run}
+			}
+			if err := desk.On(2080); err == nil || !strings.Contains(err.Error(), broken) {
+				t.Errorf("desktop on lost Firefox error: %v", err)
+			}
+			data, err := os.ReadFile(healthy)
+			if err != nil || !strings.Contains(string(data), firefoxMarker) {
+				t.Fatalf("desktop on skipped healthy profile: %s, %v", data, err)
+			}
+			if err := desk.Off(); err == nil || !strings.Contains(err.Error(), broken) {
+				t.Errorf("desktop off lost Firefox error: %v", err)
+			}
+			if _, err := os.Stat(healthy); !os.IsNotExist(err) {
+				t.Fatalf("desktop off skipped healthy profile: %v", err)
+			}
+			if state, err := desk.State(2080); err != nil || state != Off {
+				t.Fatalf("Firefox failure prevented proxy cleanup: %v, %v", state, err)
+			}
+		})
+	}
+}
+
 // fakeMac answers route, networksetup and defaults the way macOS prints them.
 type fakeMac struct {
 	proxies  map[string]string // getter -> "server port", empty when disabled

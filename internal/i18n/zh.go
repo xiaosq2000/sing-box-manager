@@ -155,6 +155,7 @@ var zh = map[string]string{
 	"could not read WebRTC policy ownership: %w":                                                              "无法读取 WebRTC 策略的归属记录：%w",
 	"the WebRTC policy ownership record is invalid; cleanup cannot safely continue":                           "WebRTC 策略的归属记录无效，无法安全地继续清理",
 	"Windows did not remove all owned WebRTC policies; retry cleanup":                                         "Windows 未移除全部由 sbc 管理的 WebRTC 策略，请重试清理",
+	"could not lock WebRTC settings: %w":                                                                      "无法锁定 WebRTC 设置：%w",
 	"could not read the WebRTC mode state: %w":                                                                "无法读取 WebRTC 模式状态：%w",
 	"the WebRTC mode state is invalid; use 'sbc webrtc on' or 'sbc webrtc off'":                               "WebRTC 模式状态无效，请运行 'sbc webrtc on' 或 'sbc webrtc off'",
 	"could not remove the WebRTC mode state: %w":                                                              "无法移除 WebRTC 模式状态：%w",
