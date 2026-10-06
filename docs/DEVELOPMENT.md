@@ -123,7 +123,8 @@ opt-out, repair after policy deletion, and cleanup after uninstall. Browser
 processes use disposable profiles. Unix process groups and Windows taskkill stop
 only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
 helper's root ownership and setuid mode before launching Edge. Browser sandboxing
-stays enabled.
+stays enabled. The macOS lifecycle verifies cache refresh after managed policy
+changes, including off and uninstall. Unit tests stub that service operation.
 The fixture responder alone can be checked without changing host settings:
 
 ```sh

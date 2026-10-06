@@ -27,6 +27,10 @@ func TestMacNativePlistOwnership(t *testing.T) {
 		if name == "sudo" {
 			name, args = args[0], args[1:]
 		}
+		// Cache refresh is covered by the disposable lifecycle, never unit tests.
+		if name == "/usr/bin/killall" {
+			return "", nil
+		}
 		if name == "/bin/mkdir" {
 			return "", os.MkdirAll(args[1], 0755)
 		}

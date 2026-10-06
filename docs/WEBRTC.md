@@ -45,7 +45,10 @@ Firefox discovery includes traditional, Snap and Flatpak profile locations.
 macOS uses mandatory plists under `/Library/Managed Preferences/`. These also affect
 all accounts. Ordinary user `defaults` entries are recommended policies and are
 insufficient for policies that require mandatory enforcement. Existing user entries
-are preserved. See the [Chromium policy guide](https://www.chromium.org/administrators/mac-quick-start/).
+are preserved. After a managed policy change, sbc restarts the macOS preference
+service to clear cached policies. Unchanged automatic checks do not restart it.
+A pending `webrtc-mode.reload` marker permits retry after a failed cache refresh.
+Restart open browsers after the command completes. See the [Chromium policy guide](https://www.chromium.org/administrators/mac-quick-start/).
 
 Edge requires a browser restart. Microsoft documents that its policy does not apply
 to profiles signed in with a personal Microsoft account. See the

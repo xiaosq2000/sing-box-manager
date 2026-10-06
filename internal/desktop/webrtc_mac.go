@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
+	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
@@ -141,6 +142,9 @@ func (p *unixPrivacy) setMacPolicy(policy unixPolicy, enabled bool) error {
 			}
 			return i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
 		}
+		if err := p.markMacReload(); err != nil {
+			return err
+		}
 		if err := writeMacDefault(p.run, policy.location, policy.name, false); err != nil {
 			return err
 		}
@@ -157,6 +161,9 @@ func (p *unixPrivacy) setMacPolicy(policy unixPolicy, enabled bool) error {
 		return nil
 	}
 	if present && value == winsettings.WebRtcDisableNonProxiedUDP {
+		if err := p.markMacReload(); err != nil {
+			return err
+		}
 		if err := writeMacDefault(p.run, policy.location, policy.name, true); err != nil {
 			return err
 		}
@@ -179,4 +186,28 @@ func (p *unixPrivacy) setMacPolicy(policy unixPolicy, enabled bool) error {
 		return i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
 	}
 	return nil
+}
+
+// A durable marker covers interruption between a plist edit and cache refresh.
+// An unchanged Ensure never restarts the preference service.
+func (p *unixPrivacy) markMacReload() error {
+	return paths.WriteFile(p.StateFile+".reload", nil, 0600)
+}
+func (p *unixPrivacy) reloadMacPreferences() error {
+	if p.goos != "darwin" {
+		return nil
+	}
+	marker := p.StateFile + ".reload"
+	if _, err := os.Stat(marker); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	// Graceful termination makes launchd restart the preference service and
+	// discard cached managed policies. Fresh browsers then see removals too.
+	_, err := p.run("sudo", "/usr/bin/killall", "-TERM", "cfprefsd")
+	if err != nil && !strings.Contains(err.Error(), "No matching processes") {
+		return err
+	}
+	return os.Remove(marker)
 }

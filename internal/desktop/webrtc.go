@@ -111,7 +111,7 @@ func (p *unixPrivacy) enable() error {
 		}
 		result = errors.Join(result, err)
 	}
-	return errors.Join(result, applyFirefoxWebRTC(p.goos))
+	return errors.Join(result, p.reloadMacPreferences(), applyFirefoxWebRTC(p.goos))
 }
 func (p *unixPrivacy) remove() error {
 	var result error
@@ -124,7 +124,7 @@ func (p *unixPrivacy) remove() error {
 		}
 		result = errors.Join(result, err)
 	}
-	return errors.Join(result, revertFirefoxWebRTC(p.goos))
+	return errors.Join(result, p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
 }
 func (p *unixPrivacy) Remaining() ([]string, error) {
 	var locations []string

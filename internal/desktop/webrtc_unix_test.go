@@ -188,6 +188,8 @@ func TestUnixWebRTCFailureKeepsOptOutAndRetryState(t *testing.T) {
 type macDefaultFixture struct {
 	values       map[string]string
 	fail, ignore bool
+	reloads      int
+	failReload   bool
 }
 
 func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
@@ -208,6 +210,13 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 	if name == "/usr/bin/env" {
 		args = args[2:]
 	} else if name == "sudo" {
+		if args[0] == "/usr/bin/killall" {
+			f.reloads++
+			if f.failReload {
+				return "", errors.New("reload denied")
+			}
+			return "", nil
+		}
 		if args[0] == "/bin/mkdir" || args[0] == "/bin/chmod" {
 			return "", nil
 		}
@@ -322,6 +331,32 @@ func TestMacWebRTCOwnershipAndFailures(t *testing.T) {
 	if err := p.Cleanup(); err != nil {
 		t.Fatal(err)
 	}
+	f.failReload = true
+	if err := p.Set(true); err == nil {
+		t.Fatal("failed reload reported success")
+	}
+	if _, err := os.Stat(p.StateFile + ".reload"); err != nil {
+		t.Fatal("failed reload lost retry marker")
+	}
+	f.failReload = false
+	before := f.reloads
+	if err := p.Set(true); err != nil {
+		t.Fatal(err)
+	}
+	if f.reloads != before+1 {
+		t.Fatal("unchanged policies did not retry failed reload")
+	}
+	before = f.reloads
+	if err := p.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if f.reloads != before {
+		t.Fatal("unchanged Ensure restarted preference service")
+	}
+	if _, err := os.Stat(p.StateFile + ".reload"); !os.IsNotExist(err) {
+		t.Fatal("successful reload retained pending marker")
+	}
+
 }
 func TestUnixDesktopKeepsPrivacyAcrossToggles(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin"} {
