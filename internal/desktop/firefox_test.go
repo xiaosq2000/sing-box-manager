@@ -49,7 +49,10 @@ user_pref("browser.tabs.warnOnClose", false);
 	}
 
 	// 1. Discovery
-	profiles := findFirefoxProfiles(tempDir)
+	profiles, err := findFirefoxProfiles(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d: %v", len(profiles), profiles)
 	}
@@ -136,6 +139,83 @@ func TestFirefoxProfilesPreservesForeignPreference(t *testing.T) {
 	contentAfter, _ := os.ReadFile(filepath.Join(profile, "user.js"))
 	if string(contentAfter) != foreignUserJS {
 		t.Fatalf("foreign preference modified after revert: %s", string(contentAfter))
+	}
+}
+
+func TestFirefoxProfileFailuresAreReported(t *testing.T) {
+	base := t.TempDir()
+	profile := filepath.Join(base, "Profiles", "fixture")
+	// A directory at the file path gives a portable read failure, including
+	// when tests run as an administrator or root.
+	if err := os.MkdirAll(filepath.Join(profile, "user.js"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyFirefoxProfiles(base); err == nil {
+		t.Fatal("setup ignored an unreadable user.js")
+	}
+	if err := revertFirefoxProfiles(base); err == nil {
+		t.Fatal("cleanup reported success without reading user.js")
+	}
+	if err := writeFirefoxUserJS(filepath.Join(profile, "user.js"), []byte("fixture")); err == nil {
+		t.Fatal("replacement moved an unusable target aside")
+	}
+	entries, err := os.ReadDir(profile)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "user.js" || !entries[0].IsDir() {
+		t.Fatalf("failed replacement left staging files or changed the original: %v, %v", entries, err)
+	}
+	badBase := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(badBase, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := revertFirefoxProfiles(badBase); err == nil {
+		t.Fatal("cleanup ignored a profile discovery failure")
+	}
+}
+
+func TestFirefoxProfilesContinueAfterErrors(t *testing.T) {
+	for _, discoveryFailure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "profile reads", true: "discovery and profile reads"}[discoveryFailure], func(t *testing.T) {
+			base := t.TempDir()
+			var failedPaths []string
+			if discoveryFailure {
+				path := filepath.Join(base, "profiles.ini")
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+				failedPaths = append(failedPaths, path)
+			}
+			for _, name := range []string{"a-broken", "b-broken", "c-healthy"} {
+				profile := filepath.Join(base, "Profiles", name)
+				if err := os.MkdirAll(profile, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if name != "c-healthy" {
+					path := filepath.Join(profile, "user.js")
+					if err := os.Mkdir(path, 0700); err != nil {
+						t.Fatal(err)
+					}
+					failedPaths = append(failedPaths, path)
+				}
+			}
+			checkErrors := func(err error) {
+				t.Helper()
+				for _, path := range failedPaths {
+					if err == nil || !strings.Contains(err.Error(), path) {
+						t.Errorf("missing error for %s: %v", path, err)
+					}
+				}
+			}
+			checkErrors(applyFirefoxProfiles(base))
+			healthy := filepath.Join(base, "Profiles", "c-healthy", "user.js")
+			data, err := os.ReadFile(healthy)
+			if err != nil || !strings.Contains(string(data), firefoxMarker) {
+				t.Fatalf("healthy profile was not protected: %s, %v", data, err)
+			}
+			checkErrors(revertFirefoxProfiles(base))
+			if _, err := os.Stat(healthy); !os.IsNotExist(err) {
+				t.Fatalf("healthy profile was not cleaned: %v", err)
+			}
+		})
 	}
 }
 

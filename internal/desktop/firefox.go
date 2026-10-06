@@ -3,9 +3,12 @@ package desktop
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
 
 const (
@@ -45,32 +48,41 @@ func firefoxDataDirs(goos string) []string {
 
 // applyFirefoxWebRTC injects the WebRTC proxy-only setting into user.js across all found Firefox installations.
 func applyFirefoxWebRTC(goos string) error {
+	var result error
 	for _, dir := range firefoxDataDirs(goos) {
-		_ = applyFirefoxProfiles(dir)
+		result = errors.Join(result, applyFirefoxProfiles(dir))
 	}
-	return nil
+	return result
 }
 
 // revertFirefoxWebRTC removes sbc-managed settings from user.js across all found Firefox installations.
 func revertFirefoxWebRTC(goos string) error {
+	var result error
 	for _, dir := range firefoxDataDirs(goos) {
-		_ = revertFirefoxProfiles(dir)
+		result = errors.Join(result, revertFirefoxProfiles(dir))
 	}
-	return nil
+	return result
 }
 
 // findFirefoxProfiles finds all profile directories under baseDir.
 // It checks profiles.ini if present, and scans for subdirectories containing prefs.js.
-func findFirefoxProfiles(baseDir string) []string {
+func findFirefoxProfiles(baseDir string) ([]string, error) {
 	if baseDir == "" {
-		return nil
+		return nil, nil
 	}
 	info, err := os.Stat(baseDir)
-	if err != nil || !info.IsDir() {
-		return nil
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, i18n.Errorf("%s is not a Firefox profile directory", baseDir)
 	}
 	seen := map[string]bool{}
 	var profiles []string
+	var discoveryErr error
 
 	add := func(path string) {
 		clean := filepath.Clean(path)
@@ -78,6 +90,8 @@ func findFirefoxProfiles(baseDir string) []string {
 			if st, err := os.Stat(clean); err == nil && st.IsDir() {
 				seen[clean] = true
 				profiles = append(profiles, clean)
+			} else if err != nil && !os.IsNotExist(err) {
+				discoveryErr = errors.Join(discoveryErr, err)
 			}
 		}
 	}
@@ -101,6 +115,9 @@ func findFirefoxProfiles(baseDir string) []string {
 				isRelative = true
 			}
 		}
+		discoveryErr = errors.Join(discoveryErr, scanner.Err())
+	} else if !os.IsNotExist(err) {
+		discoveryErr = errors.Join(discoveryErr, err)
 	}
 
 	// 2. Check Profiles/ subfolder
@@ -111,6 +128,8 @@ func findFirefoxProfiles(baseDir string) []string {
 				add(filepath.Join(profilesDir, entry.Name()))
 			}
 		}
+	} else if !os.IsNotExist(err) {
+		discoveryErr = errors.Join(discoveryErr, err)
 	}
 
 	// 3. Check direct child directories containing prefs.js
@@ -120,21 +139,46 @@ func findFirefoxProfiles(baseDir string) []string {
 				prefsFile := filepath.Join(baseDir, entry.Name(), "prefs.js")
 				if _, err := os.Stat(prefsFile); err == nil {
 					add(filepath.Join(baseDir, entry.Name()))
+				} else if !os.IsNotExist(err) {
+					discoveryErr = errors.Join(discoveryErr, err)
 				}
 			}
 		}
+	} else {
+		discoveryErr = errors.Join(discoveryErr, err)
 	}
 
-	return profiles
+	return profiles, discoveryErr
 }
 
-// applyFirefoxProfiles injects WebRTC leak prevention settings into user.js for all profiles under baseDir.
+// Replace only the profile file. Unlike executable replacement, a locked
+// Firefox file must fail without moving the original to a leftover .old file.
+func writeFirefoxUserJS(path string, data []byte) error {
+	file, err := os.CreateTemp(filepath.Dir(path), ".sbc-webrtc-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(file.Name(), path)
+}
+
 func applyFirefoxProfiles(baseDir string) error {
-	profiles := findFirefoxProfiles(baseDir)
+	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
 		userJSPath := filepath.Join(profile, "user.js")
 		content, err := os.ReadFile(userJSPath)
 		if err != nil && !os.IsNotExist(err) {
+			result = errors.Join(result, err)
 			continue
 		}
 		text := string(content)
@@ -152,18 +196,24 @@ func applyFirefoxProfiles(baseDir string) error {
 		for _, pref := range firefoxPrefs {
 			newContent.WriteString(pref + "\n")
 		}
-		_ = os.WriteFile(userJSPath, []byte(newContent.String()), 0600)
+		if err := writeFirefoxUserJS(userJSPath, []byte(newContent.String())); err != nil {
+			result = errors.Join(result, err)
+		}
 	}
-	return nil
+	return result
 }
 
 // revertFirefoxProfiles removes sbc-managed settings from user.js for all profiles under baseDir.
 func revertFirefoxProfiles(baseDir string) error {
-	profiles := findFirefoxProfiles(baseDir)
+	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
 		userJSPath := filepath.Join(profile, "user.js")
 		content, err := os.ReadFile(userJSPath)
+		if os.IsNotExist(err) {
+			continue
+		}
 		if err != nil {
+			result = errors.Join(result, err)
 			continue
 		}
 		text := string(content)
@@ -190,10 +240,12 @@ func revertFirefoxProfiles(baseDir string) error {
 		}
 		remaining := strings.TrimSpace(strings.Join(lines, "\n"))
 		if remaining == "" {
-			_ = os.Remove(userJSPath)
-		} else {
-			_ = os.WriteFile(userJSPath, []byte(strings.Join(lines, "\n")), 0600)
+			if err := os.Remove(userJSPath); err != nil {
+				result = errors.Join(result, err)
+			}
+		} else if err := writeFirefoxUserJS(userJSPath, []byte(strings.Join(lines, "\n"))); err != nil {
+			result = errors.Join(result, err)
 		}
 	}
-	return nil
+	return result
 }

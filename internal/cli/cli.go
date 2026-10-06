@@ -41,6 +41,7 @@ Shells and programs:
                      and the desktop too after 'desktop on'; Windows applies to new programs
   env [on|off]       Print shell variables; PowerShell: sbc env | Invoke-Expression
   desktop [on|off]   Show or switch the desktop proxy (GNOME, macOS, Windows)
+  webrtc on|off      Set up or remove sbc's Windows WebRTC protection; may request UAC
   docker [on|off] [--yes]
                      Show or switch the Docker daemon's proxy (Linux); restarts Docker
 
@@ -76,6 +77,7 @@ shell 与程序：
                      运行过 'desktop on' 后桌面也一起切换；Windows 对新程序生效
   env [on|off]       输出 shell 代理变量；PowerShell：sbc env | Invoke-Expression
   desktop [on|off]   显示或切换桌面代理（GNOME、macOS、Windows）
+  webrtc on|off      设置或移除 sbc 的 Windows WebRTC 保护，可能需要 UAC 授权
   docker [on|off] [--yes]
                      显示或切换 Docker 守护进程的代理（Linux），会重启 Docker
 
@@ -216,6 +218,8 @@ func Run(env Env, args []string) int {
 		return runUninstall(env, args[1:])
 	case "desktop":
 		return runDesktop(env, args[1:])
+	case "webrtc":
+		return runWebRTC(env, args[1:])
 	case "docker":
 		return runDocker(env, args[1:])
 	default:
@@ -594,6 +598,18 @@ func runUninstall(env Env, args []string) int {
 		state, err := desk.State(local.ListenPort)
 		if env.OS == "windows" && err != nil {
 			return fail(env, err)
+		}
+		if env.OS == "windows" {
+			privacy, ok := desk.(desktop.BrowserPrivacy)
+			if !ok {
+				return fail(env, i18n.New("Windows WebRTC settings are unavailable"))
+			}
+			if err := privacy.CleanupWebRTC(); err != nil {
+				return fail(env, i18n.Errorf("WebRTC cleanup failed; sbc is still installed. Retry 'sbc webrtc off' or uninstall: %w", err))
+			}
+			if err := reportRemainingWebRTC(env, privacy); err != nil {
+				return fail(env, err)
+			}
 		}
 		if err == nil && state == desktop.On {
 			if err := desk.Off(); err != nil {

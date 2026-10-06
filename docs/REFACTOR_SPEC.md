@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-05.
+Checked on 2026-10-06.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -309,7 +309,9 @@ Client:
   `disable_non_proxied_udp` for Chromium browsers, WebRTC proxy preferences for
   Firefox, and `pfctl` STUN filtering for Safari on macOS) so browsers do not
   leak real IPs over WebRTC STUN requests. `sbc desktop off` and `sbc uninstall`
-  cleanly revert these browser settings. `sbc docker on`
+  revert these browser settings. Firefox setup and cleanup continue through healthy
+  profiles and report errors from failed profiles or profile discovery.
+  `sbc docker on`
   writes the Docker daemon's systemd drop-in on Linux and restarts Docker, after
   asking, or with `--yes` where nobody can answer. Both take over the settings the
   bash client wrote, leave settings that point elsewhere alone, and refuse while
@@ -362,8 +364,10 @@ Done when a Linux runner turns TUN on and off with the verify step, Ctrl-C durin
 ### M2: Client CLI for Windows
 
 The same `sbc`, with the three parts that touch the operating system swapped.
-Everything that goes through sing-box's API is unchanged. Nothing needs
-administrator rights.
+Everything that goes through sing-box's API is unchanged. The installer, proxy
+service and ordinary commands run unelevated. A registry-only WebRTC helper requests
+administrator approval for protected browser policies and targets the original
+user's hive, not the administrator's `HKCU`.
 
 | Piece         | Linux and macOS                          | Windows                                                                                                                                                                                                                                                                                                      |
 | ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -389,8 +393,17 @@ Pull requests, in order:
    Edge, Brave, and Firefox preferences), `on|off` through persistent user
    environment variables, and the user PATH entry. `sbc env` prints PowerShell
    commands for the current session. Port changes and uninstall preserve foreign
-   settings; desktop proxy use remains opt-in. Tests cover failed writes, settings
-   ownership, and browser policy rollback.
+   settings; desktop proxy use remains opt-in. WebRTC protection persists across
+   proxy toggles. `sbc webrtc off` removes owned settings and opts out of automatic
+   setup; `sbc webrtc on` enables it again. Setup verifies policy writes.
+   Edge uses `WebRtcLocalhostIpHandling` and requires a browser restart. Migration
+   removes an owned obsolete `WebRtcIPHandling` value without claiming manual policies.
+   A per-user lock serializes mode state, policy changes and profile changes across
+   concurrent setup and cleanup commands. Uninstall
+   removes owned policies and stops on cleanup failure before deleting the client.
+   Pre-existing policies are preserved; the Windows guide gives manual reset steps,
+   including Firefox's saved preferences. Fixture tests cover permission failures,
+   ownership and retries. Native unelevated UAC validation is still pending.
 3. Done. `/install.ps1` downloads `sbc` and migrates the PowerShell client:
    exchange its saved machine token for a link, keep port, route and protocol,
    check the new proxy before removing the old tasks and module, then hand over

@@ -111,6 +111,49 @@ func TestWindowsPortMovesEnvironmentAndRestoresConfigOnFailure(t *testing.T) {
 		})
 	}
 }
+func TestWindowsOnReappliesDesktopSettingsWhenAlreadyOn(t *testing.T) {
+	h, _ := windowsHarness(t)
+	desk := h.useDesktop()
+	if code := Run(h.env, []string{"desktop", "on"}); code != 0 {
+		t.Fatal(h.errOut)
+	}
+	desk.calls = nil
+	if code := Run(h.env, []string{"on"}); code != 0 {
+		t.Fatal(h.errOut)
+	}
+	if got := strings.Join(desk.calls, ","); got != "on 2080" {
+		t.Fatalf("already-on desktop settings were not reapplied: %q", got)
+	}
+
+	// Reapplying is still opt-in and must preserve a foreign proxy or PAC.
+	desk.calls = nil
+	desk.state = desktop.Other
+	Run(h.env, []string{"on"})
+	if len(desk.calls) != 0 {
+		t.Fatal("on changed a foreign proxy")
+	}
+	desk.state = desktop.On
+	if err := os.Remove(h.layout.DesktopFile()); err != nil {
+		t.Fatal(err)
+	}
+	Run(h.env, []string{"on"})
+	if len(desk.calls) != 0 {
+		t.Fatal("on changed desktop settings without opt-in")
+	}
+}
+
+func TestWindowsOnReportsDesktopFailureWhenAlreadyOn(t *testing.T) {
+	h, _ := windowsHarness(t)
+	desk := h.useDesktop()
+	if code := Run(h.env, []string{"desktop", "on"}); code != 0 {
+		t.Fatal(h.errOut)
+	}
+	h.env.Desktop = func() (desktop.Desktop, error) { return failingDesktop{fakeDesktop: desk}, nil }
+	if code := Run(h.env, []string{"on"}); code == 0 || !strings.Contains(h.errOut.String(), "desktop write denied") {
+		t.Fatalf("already-on desktop failure reported success: code %d, %s", code, h.errOut)
+	}
+}
+
 func TestWindowsDesktopRefusesForeignProxy(t *testing.T) {
 	h, _ := windowsHarness(t)
 	desk := h.useDesktop()
@@ -172,6 +215,83 @@ func TestWindowsStatusReadsManualEnvironmentChanges(t *testing.T) {
 	h.out.Reset()
 	if code := Run(h.env, []string{"status"}); code != 0 || !strings.Contains(h.out.String(), "shells:   set to another proxy") {
 		t.Fatalf("%d: %s", code, h.out)
+	}
+}
+
+func TestWindowsWebRTCExplicitSwitchDoesNotToggleProxy(t *testing.T) {
+	h, _ := windowsHarness(t)
+	desk := h.useDesktop()
+	desk.state, desk.port = desktop.On, 2080
+	if err := os.Remove(h.layout.ConfigFile()); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"off", "on"} {
+		if code := Run(h.env, []string{"webrtc", action}); code != 0 {
+			t.Fatal(h.errOut)
+		}
+	}
+	if len(desk.privacyCalls) != 2 || desk.privacyCalls[0] || !desk.privacyCalls[1] || len(desk.calls) != 0 {
+		t.Fatalf("privacy commands changed proxy state: %+v", desk)
+	}
+	desk.privacyErr = errors.New("UAC canceled")
+	if code := Run(h.env, []string{"webrtc", "off"}); code == 0 {
+		t.Fatal("canceled reset succeeded")
+	}
+	for _, args := range [][]string{{"webrtc"}, {"webrtc", "reset"}, {"webrtc", "off", "extra"}} {
+		if code := Run(h.env, args); code != 2 {
+			t.Fatalf("invalid command %v: %d", args, code)
+		}
+	}
+	h.env.OS = "linux"
+	if code := Run(h.env, []string{"webrtc", "off"}); code == 0 {
+		t.Fatal("Windows-only command succeeded on Linux")
+	}
+}
+
+func TestWindowsUninstallCleansPrivacyEvenWhenDesktopIsOff(t *testing.T) {
+	h, _ := windowsHarness(t)
+	desk := h.useDesktop()
+	desk.remainingPolicies = []string{`HKCU\Software\Policies\Google\Chrome\WebRtcIPHandling`}
+	if code := Run(h.env, []string{"uninstall", "--yes"}); code != 0 {
+		t.Fatal(h.errOut)
+	}
+	if desk.privacyCleanups != 1 || len(desk.calls) != 0 {
+		t.Fatalf("cleanup depended on the proxy being on: %+v", desk)
+	}
+	if !strings.Contains(h.out.String(), "not removed automatically") || !strings.Contains(h.out.String(), "manual WebRTC cleanup") {
+		t.Fatal("uninstall concealed a pre-existing policy")
+	}
+	if _, err := os.Stat(h.layout.ConfigFile()); !os.IsNotExist(err) {
+		t.Fatal("successful cleanup did not permit uninstall")
+	}
+}
+
+func TestWindowsUninstallCancellationKeepsClientAndProxyForRetry(t *testing.T) {
+	h, registry := windowsHarness(t)
+	desk := h.useDesktop()
+	if code := Run(h.env, []string{"desktop", "on"}); code != 0 {
+		t.Fatal(h.errOut)
+	}
+	if code := Run(h.env, []string{"on"}); code != 0 {
+		t.Fatal(h.errOut)
+	}
+	desk.calls = nil
+	desk.privacyErr = errors.New("UAC canceled")
+	if code := Run(h.env, []string{"uninstall", "--yes"}); code == 0 {
+		t.Fatal("uninstall ignored browser cleanup failure")
+	}
+	if !h.svc.active || registry.values["HTTP_PROXY"].Text == "" || len(desk.calls) != 0 {
+		t.Fatal("canceled cleanup changed the service or proxy")
+	}
+	if _, err := os.Stat(h.layout.ConfigFile()); err != nil {
+		t.Fatal("canceled cleanup removed recovery state")
+	}
+	if !strings.Contains(h.errOut.String(), "sbc is still installed") {
+		t.Fatal("canceled cleanup did not explain how to retry")
+	}
+	desk.privacyErr = nil
+	if code := Run(h.env, []string{"uninstall", "--yes"}); code != 0 {
+		t.Fatal(h.errOut)
 	}
 }
 

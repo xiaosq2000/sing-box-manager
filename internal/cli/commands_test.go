@@ -192,9 +192,13 @@ func (h *harness) writeLocal(t *testing.T, change func(*singbox.Local)) {
 
 // fakeDesktop keeps one proxy setting, as GNOME or macOS would.
 type fakeDesktop struct {
-	state desktop.State
-	port  int
-	calls []string
+	state             desktop.State
+	port              int
+	calls             []string
+	privacyCalls      []bool
+	privacyCleanups   int
+	privacyErr        error
+	remainingPolicies []string
 }
 
 func (f *fakeDesktop) Name() string { return "GNOME" }
@@ -216,6 +220,20 @@ func (f *fakeDesktop) Off() error {
 	f.state = desktop.Off
 	f.calls = append(f.calls, "off")
 	return nil
+}
+
+func (f *fakeDesktop) SetWebRTC(enabled bool) error {
+	f.privacyCalls = append(f.privacyCalls, enabled)
+	return f.privacyErr
+}
+
+func (f *fakeDesktop) CleanupWebRTC() error {
+	f.privacyCleanups++
+	return f.privacyErr
+}
+
+func (f *fakeDesktop) RemainingWebRTC() ([]string, error) {
+	return f.remainingPolicies, nil
 }
 
 func (h *harness) useDesktop() *fakeDesktop {
