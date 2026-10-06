@@ -128,7 +128,7 @@ func TestNativeWebRTCDisposablePoliciesPreservePreexistingAndChangedValues(t *te
 	if f.read(t, WebRTCMetadataKey, WebRTCEdgeOwnerName) != (Value{WebRTCMetadataIntent, WebRTCMetadataKind}) {
 		t.Fatal("new policy lacks durable ownership")
 	}
-	if err := f.registry.Apply(f.key(EdgePolicyKey), map[string]Value{WebRtcPolicyName: {WebRtcDisableNonProxiedUDP, "ExpandString"}}, ""); err != nil {
+	if err := f.registry.Apply(f.key(EdgePolicyKey), map[string]Value{EdgeWebRtcPolicyName: {WebRtcDisableNonProxiedUDP, "ExpandString"}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.run(f.script(t, "off"), nil); err != nil {
@@ -137,7 +137,7 @@ func TestNativeWebRTCDisposablePoliciesPreservePreexistingAndChangedValues(t *te
 	if f.read(t, ChromePolicyKey, WebRtcPolicyName) != webRTCPolicies[0].want || f.read(t, ChromePolicyKey, "Unrelated").Kind == "" {
 		t.Fatal("pre-existing or unrelated value was removed")
 	}
-	if f.read(t, EdgePolicyKey, WebRtcPolicyName).Kind != "ExpandString" || f.read(t, FirefoxPolicyKey, FirefoxProxyOnlyName).Text != "false" {
+	if f.read(t, EdgePolicyKey, EdgeWebRtcPolicyName).Kind != "ExpandString" || f.read(t, FirefoxPolicyKey, FirefoxProxyOnlyName).Text != "false" {
 		t.Fatal("foreign edit or Firefox value was removed")
 	}
 	if f.read(t, BravePolicyKey, WebRtcPolicyName).Kind != "" {
@@ -152,11 +152,11 @@ func TestNativeWebRTCDisposablePoliciesPreservePreexistingAndChangedValues(t *te
 
 func TestNativeWebRTCDisposableInterruptedSetupAndCleanupCanRetry(t *testing.T) {
 	f := newNativeWebRTCFixture(t)
-	script := strings.Replace(f.script(t, "on"), "$key.SetValue($policy.Name,", "if ($policy.Owner -eq 'Edge') { throw 'Synthetic write failure' }; $key.SetValue($policy.Name,", 1)
+	script := strings.Replace(f.script(t, "on"), "$key.SetValue($policy.Name,", "if ($policy.Owner -eq 'EdgeLocalhostIP') { throw 'Synthetic write failure' }; $key.SetValue($policy.Name,", 1)
 	if _, err := f.run(script, nil); err == nil {
 		t.Fatal("injected setup failure reported success")
 	}
-	if f.read(t, ChromePolicyKey, WebRtcPolicyName) != webRTCPolicies[0].want || f.read(t, EdgePolicyKey, WebRtcPolicyName).Kind != "" {
+	if f.read(t, ChromePolicyKey, WebRtcPolicyName) != webRTCPolicies[0].want || f.read(t, EdgePolicyKey, EdgeWebRtcPolicyName).Kind != "" {
 		t.Fatal("fixture did not interrupt after partial setup")
 	}
 	if f.read(t, WebRTCMetadataKey, WebRTCEdgeOwnerName) != (Value{WebRTCMetadataIntent, WebRTCMetadataKind}) {
@@ -165,7 +165,7 @@ func TestNativeWebRTCDisposableInterruptedSetupAndCleanupCanRetry(t *testing.T) 
 	if _, err := f.run(f.script(t, "on"), nil); err != nil {
 		t.Fatalf("setup retry: %v", err)
 	}
-	script = strings.Replace(f.script(t, "off"), "$key.DeleteValue($policy.Name,", "if ($policy.Owner -eq 'Edge') { throw 'Synthetic delete failure' }; $key.DeleteValue($policy.Name,", 1)
+	script = strings.Replace(f.script(t, "off"), "$key.DeleteValue($policy.Name,", "if ($policy.Owner -eq 'EdgeLocalhostIP') { throw 'Synthetic delete failure' }; $key.DeleteValue($policy.Name,", 1)
 	if _, err := f.run(script, nil); err == nil {
 		t.Fatal("injected deletion failure reported success")
 	}
@@ -217,6 +217,100 @@ func TestNativeWebRTCDisposableConflictsAndUntrustedMetadataFailClosed(t *testin
 	}
 }
 
+func TestNativeWebRTCDisposableEdgeMigration(t *testing.T) {
+	for _, test := range []struct {
+		name, action  string
+		manual, owned bool
+		legacy        Value
+	}{
+		{"upgrade", "on", false, true, Value{"disable_non_proxied_udp", "String"}},
+		{"cleanup", "off", false, true, Value{"disable_non_proxied_udp", "String"}},
+		{"manual supported policy", "on", true, true, Value{"disable_non_proxied_udp", "String"}},
+		{"unowned obsolete value", "on", false, false, Value{"disable_non_proxied_udp", "String"}},
+		{"changed obsolete value", "on", false, true, Value{"default", "String"}},
+		{"changed obsolete type", "on", false, true, Value{"disable_non_proxied_udp", "ExpandString"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newNativeWebRTCFixture(t)
+			if _, err := f.run(f.script(t, "on"), nil); err != nil {
+				t.Fatal(err)
+			}
+			// Keep the protected fixture ACL, but seed the old release's
+			// value and ownership identity independently of the policy table.
+			supported := Value{}
+			if test.manual {
+				supported = Value{"disable_non_proxied_udp", "String"}
+			}
+			if err := f.registry.Apply(f.key(EdgePolicyKey), map[string]Value{
+				"WebRtcLocalhostIpHandling": supported, "WebRtcIPHandling": test.legacy,
+			}, ""); err != nil {
+				t.Fatal(err)
+			}
+			owner := Value{}
+			if test.owned {
+				owner = Value{"1", "DWord"}
+			}
+			if err := f.registry.Apply(f.key(WebRTCMetadataKey), map[string]Value{
+				WebRTCEdgeOwnerName: {}, "Edge": owner,
+			}, ""); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.run(f.script(t, test.action), nil); err != nil {
+				t.Fatalf("migrate Edge: %v", err)
+			}
+			want := Value{}
+			if test.action == "on" || test.manual {
+				want = Value{"disable_non_proxied_udp", "String"}
+			}
+			legacy := test.legacy
+			if test.owned && legacy == (Value{"disable_non_proxied_udp", "String"}) {
+				legacy = Value{}
+			}
+			if f.read(t, EdgePolicyKey, "WebRtcLocalhostIpHandling") != want || f.read(t, EdgePolicyKey, "WebRtcIPHandling") != legacy {
+				t.Fatal("migration applied the wrong Edge policy or changed a foreign value")
+			}
+			if f.read(t, WebRTCMetadataKey, "Edge").Kind != "" {
+				t.Fatal("migration left the obsolete ownership intent")
+			}
+			if _, err := f.run(f.script(t, "off"), nil); err != nil {
+				t.Fatal(err)
+			}
+			if f.read(t, EdgePolicyKey, "WebRtcLocalhostIpHandling") != supported || f.read(t, EdgePolicyKey, "WebRtcIPHandling") != legacy {
+				t.Fatal("cleanup removed a manual policy or left the new owned policy")
+			}
+		})
+	}
+}
+
+func TestNativeWebRTCDisposableEdgeMigrationRetriesFailedDeletion(t *testing.T) {
+	f := newNativeWebRTCFixture(t)
+	if _, err := f.run(f.script(t, "on"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.registry.Apply(f.key(EdgePolicyKey), map[string]Value{
+		"WebRtcIPHandling": {"disable_non_proxied_udp", "String"},
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.registry.Apply(f.key(WebRTCMetadataKey), map[string]Value{"Edge": {"1", "DWord"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	script := strings.Replace(f.script(t, "on"), "$key.DeleteValue($policy.Name,",
+		"if ($policy.Owner -eq 'Edge') { throw 'Synthetic legacy deletion failure' }; $key.DeleteValue($policy.Name,", 1)
+	if _, err := f.run(script, nil); err == nil {
+		t.Fatal("failed migration reported success")
+	}
+	if f.read(t, WebRTCMetadataKey, "Edge") != (Value{"1", "DWord"}) || f.read(t, EdgePolicyKey, "WebRtcIPHandling").Kind == "" {
+		t.Fatal("failed migration lost its retry state")
+	}
+	if _, err := f.run(f.script(t, "on"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.read(t, WebRTCMetadataKey, "Edge").Kind != "" || f.read(t, EdgePolicyKey, "WebRtcIPHandling").Kind != "" {
+		t.Fatal("migration retry left the obsolete policy")
+	}
+}
+
 func TestNativeWebRTCLauncherClassifiesWrappedCancellationWithoutUAC(t *testing.T) {
 	f := newNativeWebRTCFixture(t)
 	for _, test := range []struct {
@@ -255,11 +349,11 @@ func TestNativeWebRTCDisposableUnretainedDeletionKeepsIntent(t *testing.T) {
 	// A successful-looking deletion that does not remove the value must
 	// still fail read-back verification before the intent is removed.
 	script := strings.Replace(f.script(t, "off"), "$key.DeleteValue($policy.Name, $false)",
-		"if ($policy.Owner -ne 'Edge') { $key.DeleteValue($policy.Name, $false) }", 1)
+		"if ($policy.Owner -ne 'EdgeLocalhostIP') { $key.DeleteValue($policy.Name, $false) }", 1)
 	if _, err := f.run(script, nil); err == nil {
 		t.Fatal("unretained deletion reported success")
 	}
-	if f.read(t, EdgePolicyKey, WebRtcPolicyName) != webRTCPolicies[1].want ||
+	if f.read(t, EdgePolicyKey, EdgeWebRtcPolicyName) != webRTCPolicies[1].want ||
 		f.read(t, WebRTCMetadataKey, WebRTCEdgeOwnerName) != (Value{WebRTCMetadataIntent, WebRTCMetadataKind}) {
 		t.Fatal("failed deletion verification lost the retry intent")
 	}

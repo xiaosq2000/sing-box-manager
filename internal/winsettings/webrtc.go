@@ -13,34 +13,39 @@ import (
 // Each DWord=1 is an intent to create the corresponding absent policy. The
 // restricted helper alone writes this key, with an administrator-owned ACL.
 const (
-	WebRTCMetadataKey        = `Software\Policies\sbc\WebRTC`
-	WebRTCChromeOwnerName    = "Chrome"
-	WebRTCEdgeOwnerName      = "Edge"
-	WebRTCBraveOwnerName     = "Brave"
-	WebRTCFirefoxNoHostName  = "FirefoxNoHost"
-	WebRTCFirefoxAddressName = "FirefoxDefaultAddress"
-	WebRTCFirefoxProxyName   = "FirefoxProxyOnly"
-	WebRTCFirefoxBehindName  = "FirefoxBehindProxy"
-	WebRTCMetadataIntent     = "1"
-	WebRTCMetadataKind       = "DWord"
+	WebRTCMetadataKey         = `Software\Policies\sbc\WebRTC`
+	WebRTCChromeOwnerName     = "Chrome"
+	WebRTCEdgeOwnerName       = "EdgeLocalhostIP"
+	WebRTCEdgeLegacyOwnerName = "Edge"
+	WebRTCBraveOwnerName      = "Brave"
+	WebRTCFirefoxNoHostName   = "FirefoxNoHost"
+	WebRTCFirefoxAddressName  = "FirefoxDefaultAddress"
+	WebRTCFirefoxProxyName    = "FirefoxProxyOnly"
+	WebRTCFirefoxBehindName   = "FirefoxBehindProxy"
+	WebRTCMetadataIntent      = "1"
+	WebRTCMetadataKind        = "DWord"
 )
 
 type webRTCPolicy struct {
 	key, name, owner string
 	want             Value
 	chromium         bool
+	obsolete         bool
 }
 
 // Keep the elevated allowlist fixed. Firefox's existing values are preserved,
 // even when they differ from these defaults. Chromium conflicts are errors.
 var webRTCPolicies = []webRTCPolicy{
-	{ChromePolicyKey, WebRtcPolicyName, WebRTCChromeOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true},
-	{EdgePolicyKey, WebRtcPolicyName, WebRTCEdgeOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true},
-	{BravePolicyKey, WebRtcPolicyName, WebRTCBraveOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true},
-	{FirefoxPolicyKey, "media.peerconnection.ice.no_host", WebRTCFirefoxNoHostName, Value{"true", "String"}, false},
-	{FirefoxPolicyKey, "media.peerconnection.ice.default_address_only", WebRTCFirefoxAddressName, Value{"true", "String"}, false},
-	{FirefoxPolicyKey, FirefoxProxyOnlyName, WebRTCFirefoxProxyName, Value{"true", "String"}, false},
-	{FirefoxPolicyKey, "media.peerconnection.ice.proxy_only_if_behind_proxy", WebRTCFirefoxBehindName, Value{"true", "String"}, false},
+	{ChromePolicyKey, WebRtcPolicyName, WebRTCChromeOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true, false},
+	{EdgePolicyKey, EdgeWebRtcPolicyName, WebRTCEdgeOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true, false},
+	// Edge ignores the Chrome policy name. Retain its old ownership identity
+	// only for cleanup, so migration never claims an existing supported policy.
+	{EdgePolicyKey, WebRtcPolicyName, WebRTCEdgeLegacyOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, false, true},
+	{BravePolicyKey, WebRtcPolicyName, WebRTCBraveOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true, false},
+	{FirefoxPolicyKey, "media.peerconnection.ice.no_host", WebRTCFirefoxNoHostName, Value{"true", "String"}, false, false},
+	{FirefoxPolicyKey, "media.peerconnection.ice.default_address_only", WebRTCFirefoxAddressName, Value{"true", "String"}, false, false},
+	{FirefoxPolicyKey, FirefoxProxyOnlyName, WebRTCFirefoxProxyName, Value{"true", "String"}, false, false},
+	{FirefoxPolicyKey, "media.peerconnection.ice.proxy_only_if_behind_proxy", WebRTCFirefoxBehindName, Value{"true", "String"}, false, false},
 }
 
 // WebRTC manages persistent browser protection independently of proxy toggles.
@@ -151,13 +156,20 @@ func (w *WebRTC) needsSetup() (bool, error) {
 	}
 	missing := false
 	for _, policy := range webRTCPolicies {
+		if policy.obsolete {
+			continue
+		}
 		value := values[policy.owner]
 		if policy.chromium && value.Kind != "" && value != policy.want {
 			return false, i18n.Errorf("an existing WebRTC policy at HKCU\\%s conflicts with proxy-only UDP; review your browser policies", policy.key)
 		}
 		missing = missing || value.Kind == ""
 	}
-	return missing, nil
+	owned, err := w.ownership()
+	if err != nil {
+		return false, err
+	}
+	return missing || owned[WebRTCEdgeLegacyOwnerName].Kind != "", nil
 }
 
 func (w *WebRTC) enable() error {

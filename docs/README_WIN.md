@@ -117,8 +117,9 @@ The Windows desktop proxy is opt-in via `sbc desktop on`. Once enabled, it follo
   `WM_SETTINGCHANGE` message to the system.
 - **WebRTC leak prevention**: when browser policies are missing, `sbc desktop on`
   requests administrator approval for a registry-only helper. It sets `WebRtcIPHandling` to
-  `disable_non_proxied_udp` for Chrome, Edge, and Brave, and WebRTC preferences for
-  Firefox. It targets `HKEY_USERS\<original-user-SID>\Software\Policies`, even if
+  `disable_non_proxied_udp` for Chrome and Brave. Edge uses
+  `WebRtcLocalhostIpHandling` with the same value. It also sets Firefox WebRTC
+  preferences. It targets `HKEY_USERS\<original-user-SID>\Software\Policies`, even if
   elevation uses a different administrator. The installer, client and service stay
   unelevated; Firefox profile edits also run unelevated. Browser registry ACLs are
   not changed.
@@ -151,6 +152,9 @@ sbc webrtc on
 
 Use `sbc desktop on` to enable the Windows proxy as well.
 
+The elevated PowerShell window runs the helper and closes automatically. It needs
+no typed input. The original terminal reports the result.
+
 Open `chrome://policy`, click **Reload policies**, and find `WebRtcIPHandling`.
 Its value should be `disable_non_proxied_udp` with status **OK**. Reload the WebRTC
 leak-test page: it may still report that WebRTC is available, but it must not expose
@@ -179,6 +183,23 @@ If elevation uses a different administrator account, `HKCU` refers to that
 administrator, not the Chrome user. The administrator must instead target
 `HKEY_USERS\<Chrome-user-SID>\Software\Policies\Google\Chrome`. Obtain the Chrome
 user's SID with `whoami /user` in their normal terminal.
+
+### Check Edge WebRTC protection
+
+Run `sbc webrtc on`, then restart Edge through `edge://restart`.
+Open `edge://policy` and check that `WebRtcLocalhostIpHandling` has value
+`disable_non_proxied_udp` and status **OK**. Repeat the leak test.
+Restart Edge after `sbc webrtc off` too.
+
+Edge reports `WebRtcIPHandling` as an unknown policy. Setup and cleanup remove this
+obsolete value only when the protected ownership record identifies it as an
+unchanged value created by `sbc`. Manual or externally changed values remain.
+The supported Edge policy has its own ownership record, so migration preserves
+pre-existing settings.
+
+[Microsoft documents](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/WebRtcLocalhostIpHandling)
+a required browser restart and excludes profiles signed in with a personal
+Microsoft account. Check the effective policy in the profile used for testing.
 
 ### File locations
 

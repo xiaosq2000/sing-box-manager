@@ -396,6 +396,8 @@ Pull requests, in order:
    settings; desktop proxy use remains opt-in. WebRTC protection persists across
    proxy toggles. `sbc webrtc off` removes owned settings and opts out of automatic
    setup; `sbc webrtc on` enables it again. Setup verifies policy writes.
+   Edge uses `WebRtcLocalhostIpHandling` and requires a browser restart. Migration
+   removes an owned obsolete `WebRtcIPHandling` value without claiming manual policies.
    A per-user lock serializes mode state, policy changes and profile changes across
    concurrent setup and cleanup commands. Uninstall
    removes owned policies and stops on cleanup failure before deleting the client.

@@ -54,10 +54,14 @@ func webRTCScript(sid, action string) (string, error) {
 		if policy.chromium {
 			chromium = "$true"
 		}
+		obsolete := "$false"
+		if policy.obsolete {
+			obsolete = "$true"
+		}
 		// These strings are compile-time allowlisted policy constants. Neither
 		// callers nor registry data supply script paths, names or values.
-		fmt.Fprintf(&table, "    @{ Key = '%s'; Name = '%s'; Owner = '%s'; Value = '%s'; Chromium = %s }\n",
-			policy.key, policy.name, policy.owner, policy.want.Text, chromium)
+		fmt.Fprintf(&table, "    @{ Key = '%s'; Name = '%s'; Owner = '%s'; Value = '%s'; Chromium = %s; Obsolete = %s }\n",
+			policy.key, policy.name, policy.owner, policy.want.Text, chromium, obsolete)
 	}
 	return strings.NewReplacer("@@SID@@", sid, "@@ACTION@@", action,
 		"@@METADATA@@", WebRTCMetadataKey, "@@POLICIES@@", table.String()).Replace(webRTCPolicyScript), nil

@@ -82,7 +82,9 @@ skip healthy profiles and that Unix desktop commands return those failures.
 The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
 Native registry tests use disposable keys, not browser or environment keys. They
 check registry types and rollback, and run the fixed WebRTC payload in a disposable
-namespace to check ownership and cleanup. Subprocess tests use disposable mutex
+namespace to check ownership and cleanup. Edge migration tests check the supported
+policy name, cleanup of owned obsolete values, preserved manual settings and retry
+after failed deletion. Subprocess tests use disposable mutex
 names to check serialization and recovery after the owning process exits.
 These tests do not exercise the UAC dialog.
 Validate approval, cancellation and different-administrator hive targeting from an
@@ -103,12 +105,14 @@ starting Windows PowerShell to avoid inheriting incompatible PowerShell 7 module
 Windows also checks user PATH, persistent proxy variables, current-session
 PowerShell output, desktop switching and port changes. It checks that browser
 protection survives proxy toggles, explicit WebRTC opt-out persists until re-enabled,
-and uninstall removes owned policies and ownership records. Its Chrome regression check
-removes the WebRTC policy while the desktop proxy remains on, then runs `sbc on`
-to repair it. Fresh headless Chrome profiles use loopback HTTP and STUN fixtures:
+and uninstall removes owned policies and ownership records. The Chrome and Edge
+regression checks remove each browser policy while the desktop proxy remains on.
+They then run `sbc on` to repair it. Fresh headless browser profiles use loopback HTTP and STUN fixtures:
 the unprotected control must gather a fixture server-reflexive candidate; the
 protected run must complete ICE gathering without direct STUN. The runner needs
-Chrome installed. This IPv4 UDP check runs only in the gated Windows lifecycle.
+Chrome and Edge installed. Each probe starts a new process, including after an
+Edge policy change that requires a restart. This IPv4 UDP check runs only in the
+gated Windows lifecycle.
 The fixture responder alone can be checked without changing host settings:
 
 ```sh

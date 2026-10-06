@@ -74,14 +74,14 @@ func (r *webRTCRegistry) change(action string) error {
 	}
 	for _, policy := range webRTCPolicies {
 		value := r.values[policy.key][policy.name]
-		if action == "on" && value.Kind == "" {
+		if action == "on" && !policy.obsolete && value.Kind == "" {
 			if err := r.Apply(WebRTCMetadataKey, map[string]Value{policy.owner: {WebRTCMetadataIntent, WebRTCMetadataKind}}, ""); err != nil {
 				return err
 			}
 			if err := r.Apply(policy.key, map[string]Value{policy.name: policy.want}, ""); err != nil {
 				return err
 			}
-		} else if action == "off" && r.values[WebRTCMetadataKey][policy.owner].Kind != "" {
+		} else if (action == "off" || policy.obsolete) && r.values[WebRTCMetadataKey][policy.owner].Kind != "" {
 			if value == policy.want {
 				if err := r.Apply(policy.key, map[string]Value{policy.name: {}}, ""); err != nil {
 					return err
@@ -191,7 +191,7 @@ func TestWebRTCMatchingPreexistingAndFirefoxForeignValuesAreNotOwned(t *testing.
 		t.Fatal("pre-existing policies were claimed")
 	}
 	// Later edits, including changes to type alone, must also survive off.
-	registry.put(EdgePolicyKey, WebRtcPolicyName, Value{"private external edit", "String"})
+	registry.put(EdgePolicyKey, EdgeWebRtcPolicyName, Value{"private external edit", "String"})
 	registry.put(BravePolicyKey, WebRtcPolicyName, Value{WebRtcDisableNonProxiedUDP, "ExpandString"})
 	if err := w.Set(false); err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func TestWebRTCMatchingPreexistingAndFirefoxForeignValuesAreNotOwned(t *testing.
 	if registry.values[ChromePolicyKey][WebRtcPolicyName] != manualChrome || registry.values[FirefoxPolicyKey][FirefoxProxyOnlyName] != manualFirefox {
 		t.Fatal("reset removed pre-existing values")
 	}
-	if registry.values[EdgePolicyKey][WebRtcPolicyName].Text != "private external edit" || registry.values[BravePolicyKey][WebRtcPolicyName].Kind != "ExpandString" {
+	if registry.values[EdgePolicyKey][EdgeWebRtcPolicyName].Text != "private external edit" || registry.values[BravePolicyKey][WebRtcPolicyName].Kind != "ExpandString" {
 		t.Fatal("reset removed external edits")
 	}
 	for _, policy := range webRTCPolicies {
@@ -264,7 +264,7 @@ func TestWebRTCPartialSetupDurableIntentAndExplicitOnRetry(t *testing.T) {
 		t.Fatalf("lost setup failure: %v", err)
 	}
 	assertOffMarker(t, w, true)
-	if registry.values[WebRTCMetadataKey][WebRTCEdgeOwnerName] != (Value{WebRTCMetadataIntent, WebRTCMetadataKind}) || registry.values[EdgePolicyKey][WebRtcPolicyName].Kind != "" {
+	if registry.values[WebRTCMetadataKey][WebRTCEdgeOwnerName] != (Value{WebRTCMetadataIntent, WebRTCMetadataKind}) || registry.values[EdgePolicyKey][EdgeWebRtcPolicyName].Kind != "" {
 		t.Fatal("failed write did not retain intent")
 	}
 	if registry.values[ChromePolicyKey][WebRtcPolicyName] != webRTCPolicies[0].want || profiles != 0 {

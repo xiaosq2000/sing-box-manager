@@ -24,7 +24,7 @@ func prepareWindowsSettings(t *testing.T) {
 		winsettings.EnvironmentKey:   {"HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "SOCKS_PROXY", "ALL_PROXY", "NO_PROXY", "Path"},
 		winsettings.InternetKey:      {"ProxyEnable", "ProxyServer", "ProxyOverride", "AutoConfigURL"},
 		winsettings.ChromePolicyKey:  {winsettings.WebRtcPolicyName},
-		winsettings.EdgePolicyKey:    {winsettings.WebRtcPolicyName},
+		winsettings.EdgePolicyKey:    {winsettings.WebRtcPolicyName, winsettings.EdgeWebRtcPolicyName},
 		winsettings.BravePolicyKey:   {winsettings.WebRtcPolicyName},
 		winsettings.FirefoxPolicyKey: winsettings.FirefoxWebRtcPrefs,
 	} {
@@ -138,7 +138,7 @@ func checkWindowsSettingsRemoved(t *testing.T, layout paths.Layout) {
 func webRTCOwnershipNames() []string {
 	return []string{
 		winsettings.WebRTCChromeOwnerName, winsettings.WebRTCEdgeOwnerName,
-		winsettings.WebRTCBraveOwnerName, winsettings.WebRTCFirefoxNoHostName,
+		winsettings.WebRTCEdgeLegacyOwnerName, winsettings.WebRTCBraveOwnerName, winsettings.WebRTCFirefoxNoHostName,
 		winsettings.WebRTCFirefoxAddressName, winsettings.WebRTCFirefoxProxyName,
 		winsettings.WebRTCFirefoxBehindName,
 	}
@@ -148,10 +148,14 @@ func checkWindowsBrowserPolicies(t *testing.T, enabled bool) {
 	t.Helper()
 	registry := winsettings.PowerShell{}
 	policies := map[string]map[string]winsettings.Value{}
-	for _, key := range []string{winsettings.ChromePolicyKey, winsettings.EdgePolicyKey, winsettings.BravePolicyKey} {
+	for _, key := range []string{winsettings.ChromePolicyKey, winsettings.BravePolicyKey} {
 		policies[key] = map[string]winsettings.Value{
 			winsettings.WebRtcPolicyName: {Text: winsettings.WebRtcDisableNonProxiedUDP, Kind: "String"},
 		}
+	}
+	policies[winsettings.EdgePolicyKey] = map[string]winsettings.Value{
+		winsettings.EdgeWebRtcPolicyName: {Text: winsettings.WebRtcDisableNonProxiedUDP, Kind: "String"},
+		winsettings.WebRtcPolicyName:     {},
 	}
 	policies[winsettings.FirefoxPolicyKey] = map[string]winsettings.Value{}
 	for _, name := range winsettings.FirefoxWebRtcPrefs {

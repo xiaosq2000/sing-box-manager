@@ -24,6 +24,7 @@ const (
 
 const (
 	WebRtcPolicyName           = "WebRtcIPHandling"
+	EdgeWebRtcPolicyName       = "WebRtcLocalhostIpHandling"
 	WebRtcDisableNonProxiedUDP = "disable_non_proxied_udp"
 	FirefoxProxyOnlyName       = "media.peerconnection.ice.proxy_only"
 )

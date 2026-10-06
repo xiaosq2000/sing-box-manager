@@ -24,50 +24,53 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
-// checkWindowsWebRTC runs inside the guarded Windows lifecycle, never as a
-// standalone host-setting test. No browser flag or profile preference sets the
-// WebRTC policy: Chrome must obtain it from the settings that sbc repairs.
+// checkWindowsWebRTC runs only inside the disposable Windows lifecycle.
+// Both browsers must enforce policies repaired by sbc, without policy flags.
 func checkWindowsWebRTC(t *testing.T, sbc string) {
 	t.Helper()
 	if runtime.GOOS != "windows" || os.Getenv("SBC_E2E") != "1" {
-		t.Fatal("Chrome WebRTC checks require the disposable Windows lifecycle")
+		t.Fatal("browser WebRTC checks require the disposable Windows lifecycle")
 	}
-	chrome := windowsChrome(t)
-	registry := winsettings.PowerShell{}
-	// Model an upgraded installation whose desktop proxy is already on but
-	// whose Chrome policy is missing. prepareWindowsSettings restores this key.
-	if err := registry.Apply(winsettings.ChromePolicyKey, map[string]winsettings.Value{
-		winsettings.WebRtcPolicyName: {},
-	}, ""); err != nil {
-		t.Fatal(err)
+	for _, browser := range []struct{ name, executable, directory, key, policy string }{
+		{"Chrome", "chrome.exe", "Google/Chrome/Application", winsettings.ChromePolicyKey, winsettings.WebRtcPolicyName},
+		{"Edge", "msedge.exe", "Microsoft/Edge/Application", winsettings.EdgePolicyKey, winsettings.EdgeWebRtcPolicyName},
+	} {
+		t.Run(browser.name, func(t *testing.T) {
+			executable := windowsBrowser(t, browser.executable, browser.directory)
+			registry := winsettings.PowerShell{}
+			// The proxy stays on while its browser policy is missing.
+			if err := registry.Apply(browser.key, map[string]winsettings.Value{browser.policy: {}}, ""); err != nil {
+				t.Fatal(err)
+			}
+			values, err := registry.Read(browser.key, []string{browser.policy})
+			if err != nil || len(values) != 0 {
+				t.Fatalf("could not remove browser policy for the positive control: %v", err)
+			}
+			expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
+			checkBrowserSTUN(t, executable, false)
+			run(t, nil, sbc, "on")
+			expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
+			checkWindowsBrowserPolicies(t, true)
+			// A fresh browser also satisfies Edge's restart requirement.
+			checkBrowserSTUN(t, executable, true)
+		})
 	}
-	values, err := registry.Read(winsettings.ChromePolicyKey, []string{winsettings.WebRtcPolicyName})
-	if err != nil || len(values) != 0 {
-		t.Fatalf("could not remove Chrome policy for the positive control: %v", err)
-	}
-	expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
-	checkChromeSTUN(t, chrome, false)
-
-	run(t, nil, sbc, "on")
-	expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
-	checkWindowsBrowserPolicies(t, true)
-	checkChromeSTUN(t, chrome, true)
 }
 
-func windowsChrome(t *testing.T) string {
+func windowsBrowser(t *testing.T, executable, directory string) string {
 	t.Helper()
-	if path, err := exec.LookPath("chrome.exe"); err == nil {
+	if path, err := exec.LookPath(executable); err == nil {
 		return path
 	}
 	for _, variable := range []string{"ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"} {
 		if root := os.Getenv(variable); root != "" {
-			path := filepath.Join(root, "Google", "Chrome", "Application", "chrome.exe")
+			path := filepath.Join(root, filepath.FromSlash(directory), executable)
 			if info, err := os.Stat(path); err == nil && !info.IsDir() {
 				return path
 			}
 		}
 	}
-	t.Fatal("the disposable Windows runner needs an installed Chrome for the WebRTC regression check")
+	t.Fatalf("the disposable Windows runner needs %s for the WebRTC regression check", executable)
 	return ""
 }
 
@@ -123,14 +126,14 @@ func startWebRTCSTUN(t *testing.T) (*net.UDPConn, *atomic.Int64) {
 	return connection, count
 }
 
-func checkChromeSTUN(t *testing.T, chrome string, protected bool) {
+func checkBrowserSTUN(t *testing.T, browser string, protected bool) {
 	t.Helper()
 	// Each browser gets its own socket, page and fresh profile. Late control
 	// packets cannot contaminate the protected run's count.
 	stun, count := startWebRTCSTUN(t)
-	result := runChromeWebRTC(t, chrome, "stun:"+stun.LocalAddr().String())
+	result := runBrowserWebRTC(t, browser, "stun:"+stun.LocalAddr().String())
 	if result.Error != "" || !result.Started || !result.Complete {
-		t.Fatalf("Chrome did not complete the WebRTC probe: %+v", result)
+		t.Fatalf("Browser did not complete the WebRTC probe: %+v", result)
 	}
 	reflexive := false
 	for _, candidate := range result.Candidates {
@@ -140,21 +143,21 @@ func checkChromeSTUN(t *testing.T, chrome string, protected bool) {
 	}
 	if protected {
 		if count.Load() != 0 || reflexive {
-			t.Fatalf("proxy-only Chrome sent direct STUN: %d binding requests, fixture candidate=%t", count.Load(), reflexive)
+			t.Fatalf("protected browser sent direct STUN: %d binding requests, fixture candidate=%t", count.Load(), reflexive)
 		}
 	} else if count.Load() == 0 || !reflexive {
-		t.Fatalf("unprotected Chrome control did not prove direct STUN: %d binding requests, fixture candidate=%t", count.Load(), reflexive)
+		t.Fatalf("unprotected browser control did not prove direct STUN: %d binding requests, fixture candidate=%t", count.Load(), reflexive)
 	}
 }
 
-type chromeWebRTCResult struct {
+type browserWebRTCResult struct {
 	Started    bool     `json:"started"`
 	Complete   bool     `json:"complete"`
 	Candidates []string `json:"candidates"`
 	Error      string   `json:"error"`
 }
 
-func runChromeWebRTC(t *testing.T, chrome, stunURL string) chromeWebRTCResult {
+func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult {
 	t.Helper()
 	page := fmt.Sprintf(`<!doctype html><meta charset="utf-8"><script>
 (async () => {
@@ -186,7 +189,7 @@ func runChromeWebRTC(t *testing.T, chrome, stunURL string) chromeWebRTCResult {
   await fetch("/result", {method: "POST", body: JSON.stringify(result)});
 })();
 </script>`, strconv.Quote(stunURL))
-	results := make(chan chromeWebRTCResult, 1)
+	results := make(chan browserWebRTCResult, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/":
@@ -194,7 +197,7 @@ func runChromeWebRTC(t *testing.T, chrome, stunURL string) chromeWebRTCResult {
 			w.Header().Set("Cache-Control", "no-store")
 			fmt.Fprint(w, page)
 		case r.Method == http.MethodPost && r.URL.Path == "/result":
-			var result chromeWebRTCResult
+			var result browserWebRTCResult
 			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&result); err != nil {
 				http.Error(w, "invalid probe result", http.StatusBadRequest)
 				return
@@ -209,7 +212,7 @@ func runChromeWebRTC(t *testing.T, chrome, stunURL string) chromeWebRTCResult {
 		}
 	}))
 	defer server.Close()
-	command := exec.Command(chrome,
+	command := exec.Command(browser,
 		"--headless=new", "--user-data-dir="+t.TempDir(),
 		"--no-first-run", "--no-default-browser-check", "--disable-background-networking",
 		"--disable-component-update", "--disable-default-apps", "--disable-sync",
@@ -231,7 +234,7 @@ func runChromeWebRTC(t *testing.T, chrome, stunURL string) chromeWebRTCResult {
 			return
 		default:
 		}
-		// Kill only this browser's process tree, never other Chrome instances.
+		// Kill only this browser's process tree, never other browser instances.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := exec.CommandContext(ctx, "taskkill.exe", "/PID", strconv.Itoa(command.Process.Pid), "/T", "/F").Run(); err != nil {
@@ -239,29 +242,29 @@ func runChromeWebRTC(t *testing.T, chrome, stunURL string) chromeWebRTCResult {
 			case <-done:
 				return
 			default:
-				t.Errorf("stop disposable Chrome process tree: %v", err)
+				t.Errorf("stop disposable browser process tree: %v", err)
 				command.Process.Kill()
 			}
 		}
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
-			t.Error("disposable Chrome did not exit after termination")
+			t.Error("disposable browser did not exit after termination")
 		}
 	}()
 	select {
 	case result := <-results:
 		return result
 	case <-done:
-		t.Fatalf("Chrome exited before the WebRTC result: %v\n%s", exitErr, output.String())
+		t.Fatalf("Browser exited before the WebRTC result: %v\n%s", exitErr, output.String())
 	case <-time.After(60 * time.Second):
-		t.Fatal("Chrome did not report the local WebRTC result within 60 seconds")
+		t.Fatal("Browser did not report the local WebRTC result within 60 seconds")
 	}
-	return chromeWebRTCResult{}
+	return browserWebRTCResult{}
 }
 
 // This fixture-only check needs neither Windows nor SBC_E2E=1. It checks the
-// local responder's wire format, not Chrome or Windows policy enforcement.
+// local responder's wire format, not browser or Windows policy enforcement.
 func TestWebRTCSTUNFixture(t *testing.T) {
 	server, count := startWebRTCSTUN(t)
 	client, err := net.DialUDP("udp4", nil, server.LocalAddr().(*net.UDPAddr))

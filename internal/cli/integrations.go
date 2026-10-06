@@ -156,9 +156,9 @@ func runWebRTC(env Env, args []string) int {
 		return fail(env, err)
 	}
 	if args[0] == "on" {
-		fmt.Fprintln(env.Stdout, i18n.T("WebRTC protection is set up and stays enabled across proxy toggles. Reload browser policies; restart Firefox."))
+		fmt.Fprintln(env.Stdout, i18n.T("WebRTC protection is configured and stays enabled across proxy toggles. Restart open browsers to apply the changes."))
 	} else {
-		fmt.Fprintln(env.Stdout, i18n.T("Managed WebRTC settings were removed. Automatic setup is off; 'sbc webrtc on' enables it again. Reload browser policies."))
+		fmt.Fprintln(env.Stdout, i18n.T("Managed WebRTC settings were removed. Automatic setup is off. Use 'sbc webrtc on' to enable it again. Restart open browsers to apply the changes."))
 		if err := reportRemainingWebRTC(env, privacy); err != nil {
 			return fail(env, err)
 		}

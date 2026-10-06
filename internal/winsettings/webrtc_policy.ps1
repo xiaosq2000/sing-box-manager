@@ -85,6 +85,7 @@ try {
         # existing values, including foreign values, always remain untouched.
         $missing = $false
         foreach ($policy in $policies) {
+            if ($policy.Obsolete) { continue }
             $current = Read-Policy $policy
             if ($policy.Chromium -and $current.Present -and -not $current.Matches) { throw 'Policy conflict' }
             if (-not $current.Present) { $missing = $true }
@@ -96,6 +97,7 @@ try {
             }
         }
         foreach ($policy in $policies) {
+            if ($policy.Obsolete) { continue }
             $current = Read-Policy $policy
             if ($current.Present) {
                 if ($policy.Chromium -and -not $current.Matches) { throw 'Policy conflict' }
@@ -124,12 +126,16 @@ try {
             if (-not (Read-Policy $policy).Matches) { throw 'Policy write was not retained' }
         }
         foreach ($policy in $policies) {
+            if ($policy.Obsolete) { continue }
             $current = Read-Policy $policy
             if (-not $current.Present -or ($policy.Chromium -and -not $current.Matches)) { throw 'Incomplete setup' }
         }
-    } elseif ($null -ne $metadata) {
+    }
+    # Setup also removes obsolete owned values after supported policies exist.
+    if ($null -ne $metadata) {
         $lastIntent = $null
         foreach ($policy in $policies) {
+            if ($action -eq 'on' -and -not $policy.Obsolete) { continue }
             if ($metadata.GetValueNames() -notcontains $policy.Owner) { continue }
             $current = Read-Policy $policy
             if ($current.Matches) {
