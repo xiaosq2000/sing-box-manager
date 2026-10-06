@@ -67,7 +67,7 @@ func checkUnixWebRTC(t *testing.T, layout paths.Layout) {
 	// Simulate manual deletion while mode stays enabled, then repair explicitly.
 	for _, browser := range browsers {
 		if runtime.GOOS == "darwin" {
-			run(t, nil, "sudo", "/usr/bin/defaults", "delete", "/Library/Managed Preferences/"+browser.domain, browser.policy)
+			run(t, nil, "sudo", "/usr/libexec/PlistBuddy", "-c", "Delete :"+browser.policy, "/Library/Managed Preferences/"+browser.domain+".plist")
 		} else {
 			run(t, nil, "sudo", "rm", filepath.Join(browser.directory, "sbc-webrtc-"+strconv.Itoa(os.Getuid())+".json"))
 		}

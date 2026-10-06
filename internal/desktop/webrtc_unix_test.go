@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -193,11 +194,35 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 	if f.fail {
 		return "", errors.New("permission denied")
 	}
+	if name == "/usr/bin/plutil" {
+		domain := strings.TrimSuffix(args[len(args)-1], ".plist")
+		values := map[string]string{}
+		for key, value := range f.values {
+			if name, ok := strings.CutPrefix(key, domain+"/"); ok {
+				values[name] = value
+			}
+		}
+		data, err := json.Marshal(values)
+		return string(data), err
+	}
 	if name == "/usr/bin/env" {
 		args = args[2:]
 	} else if name == "sudo" {
 		if args[0] == "/bin/mkdir" || args[0] == "/bin/chmod" {
 			return "", nil
+		}
+		if args[0] == "/usr/libexec/PlistBuddy" {
+			action := strings.Fields(args[2])
+			domain, key := strings.TrimSuffix(args[3], ".plist"), strings.TrimPrefix(action[1], ":")
+			if f.ignore {
+				return "", nil
+			}
+			if action[0] == "Delete" {
+				delete(f.values, domain+"/"+key)
+			} else {
+				f.values[domain+"/"+key] = action[len(action)-1]
+			}
+			return "", os.WriteFile(domain+".plist", []byte("fixture"), 0644)
 		}
 		args = args[1:]
 	} else if name != "/usr/bin/defaults" {
@@ -235,7 +260,10 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 func TestMacWebRTCOwnershipAndFailures(t *testing.T) {
 	p := fixturePrivacy(t, "darwin")
 	p.policies = unixBrowserPolicies("darwin")
-	base := t.TempDir()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range p.policies {
 		p.policies[i].location = filepath.Join(base, filepath.Base(p.policies[i].location))
 		if err := os.WriteFile(p.policies[i].location+".plist", []byte("fixture"), 0644); err != nil {

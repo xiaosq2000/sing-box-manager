@@ -12,7 +12,7 @@ import (
 )
 
 // Only disposable preference domains are touched. No browser defaults are read.
-func TestMacNativeDefaultsOwnership(t *testing.T) {
+func TestMacNativePlistOwnership(t *testing.T) {
 	p := fixturePrivacy(t, "darwin")
 	domain := fmt.Sprintf("com.xiaosq2000.sbc.test.%d.%d", os.Getpid(), time.Now().UnixNano())
 	policy := unixPolicy{location: domain, name: "WebRtcLocalhostIpHandling"}
@@ -22,7 +22,7 @@ func TestMacNativeDefaultsOwnership(t *testing.T) {
 	}
 	policy.location = filepath.Join(dir, domain)
 	p.policies = []unixPolicy{policy}
-	// Execute native defaults against a disposable plist, without sudo.
+	// Execute native plist tools against a disposable plist, without sudo.
 	p.run = func(name string, args ...string) (string, error) {
 		if name == "sudo" {
 			name, args = args[0], args[1:]

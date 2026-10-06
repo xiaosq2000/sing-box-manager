@@ -82,7 +82,7 @@ skip healthy profiles and that WebRTC setup and cleanup return those failures.
 Unix fixtures execute the embedded Linux helper in a temporary policy directory,
 without sudo. They cover ownership, conflicts, changed values, another account,
 failed writes, retry and concurrent commands. A macOS native fixture uses disposable
-plist paths and the real `defaults` tool, without sudo or browser preferences.
+plist paths and the native `plutil` and `PlistBuddy` tools, without sudo or browser preferences.
 The WebRTC lifecycle in `internal/browserprivacy` is shared with Windows.
 The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
 Native registry tests use disposable keys, not browser or environment keys. They
