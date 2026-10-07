@@ -33,32 +33,42 @@ func TestLinuxCleanupRemovesExactLegacyPolicyWithoutOn(t *testing.T) {
 }
 
 func TestLinuxWebRTCOffCleansLegacyPolicyAndFirefoxWithoutManualEdits(t *testing.T) {
-	p := linuxFixture(t)
-	p.policies[0].name = "WebRtcIPHandling"
-	file := filepath.Join(p.policies[0].location, "webrtc.json")
-	if err := os.WriteFile(file, []byte(legacyLinuxPolicyData), 0644); err != nil {
-		t.Fatal(err)
-	}
-	profile := filepath.Join(firefoxDataDirs("linux")[0], "Profiles", "fixture")
-	if err := os.MkdirAll(profile, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Set(true); err != nil {
-		t.Fatal(err)
-	}
-	writeFirefoxFixture(t, profile, "prefs.js", strings.Join(firefoxPrefs, "\n")+"\n")
-	privacy := &browserPrivacy{WebRTCSettings: p, goos: "linux"}
-	if err := privacy.SetWebRTC(false); err != nil {
-		t.Fatal(err)
-	}
-	if remaining, err := privacy.RemainingWebRTC(); err != nil || len(remaining) != 0 {
-		t.Fatalf("off left manual work: %v, %v", remaining, err)
-	}
-	if err := p.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(profile, "user.js")); !os.IsNotExist(err) {
-		t.Fatal("proxy repair recreated Firefox protection after opt-out")
+	for _, scenario := range []string{"on then off", "orphaned Snap profile"} {
+		t.Run(scenario, func(t *testing.T) {
+			p := linuxFixture(t)
+			p.policies[0].name = "WebRtcIPHandling"
+			file := filepath.Join(p.policies[0].location, "webrtc.json")
+			if err := os.WriteFile(file, []byte(legacyLinuxPolicyData), 0644); err != nil {
+				t.Fatal(err)
+			}
+			dir := firefoxDataDirs("linux")[0]
+			if scenario == "orphaned Snap profile" {
+				dir = firefoxDataDirs("linux")[1]
+			}
+			profile := filepath.Join(dir, "Profiles", "fixture")
+			if err := os.MkdirAll(profile, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "on then off" {
+				if err := p.Set(true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFirefoxFixture(t, profile, "prefs.js", strings.Join(firefoxPrefs, "\n")+"\n")
+			privacy := &browserPrivacy{WebRTCSettings: p, goos: "linux"}
+			if err := privacy.SetWebRTC(false); err != nil {
+				t.Fatal(err)
+			}
+			if remaining, err := privacy.RemainingWebRTC(); err != nil || len(remaining) != 0 {
+				t.Fatalf("off left manual work: %v, %v", remaining, err)
+			}
+			if err := p.Ensure(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(profile, "user.js")); !os.IsNotExist(err) {
+				t.Fatal("proxy repair recreated Firefox protection after opt-out")
+			}
+		})
 	}
 }
 

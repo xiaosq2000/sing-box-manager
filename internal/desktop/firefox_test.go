@@ -115,7 +115,7 @@ user_pref("browser.tabs.warnOnClose", false);
 	}
 }
 
-func TestFirefoxProfilesPreservesForeignPreference(t *testing.T) {
+func TestFirefoxSetupPreservesForeignPreferenceButOffResetsIt(t *testing.T) {
 	tempDir := t.TempDir()
 	profile := filepath.Join(tempDir, "Profiles", "foreign")
 	if err := os.MkdirAll(profile, 0755); err != nil {
@@ -136,9 +136,8 @@ func TestFirefoxProfilesPreservesForeignPreference(t *testing.T) {
 	if err := revertFirefoxProfiles(tempDir); err != nil {
 		t.Fatal(err)
 	}
-	contentAfter, _ := os.ReadFile(filepath.Join(profile, "user.js"))
-	if string(contentAfter) != foreignUserJS {
-		t.Fatalf("foreign preference modified after revert: %s", string(contentAfter))
+	if _, err := os.Stat(filepath.Join(profile, "user.js")); !os.IsNotExist(err) {
+		t.Fatalf("explicit off retained the WebRTC preference: %v", err)
 	}
 }
 

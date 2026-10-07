@@ -58,7 +58,7 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc desktop on`         | Direct Windows system/browser proxy (WinINet) to the local proxy                |
 | `sbc desktop off`        | Clear Windows system proxy settings; retain WebRTC protection                   |
 | `sbc webrtc on`          | Enable persistent browser WebRTC protection; may request administrator approval |
-| `sbc webrtc off`         | Remove owned WebRTC settings and stop automatic setup; may request approval     |
+| `sbc webrtc off`         | Remove owned policies, reset Firefox WebRTC preferences, stop automatic setup   |
 | `sbc env`                | Print PowerShell commands to apply proxy settings to the current session        |
 | `sbc env off`            | Print PowerShell commands to clear proxy settings from the current session      |
 | `sbc route <strategy>`   | Switch route strategy (`china`, `gfw`, `ai`, `global`) without restarting       |
@@ -125,15 +125,17 @@ The Windows desktop proxy is opt-in via `sbc desktop on`. Once enabled, it follo
 - **Persistent protection**: `sbc off` and `sbc desktop off` leave browser protection
   enabled. Ordinary toggles need no further approval unless a policy is missing.
   This can restrict WebRTC calls while the proxy is off. `sbc webrtc off` removes
-  owned settings and disables automatic setup; only `sbc webrtc on` enables it
-  again. Removing protected settings can require administrator approval.
+  owned policies, resets the four Firefox WebRTC profile preferences regardless of
+  origin, and disables automatic setup; only `sbc webrtc on` enables it again. Removing protected settings can require administrator approval.
   Concurrent setup and cleanup commands wait for each other, including Firefox
   profile changes. Automatic setup cannot reverse a completed opt-out.
 - **Safety**: `sbc` preserves foreign proxies, PAC scripts and pre-existing browser
   policies. A conflicting Chromium policy or failed setup makes `sbc desktop on`
   fail before enabling a new desktop proxy. Policy writes are read back. A protected
   ownership record lets cleanup retry after interrupted or partially failed setup.
-  Cleanup deletes only owned values that still match what `sbc` wrote.
+  Registry cleanup deletes only owned values that still match what `sbc` wrote.
+  Firefox profile cleanup intentionally resets the four supported preferences,
+  including pre-existing user choices; unrelated preferences remain untouched.
 
 The Chromium policy restricts non-proxied UDP; it does not disable the WebRTC API.
 `sbc on` checks browser settings even when the opted-in desktop proxy is already
@@ -234,8 +236,9 @@ removes the user `PATH` entry, and deletes `%LOCALAPPDATA%\sbc`.
 If approval is declined or cleanup fails, uninstall stops and keeps the client and
 its recovery state. Resolve the error and retry `sbc uninstall`; do not delete its
 folder first. Pre-existing or externally changed browser policies are retained and
-listed. Firefox's original saved preferences are restored automatically; a legacy
-managed block without a snapshot resets matching saved values to browser defaults.
+listed. Firefox's four supported profile preferences are reset to browser defaults,
+including orphaned values from older installations. Old snapshots are deleted,
+not restored.
 
 See [cross-platform WebRTC behavior](WEBRTC.md) for the shared command contract.
 
@@ -263,14 +266,9 @@ user's normal terminal. Reload browser policies afterward. Keep policies require
 by your administrator. Edge and Brave use the corresponding keys listed by `sbc`.
 Do not delete an entire browser policy key.
 
-Close Firefox before `sbc webrtc off` or uninstall. Cleanup automatically restores
-saved preferences for managed profiles, using the per-profile `.sbc-webrtc.json`
-snapshot when available. A locked profile returns an error; close Firefox and
-retry the command instead of editing preferences manually.
-
-Only if a previous client already removed the managed block without resetting
-saved values, and no snapshot remains, use `about:config` to reset preferences
-you know came from `sbc`:
+Close Firefox before `sbc webrtc off` or uninstall. Plain cleanup resets these four
+preferences in both `prefs.js` and `user.js`, even without an ownership marker or
+snapshot:
 
 - `media.peerconnection.ice.no_host`
 - `media.peerconnection.ice.default_address_only`
@@ -278,5 +276,9 @@ you know came from `sbc`:
 - `media.peerconnection.ice.proxy_only_if_behind_proxy`
 
 `sbc` does not rewrite a running browser's `prefs.js` or close the browser for you.
-Unrelated preferences and externally changed values remain untouched. Check
+These four preferences are reset regardless of value or origin, including
+pre-existing user choices. Unrelated preferences and administrator-enforced
+policies remain untouched. Cleanup deletes obsolete `.sbc-webrtc.json` snapshots
+without restoring their values. A locked profile returns an error; close Firefox
+and retry the command instead of editing preferences manually. Check
 `about:policies` if a preference is still enforced by another policy.

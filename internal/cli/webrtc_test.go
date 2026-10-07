@@ -45,6 +45,9 @@ func TestWebRTCOffReportsOnlyPreservedForeignSettings(t *testing.T) {
 		if !strings.Contains(output, "Managed WebRTC settings were removed") || strings.Contains(output, "manual WebRTC cleanup") || strings.Contains(output, "about:config") {
 			t.Fatalf("off left generic manual work: %s", output)
 		}
+		if !strings.Contains(output, "the four Firefox WebRTC preferences were reset") {
+			t.Fatalf("off did not explain the Firefox reset scope: %s", output)
+		}
 		if strings.Contains(output, "from another source were preserved") != foreign {
 			t.Fatalf("foreign setting report: %s", output)
 		}

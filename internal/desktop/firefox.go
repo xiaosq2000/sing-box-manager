@@ -55,7 +55,7 @@ func applyFirefoxWebRTC(goos string) error {
 	return result
 }
 
-// revertFirefoxWebRTC restores saved preferences and removes managed user.js blocks.
+// revertFirefoxWebRTC resets the four WebRTC preferences in discovered profiles.
 func revertFirefoxWebRTC(goos string) error {
 	var result error
 	for _, dir := range firefoxDataDirs(goos) {
@@ -212,7 +212,7 @@ func applyFirefoxProfiles(baseDir string) error {
 	return result
 }
 
-// revertFirefoxProfiles restores saved preferences before removing ownership.
+// revertFirefoxProfiles resets saved preferences before removing obsolete state.
 func revertFirefoxProfiles(baseDir string) error {
 	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {

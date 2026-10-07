@@ -8,18 +8,19 @@ These commands have the same meaning on Linux, macOS and Windows.
 | Command                      | Behavior                                                               |
 | ---------------------------- | ---------------------------------------------------------------------- |
 | `sbc webrtc on`              | Enable browser protection and automatic repair                         |
-| `sbc webrtc off`             | Remove owned settings and disable automatic setup                      |
+| `sbc webrtc off`             | Remove owned policies, reset Firefox WebRTC preferences, disable setup |
 | `sbc desktop on`             | Enable the desktop proxy and ensure protection, unless opted out       |
 | `sbc on`                     | Repair protection when the desktop proxy follows sbc, unless opted out |
 | `sbc off`, `sbc desktop off` | Disable the proxy and retain the WebRTC choice                         |
-| `sbc uninstall`              | Remove owned browser settings before removing the client               |
+| `sbc uninstall`              | Perform the same browser cleanup before removing the client            |
 
 Run commands from your ordinary user account. Linux and macOS policy changes can
 request `sudo` approval. Windows can request UAC approval. Firefox profile edits
 run as the original user. Close Firefox before cleanup; sbc refuses to rewrite a
 profile that Firefox has locked. If cleanup reports an active profile, close
-Firefox and retry the command. No `about:config` edits are needed for managed
-profiles. Restart other open browsers after changing protection.
+Firefox and retry the command. No `about:config` edits are needed for the four
+supported preferences, including leftovers from older installations. Restart
+other open browsers after changing protection.
 
 `webrtc on|off` works without a configured subscription, a running proxy, a GNOME
 session, or a default network route. A failed cleanup leaves the client available
@@ -60,10 +61,11 @@ Windows details are in the [Windows guide](README_WIN.md#system-and-desktop-prox
 
 ## Ownership and saved choice
 
-Matching policies that already exist remain unowned. Conflicting Chromium policies
-cause an error. Cleanup removes only recorded settings whose values still match.
-Settings changed by another tool remain in place. `webrtc off` and uninstall
-report only actual remaining settings, not every discovered Firefox profile.
+Matching browser policies that already exist remain unowned. Conflicting Chromium
+policies cause an error. Policy cleanup removes only recorded values that still
+match; policies changed by another tool remain in place. Firefox profile cleanup
+has a broader reset scope, described below. `webrtc off` and uninstall report only
+actual remaining settings, not every discovered Firefox profile.
 Preserved settings from another source can keep protection active after this
 account opts out.
 
@@ -81,13 +83,25 @@ and symbolic links are not removed. Older versions stored no ownership record fo
 this file: an independently created file with identical bytes at the same location
 is indistinguishable and is also removed.
 
-For Firefox, new setup saves the four original preferences from `prefs.js` in
-`.sbc-webrtc.json` inside each managed profile. Cleanup restores those values, or
-removes the saved entries when they were originally absent. Legacy managed
-`user.js` blocks have no snapshot; cleanup resets their matching saved values to
-browser defaults. Unrelated preferences, externally changed values and explicit
-preferences outside the managed block are preserved. Cleanup writes `prefs.js`
-before removing the managed block and snapshot, so a failed operation can retry.
+For Firefox, plain `sbc webrtc off` resets these four preferences to browser
+defaults in both `prefs.js` and `user.js` across discovered profiles:
+
+- `media.peerconnection.ice.no_host`
+- `media.peerconnection.ice.default_address_only`
+- `media.peerconnection.ice.proxy_only`
+- `media.peerconnection.ice.proxy_only_if_behind_proxy`
+
+The reset removes their declarations regardless of value or origin. It also
+removes the sbc marker. This intentionally resets pre-existing user choices for
+these four preferences, including orphaned values left by an older cleanup.
+Unrelated preferences, the WebRTC API setting and administrator-enforced policies
+remain untouched. No extra reset flag is needed. Uninstall uses the same cleanup.
+
+New setup no longer creates per-profile snapshots. Cleanup deletes an old
+`.sbc-webrtc.json` after resetting the profile; it never restores values from that
+file, even when its contents are corrupt. Cleanup writes `prefs.js` before
+`user.js` and removes obsolete state last, so a failed operation can retry. Clean
+profiles that need no changes are not rewritten or locked.
 
 | Platform | Explicit opt-out                                                   | Policy ownership                                              |
 | -------- | ------------------------------------------------------------------ | ------------------------------------------------------------- |
@@ -105,8 +119,9 @@ profile changes, including concurrent commands from the same account.
 Start with `sbc webrtc off`. Restart open browsers. Preserve policies required by
 your administrator.
 
-This section is only for settings that sbc cannot identify as its own. Managed
-Firefox preferences and exact legacy Linux policy files are cleaned automatically.
+This section is only for policies outside sbc's automatic cleanup scope. The four
+Firefox profile preferences and exact legacy Linux policy files are cleaned
+automatically.
 Linux policies that do not match the legacy file and macOS user-level defaults
 remain untouched. Inspect these locations before removing them.
 An Edge `WebRtcIPHandling` entry uses the wrong policy name. If you created that
@@ -119,16 +134,6 @@ defaults read com.microsoft.Edge WebRtcIPHandling
 # Run only if this entry is yours:
 defaults delete com.microsoft.Edge WebRtcIPHandling
 ```
-
-If an older cleanup already removed the Firefox managed block without resetting
-`prefs.js`, and no snapshot remains, sbc cannot distinguish the leftover values
-from preferences you set yourself. Only in that case, open `about:config` and reset
-preferences you know came from sbc:
-
-- `media.peerconnection.ice.no_host`
-- `media.peerconnection.ice.default_address_only`
-- `media.peerconnection.ice.proxy_only`
-- `media.peerconnection.ice.proxy_only_if_behind_proxy`
 
 The macOS anchor `com.xiaosq2000.sbc.webrtc` can remain from an installation that
 used the port filter. This version neither creates nor claims that filter.
@@ -149,8 +154,9 @@ browser. The policy value must be `disable_non_proxied_udp`, with status **OK**.
 Test direct STUN traffic before enabling protection, after enabling it, and after
 cleanup. A browser exposing the WebRTC API does not by itself indicate a leak.
 
-Fixtures cover ownership, legacy Linux cleanup, Firefox saved-value restoration,
-active-profile locks, failures, opt-out, repair and concurrent operations.
+Fixtures cover ownership, legacy Linux cleanup, Firefox preference resets,
+orphaned profiles, stale snapshots, active-profile locks, failures, opt-out,
+repair and concurrent operations.
 Disposable CI runners exercise real browser STUN traffic. Chrome is required on
 Linux and macOS. Edge and Brave are also checked when installed. Windows checks
 Chrome and Edge. Firefox currently has profile fixtures, without a native STUN

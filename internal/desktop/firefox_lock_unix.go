@@ -12,7 +12,7 @@ import (
 )
 
 // Firefox uses a POSIX record lock on .parentlock. Hold the same lock during
-// cleanup, so Firefox cannot race or overwrite the restored preferences.
+// cleanup, so Firefox cannot race or overwrite the preference reset.
 func lockFirefoxProfile(profile string) (func(), error) {
 	path := filepath.Join(profile, ".parentlock")
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {

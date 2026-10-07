@@ -157,7 +157,7 @@ func runWebRTC(env Env, args []string) int {
 	if err := reportRemainingWebRTC(env, privacy); err != nil {
 		return fail(env, err)
 	}
-	fmt.Fprintln(env.Stdout, i18n.T("Managed WebRTC settings were removed. Automatic setup is off. Use 'sbc webrtc on' to enable it again. Restart open browsers to apply the changes."))
+	fmt.Fprintln(env.Stdout, i18n.T("Managed WebRTC settings were removed and the four Firefox WebRTC preferences were reset. Automatic setup is off. Use 'sbc webrtc on' to enable it again. Restart open browsers to apply the changes."))
 	return 0
 }
 
