@@ -130,15 +130,20 @@ Edge policy change that requires a restart. This IPv4 UDP check runs only in the
 gated lifecycle. Unix runners require Chrome and also probe Edge and Brave when
 installed. They check positive controls, protection after proxy toggles, explicit
 opt-out, repair after policy deletion, and cleanup after uninstall. Browser
-processes use disposable profiles. Unix process groups and Windows taskkill stop
+processes use disposable profiles. Startup flags suppress first-run UI, including
+Edge's `msEdgeFirstRunExperience`, without overriding WebRTC or proxy policies.
+Timeouts report whether the browser requested the probe page and include captured
+browser output. Log capture is synchronized because a timeout can read it while
+the browser is still running. Unix process groups and Windows taskkill stop
 only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
 helper's root ownership and setuid mode before launching Edge. Browser sandboxing
 stays enabled. The macOS lifecycle verifies cache refresh after managed policy
 changes, including off and uninstall. Unit tests stub that service operation.
-The fixture responder alone can be checked without changing host settings:
+The responder, startup arguments and concurrent log capture have fixture-only
+checks that do not launch a browser or change host settings:
 
 ```sh
-pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTCSTUNFixture$' -count=1
+pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput)$' -count=1
 ```
 
 Windows restores the runner's registry settings even after a failure.
