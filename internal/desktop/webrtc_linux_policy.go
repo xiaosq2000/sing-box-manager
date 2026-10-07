@@ -125,11 +125,11 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 	if _, err := p.run("sudo", "/bin/sh", "-c", linuxPolicyScript, "sbc-webrtc", action, policy.location, p.uid, string(want)); err != nil {
 		return err
 	}
+	owned, err = p.linuxOwned(policy)
+	if err != nil {
+		return err
+	}
 	if enabled {
-		owned, err := p.linuxOwned(policy)
-		if err != nil {
-			return err
-		}
 		got, err := privateFile(file)
 		if err != nil {
 			return err
@@ -137,21 +137,39 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 		if !owned || !bytes.Equal(got, want) {
 			return i18n.Errorf("the browser did not retain the WebRTC policy at %s", file)
 		}
-	} else {
-		owned, err := p.linuxOwned(policy)
-		if err != nil {
-			return err
-		}
-		if owned {
-			return i18n.Errorf("the browser did not remove the owned WebRTC policy at %s", file)
-		}
-		got, err := privateFile(file)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if err == nil && bytes.Equal(got, want) {
-			return i18n.Errorf("the browser did not remove the owned WebRTC policy at %s", file)
-		}
+		return nil
+	}
+	if owned {
+		return i18n.Errorf("the browser did not remove the owned WebRTC policy at %s", file)
+	}
+	got, err := privateFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil && bytes.Equal(got, want) {
+		return i18n.Errorf("the browser did not remove the owned WebRTC policy at %s", file)
 	}
 	return nil
+}
+
+func (p *unixPrivacy) remainingLinuxPolicies() ([]string, error) {
+	var locations []string
+	for _, policy := range p.policies {
+		files, err := linuxPolicyFiles(policy.location)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range files {
+			values, err := readLinuxPolicy(file)
+			if err != nil {
+				return nil, err
+			}
+			_, supported := values[policy.name]
+			_, legacy := values[winsettings.WebRtcPolicyName]
+			if supported || legacy {
+				locations = append(locations, file)
+			}
+		}
+	}
+	return locations, nil
 }

@@ -597,13 +597,13 @@ func runUninstall(env Env, args []string) int {
 	if env.OS == "windows" && deskErr != nil {
 		return fail(env, deskErr)
 	}
-	var state desktop.State
-	var stateErr error
+	disableDesktop := false
 	if deskErr == nil && localErr == nil {
-		state, stateErr = desk.State(local.ListenPort)
-		if env.OS == "windows" && stateErr != nil {
-			return fail(env, stateErr)
+		state, err := desk.State(local.ListenPort)
+		if env.OS == "windows" && err != nil {
+			return fail(env, err)
 		}
+		disableDesktop = err == nil && state == desktop.On
 	}
 	privacy, err := env.Privacy()
 	if err != nil {
@@ -615,7 +615,7 @@ func runUninstall(env Env, args []string) int {
 	if err := reportRemainingWebRTC(env, privacy); err != nil {
 		return fail(env, err)
 	}
-	if deskErr == nil && localErr == nil && stateErr == nil && state == desktop.On {
+	if disableDesktop {
 		if err := desk.Off(); err != nil {
 			return fail(env, err)
 		}

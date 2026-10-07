@@ -248,23 +248,9 @@ func (f *macDefaultFixture) run(name string, args ...string) (string, error) {
 			return "Type is string\n", nil
 		}
 		return value, nil
-	case "write":
-		if !f.ignore {
-			f.values[key] = args[4]
-			if filepath.IsAbs(args[1]) {
-				if err := os.WriteFile(args[1]+".plist", []byte("fixture"), 0644); err != nil {
-					return "", err
-				}
-			}
-		}
-	case "delete":
-		if !f.ignore {
-			delete(f.values, key)
-		}
 	default:
 		return "", fmt.Errorf("unexpected defaults operation %s", args[0])
 	}
-	return "", nil
 }
 func TestMacWebRTCOwnershipAndFailures(t *testing.T) {
 	p := fixturePrivacy(t, "darwin")
@@ -356,7 +342,6 @@ func TestMacWebRTCOwnershipAndFailures(t *testing.T) {
 	if _, err := os.Stat(p.StateFile + ".reload"); !os.IsNotExist(err) {
 		t.Fatal("successful reload retained pending marker")
 	}
-
 }
 func TestUnixDesktopKeepsPrivacyAcrossToggles(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin"} {

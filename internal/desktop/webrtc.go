@@ -27,17 +27,23 @@ func newPrivacy(goos string, run Runner) (WebRTCSettings, error) {
 		return nil, err
 	}
 	if goos == "windows" {
-		return &winsettings.WebRTC{StateFile: layout.WebRTCFile(),
+		return &winsettings.WebRTC{
+			Registry:       winsettings.PowerShell{},
+			StateFile:      layout.WebRTCFile(),
 			ApplyProfiles:  func() error { return applyFirefoxWebRTC(goos) },
-			RevertProfiles: func() error { return revertFirefoxWebRTC(goos) }}, nil
+			RevertProfiles: func() error { return revertFirefoxWebRTC(goos) },
+		}, nil
 	}
 	if goos != "linux" && goos != "darwin" {
 		return nil, i18n.New("WebRTC settings are unavailable on this platform")
 	}
 	p := &unixPrivacy{goos: goos, run: run, uid: strconv.Itoa(os.Getuid()), policies: unixBrowserPolicies(goos)}
-	p.Manager = browserprivacy.Manager{StateFile: layout.WebRTCFile(),
-		Lock:   func() (func(), error) { return lockUnixPrivacy(layout.WebRTCFile() + ".lock") },
-		Enable: p.enable, Remove: p.remove}
+	p.Manager = browserprivacy.Manager{
+		StateFile: layout.WebRTCFile(),
+		Lock:      func() (func(), error) { return lockUnixPrivacy(layout.WebRTCFile() + ".lock") },
+		Enable:    p.enable,
+		Remove:    p.remove,
+	}
 	return p, nil
 }
 
@@ -101,69 +107,32 @@ type unixPrivacy struct {
 }
 
 func (p *unixPrivacy) enable() error {
-	var result error
-	for _, policy := range p.policies {
-		var err error
-		if p.goos == "darwin" {
-			err = p.setMacPolicy(policy, true)
-		} else {
-			err = p.setLinuxPolicy(policy, true)
-		}
-		result = errors.Join(result, err)
-	}
-	return errors.Join(result, p.reloadMacPreferences(), applyFirefoxWebRTC(p.goos))
+	return errors.Join(p.setPolicies(true), p.reloadMacPreferences(), applyFirefoxWebRTC(p.goos))
 }
+
 func (p *unixPrivacy) remove() error {
+	return errors.Join(p.setPolicies(false), p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
+}
+
+func (p *unixPrivacy) setPolicies(enabled bool) error {
 	var result error
 	for _, policy := range p.policies {
 		var err error
 		if p.goos == "darwin" {
-			err = p.setMacPolicy(policy, false)
+			err = p.setMacPolicy(policy, enabled)
 		} else {
-			err = p.setLinuxPolicy(policy, false)
+			err = p.setLinuxPolicy(policy, enabled)
 		}
 		result = errors.Join(result, err)
 	}
-	return errors.Join(result, p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
+	return result
 }
+
 func (p *unixPrivacy) Remaining() ([]string, error) {
-	var locations []string
-	for _, policy := range p.policies {
-		if p.goos == "darwin" {
-			names := []string{policy.name}
-			if policy.name == winsettings.EdgeWebRtcPolicyName {
-				names = append(names, winsettings.WebRtcPolicyName)
-			}
-			for _, location := range []string{policy.location, filepath.Base(policy.location)} {
-				for _, name := range names {
-					_, present, err := readMacDefault(p.run, location, name)
-					if err != nil {
-						return nil, err
-					}
-					if present {
-						locations = append(locations, location+" / "+name)
-					}
-				}
-			}
-		} else {
-			files, err := linuxPolicyFiles(policy.location)
-			if err != nil {
-				return nil, err
-			}
-			for _, file := range files {
-				values, err := readLinuxPolicy(file)
-				if err != nil {
-					return nil, err
-				}
-				if _, ok := values[policy.name]; ok {
-					locations = append(locations, file)
-				} else if _, ok := values[winsettings.WebRtcPolicyName]; ok {
-					locations = append(locations, file)
-				}
-			}
-		}
+	if p.goos == "darwin" {
+		return p.remainingMacPolicies()
 	}
-	return locations, nil
+	return p.remainingLinuxPolicies()
 }
 
 func privateFile(path string) ([]byte, error) {

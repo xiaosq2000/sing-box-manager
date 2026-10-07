@@ -136,10 +136,11 @@ func (p *unixPrivacy) setMacPolicy(policy unixPolicy, enabled bool) error {
 		if err := writeMacDefault(p.run, macPrivacyOwners, owner, false); err != nil {
 			return err
 		}
-		if marker, ok, err := readMacDefault(p.run, macPrivacyOwners, owner); err != nil || !ok || marker != winsettings.WebRtcDisableNonProxiedUDP {
-			if err != nil {
-				return err
-			}
+		marker, owned, err = readMacDefault(p.run, macPrivacyOwners, owner)
+		if err != nil {
+			return err
+		}
+		if !owned || marker != winsettings.WebRtcDisableNonProxiedUDP {
 			return i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
 		}
 		if err := p.markMacReload(); err != nil {
@@ -186,6 +187,28 @@ func (p *unixPrivacy) setMacPolicy(policy unixPolicy, enabled bool) error {
 		return i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
 	}
 	return nil
+}
+
+func (p *unixPrivacy) remainingMacPolicies() ([]string, error) {
+	var locations []string
+	for _, policy := range p.policies {
+		names := []string{policy.name}
+		if policy.name == winsettings.EdgeWebRtcPolicyName {
+			names = append(names, winsettings.WebRtcPolicyName)
+		}
+		for _, location := range []string{policy.location, filepath.Base(policy.location)} {
+			for _, name := range names {
+				_, present, err := readMacDefault(p.run, location, name)
+				if err != nil {
+					return nil, err
+				}
+				if present {
+					locations = append(locations, location+" / "+name)
+				}
+			}
+		}
+	}
+	return locations, nil
 }
 
 // A durable marker covers interruption between a plist edit and cache refresh.
