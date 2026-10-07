@@ -77,11 +77,17 @@ verification, ownership, interrupted cleanup, persistent opt-out and repair whil
 the proxy is already on. CLI tests verify that failed browser cleanup leaves the
 client and proxy available for retry. Concurrency fixtures pause policy or profile
 setup and check that opt-out and uninstall cleanup wait for completion.
-Firefox fixtures use temporary profiles. They check that profile failures do not
-skip healthy profiles and that WebRTC setup and cleanup return those failures.
+Firefox fixtures use temporary profiles. They check saved-value snapshots and
+restoration, legacy managed-block cleanup, preservation of foreign preferences,
+retry after failed cleanup, and reporting only actual remaining settings. A
+subprocess holds the native profile lock to verify that cleanup rejects active
+profiles and succeeds after the lock is released. Profile failures do not skip
+healthy profiles, and WebRTC setup and cleanup return those failures.
 Unix fixtures execute the embedded Linux helper in a temporary policy directory,
-without sudo. They cover ownership, conflicts, changed values, another account,
-failed writes, retry and concurrent commands. A macOS native fixture uses disposable
+without sudo. They cover ownership, exact legacy-file cleanup, conflicts, changed
+values, another account, failed writes, retry and concurrent commands. Legacy
+cleanup fixtures change a file or replace it with a symlink before the helper
+runs, and check that the elevated recheck refuses deletion. A macOS native fixture uses disposable
 plist paths and the native `plutil` and `PlistBuddy` tools, without sudo or browser preferences.
 The WebRTC lifecycle in `internal/browserprivacy` is shared with Windows.
 The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.

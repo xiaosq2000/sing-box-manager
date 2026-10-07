@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/browserprivacy"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
@@ -68,9 +69,23 @@ func remainingFirefox(goos string, remaining []string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(profiles) > 0 {
-			remaining = append(remaining, i18n.T("Firefox profiles: check saved WebRTC preferences in about:config; see the WebRTC guide"))
-			break
+		for _, profile := range profiles {
+			for _, name := range []string{"user.js", "prefs.js"} {
+				path := filepath.Join(profile, name)
+				data, err := privateFile(path)
+				if os.IsNotExist(err) {
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				for _, line := range strings.Split(string(data), "\n") {
+					if _, value, ok := firefoxPreference(line); ok && value == "true" {
+						remaining = append(remaining, path)
+						break
+					}
+				}
+			}
 		}
 	}
 	return remaining, nil
@@ -111,7 +126,11 @@ func (p *unixPrivacy) enable() error {
 }
 
 func (p *unixPrivacy) remove() error {
-	return errors.Join(p.setPolicies(false), p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
+	var legacyErr error
+	if p.goos == "linux" {
+		legacyErr = p.removeLegacyLinuxPolicies()
+	}
+	return errors.Join(legacyErr, p.setPolicies(false), p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
 }
 
 func (p *unixPrivacy) setPolicies(enabled bool) error {

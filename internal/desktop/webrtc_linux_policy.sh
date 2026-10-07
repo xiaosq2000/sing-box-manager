@@ -7,7 +7,7 @@ operation=$1
 policy_dir=$2
 owner_uid=$3
 policy_data=$4
-case "$operation" in on | off) ;; *) exit 1 ;; esac
+case "$operation" in on | off | legacy-off) ;; *) exit 1 ;; esac
 case "$owner_uid" in '' | *[!0-9]*) exit 1 ;; esac
 policy_file="$policy_dir/sbc-webrtc-$owner_uid.json"
 owner_file="$policy_dir/.sbc-webrtc-$owner_uid.owner"
@@ -18,6 +18,14 @@ while [ "$component" != / ]; do
 	[ ! -L "$component" ] || exit 1
 	component=$(dirname "$component")
 done
+if [ "$operation" = legacy-off ]; then
+	policy_file="$policy_dir/webrtc.json"
+	[ ! -L "$policy_file" ] && [ -f "$policy_file" ] || exit 1
+	# Recheck the exact legacy payload under sudo; never remove a changed file.
+	printf '%s' "$policy_data" | cmp -s - "$policy_file" || exit 1
+	rm "$policy_file"
+	exit 0
+fi
 [ ! -L "$policy_file" ] && [ ! -L "$owner_file" ] || exit 1
 if [ -e "$owner_file" ]; then
 	[ -f "$owner_file" ] && [ "$(cat "$owner_file")" = "$owner_data" ] || exit 1

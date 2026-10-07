@@ -55,7 +55,7 @@ func applyFirefoxWebRTC(goos string) error {
 	return result
 }
 
-// revertFirefoxWebRTC removes sbc-managed settings from user.js across all found Firefox installations.
+// revertFirefoxWebRTC restores saved preferences and removes managed user.js blocks.
 func revertFirefoxWebRTC(goos string) error {
 	var result error
 	for _, dir := range firefoxDataDirs(goos) {
@@ -154,12 +154,24 @@ func findFirefoxProfiles(baseDir string) ([]string, error) {
 // Replace only the profile file. Unlike executable replacement, a locked
 // Firefox file must fail without moving the original to a leftover .old file.
 func writeFirefoxUserJS(path string, data []byte) error {
+	mode := os.FileMode(0600)
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
+		}
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".sbc-webrtc-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(file.Name())
-	if _, err = file.Write(data); err == nil {
+	if err = file.Chmod(mode); err == nil {
+		_, err = file.Write(data)
+	}
+	if err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {
@@ -174,77 +186,16 @@ func writeFirefoxUserJS(path string, data []byte) error {
 func applyFirefoxProfiles(baseDir string) error {
 	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
-		userJSPath := filepath.Join(profile, "user.js")
-		content, err := os.ReadFile(userJSPath)
-		if err != nil && !os.IsNotExist(err) {
-			result = errors.Join(result, err)
-			continue
-		}
-		text := string(content)
-		if strings.Contains(text, "media.peerconnection.ice.proxy_only") || strings.Contains(text, firefoxMarker) {
-			continue
-		}
-		var newContent strings.Builder
-		if len(text) > 0 {
-			newContent.WriteString(text)
-			if !strings.HasSuffix(text, "\n") {
-				newContent.WriteString("\n")
-			}
-		}
-		newContent.WriteString(firefoxMarker + "\n")
-		for _, pref := range firefoxPrefs {
-			newContent.WriteString(pref + "\n")
-		}
-		if err := writeFirefoxUserJS(userJSPath, []byte(newContent.String())); err != nil {
-			result = errors.Join(result, err)
-		}
+		result = errors.Join(result, applyFirefoxProfile(profile))
 	}
 	return result
 }
 
-// revertFirefoxProfiles removes sbc-managed settings from user.js for all profiles under baseDir.
+// revertFirefoxProfiles restores saved preferences before removing ownership.
 func revertFirefoxProfiles(baseDir string) error {
 	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
-		userJSPath := filepath.Join(profile, "user.js")
-		content, err := os.ReadFile(userJSPath)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			result = errors.Join(result, err)
-			continue
-		}
-		text := string(content)
-		if !strings.Contains(text, firefoxMarker) {
-			continue
-		}
-		prefMap := make(map[string]bool)
-		for _, pref := range firefoxPrefs {
-			prefMap[strings.TrimSpace(pref)] = true
-		}
-		var lines []string
-		inManagedBlock := false
-		for _, line := range strings.Split(text, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == firefoxMarker {
-				inManagedBlock = true
-				continue
-			}
-			if inManagedBlock && prefMap[trimmed] {
-				continue
-			}
-			inManagedBlock = false
-			lines = append(lines, line)
-		}
-		remaining := strings.TrimSpace(strings.Join(lines, "\n"))
-		if remaining == "" {
-			if err := os.Remove(userJSPath); err != nil {
-				result = errors.Join(result, err)
-			}
-		} else if err := writeFirefoxUserJS(userJSPath, []byte(strings.Join(lines, "\n"))); err != nil {
-			result = errors.Join(result, err)
-		}
+		result = errors.Join(result, revertFirefoxProfile(profile))
 	}
 	return result
 }

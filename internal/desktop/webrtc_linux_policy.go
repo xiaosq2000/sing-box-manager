@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,33 @@ import (
 
 //go:embed webrtc_linux_policy.sh
 var linuxPolicyScript string
+
+// Exact bytes written by sbc before per-user policy ownership was introduced.
+const legacyLinuxPolicyData = "{\"WebRtcIPHandling\": \"disable_non_proxied_udp\"}\n"
+
+func (p *unixPrivacy) removeLegacyLinuxPolicies() error {
+	var result error
+	for _, policy := range p.policies {
+		file := filepath.Join(policy.location, "webrtc.json")
+		data, err := privateFile(file)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err == nil && bytes.Equal(data, []byte(legacyLinuxPolicyData)) {
+			_, err = p.run("sudo", "/bin/sh", "-c", linuxPolicyScript, "sbc-webrtc", "legacy-off", policy.location, p.uid, legacyLinuxPolicyData)
+			if err == nil {
+				if _, readErr := privateFile(file); !os.IsNotExist(readErr) {
+					err = readErr
+					if err == nil {
+						err = i18n.Errorf("the browser did not remove the owned WebRTC policy at %s", file)
+					}
+				}
+			}
+		}
+		result = errors.Join(result, err)
+	}
+	return result
+}
 
 func linuxPolicyFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)

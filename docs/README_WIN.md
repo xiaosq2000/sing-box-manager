@@ -225,14 +225,17 @@ sbc uninstall
 ```
 
 Approve the browser-policy cleanup prompt if shown. Uninstall first removes owned
-WebRTC settings, including the managed Firefox `user.js` block. It then stops the
+WebRTC settings, including the managed Firefox `user.js` block and its saved
+`prefs.js` values. Close Firefox first; an active profile makes cleanup fail
+without removing its ownership information. It then stops the
 proxy, removes scheduled tasks, reverts owned proxy and environment settings,
 removes the user `PATH` entry, and deletes `%LOCALAPPDATA%\sbc`.
 
 If approval is declined or cleanup fails, uninstall stops and keeps the client and
 its recovery state. Resolve the error and retry `sbc uninstall`; do not delete its
 folder first. Pre-existing or externally changed browser policies are retained and
-listed. Firefox profiles can retain saved preferences; follow the reset steps below.
+listed. Firefox's original saved preferences are restored automatically; a legacy
+managed block without a snapshot resets matching saved values to browser defaults.
 
 See [cross-platform WebRTC behavior](WEBRTC.md) for the shared command contract.
 
@@ -260,9 +263,14 @@ user's normal terminal. Reload browser policies afterward. Keep policies require
 by your administrator. Edge and Brave use the corresponding keys listed by `sbc`.
 Do not delete an entire browser policy key.
 
-Firefox copies `user.js` preferences into its saved profile settings. After
-`sbc webrtc off` or uninstall, restart Firefox and open `about:config` in each
-profile that used `sbc`. Reset these preferences if they came from `sbc`:
+Close Firefox before `sbc webrtc off` or uninstall. Cleanup automatically restores
+saved preferences for managed profiles, using the per-profile `.sbc-webrtc.json`
+snapshot when available. A locked profile returns an error; close Firefox and
+retry the command instead of editing preferences manually.
+
+Only if a previous client already removed the managed block without resetting
+saved values, and no snapshot remains, use `about:config` to reset preferences
+you know came from `sbc`:
 
 - `media.peerconnection.ice.no_host`
 - `media.peerconnection.ice.default_address_only`
@@ -270,4 +278,5 @@ profile that used `sbc`. Reset these preferences if they came from `sbc`:
 - `media.peerconnection.ice.proxy_only_if_behind_proxy`
 
 `sbc` does not rewrite a running browser's `prefs.js` or close the browser for you.
-Check `about:policies` if a preference is still enforced by another policy.
+Unrelated preferences and externally changed values remain untouched. Check
+`about:policies` if a preference is still enforced by another policy.

@@ -306,8 +306,11 @@ Client:
 - `sbc` lives in a directory of its own, which `sbc init` puts on PATH.
 - `sbc desktop on` points the GNOME or macOS proxy settings at `sbc`.
   WebRTC protection persists across proxy toggles on Linux, macOS and Windows.
-  `sbc webrtc off` removes owned settings and disables automatic setup.
-  `sbc webrtc on` enables it again, independently of desktop detection.
+  `sbc webrtc off` removes owned settings, cleans exact legacy Linux policy files,
+  restores Firefox's saved preferences and disables automatic setup.
+  Firefox cleanup requires a closed profile; active-profile failures retain
+  ownership for retry. `sbc webrtc on` enables protection again, independently of
+  desktop detection.
   Browser policies use native mandatory settings. Firefox uses managed profile
   preferences. Safari is not managed. See [WebRTC protection](WEBRTC.md) for
   platform scope, ownership, restart requirements and manual cleanup.
@@ -400,7 +403,10 @@ Pull requests, in order:
    A per-user lock serializes mode state, policy changes and profile changes across
    concurrent setup and cleanup commands. Uninstall removes owned policies. It stops
    on cleanup failure before deleting the client. `sbc` preserves pre-existing policies.
-   The Windows guide gives manual reset steps, including Firefox's saved preferences. Fixture tests cover permission failures,
+   Firefox cleanup restores original saved preferences from a per-profile snapshot,
+   or resets matching values for legacy managed blocks. It refuses active profiles
+   and retains ownership for retry. The Windows guide gives manual reset steps only
+   for settings without ownership evidence. Fixture tests cover permission failures,
    ownership and retries. Native unelevated UAC validation is still pending.
 3. Done. `/install.ps1` downloads `sbc` and migrates the PowerShell client:
    exchange its saved machine token for a link, keep port, route and protocol,
