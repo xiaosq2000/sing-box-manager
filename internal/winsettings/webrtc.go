@@ -34,16 +34,40 @@ type webRTCPolicy struct {
 // Keep the elevated allowlist fixed. Firefox's existing values are preserved,
 // even when they differ from these defaults. Chromium conflicts are errors.
 var webRTCPolicies = []webRTCPolicy{
-	{ChromePolicyKey, WebRtcPolicyName, WebRTCChromeOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true, false},
-	{EdgePolicyKey, EdgeWebRtcPolicyName, WebRTCEdgeOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true, false},
+	{
+		key: ChromePolicyKey, name: WebRtcPolicyName, owner: WebRTCChromeOwnerName,
+		want: Value{WebRtcDisableNonProxiedUDP, "String"}, chromium: true,
+	},
+	{
+		key: EdgePolicyKey, name: EdgeWebRtcPolicyName, owner: WebRTCEdgeOwnerName,
+		want: Value{WebRtcDisableNonProxiedUDP, "String"}, chromium: true,
+	},
 	// Edge ignores the Chrome policy name. Retain its old ownership identity
 	// only for cleanup, so migration never claims an existing supported policy.
-	{EdgePolicyKey, WebRtcPolicyName, WebRTCEdgeLegacyOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, false, true},
-	{BravePolicyKey, WebRtcPolicyName, WebRTCBraveOwnerName, Value{WebRtcDisableNonProxiedUDP, "String"}, true, false},
-	{FirefoxPolicyKey, "media.peerconnection.ice.no_host", WebRTCFirefoxNoHostName, Value{"true", "String"}, false, false},
-	{FirefoxPolicyKey, "media.peerconnection.ice.default_address_only", WebRTCFirefoxAddressName, Value{"true", "String"}, false, false},
-	{FirefoxPolicyKey, FirefoxProxyOnlyName, WebRTCFirefoxProxyName, Value{"true", "String"}, false, false},
-	{FirefoxPolicyKey, "media.peerconnection.ice.proxy_only_if_behind_proxy", WebRTCFirefoxBehindName, Value{"true", "String"}, false, false},
+	{
+		key: EdgePolicyKey, name: WebRtcPolicyName, owner: WebRTCEdgeLegacyOwnerName,
+		want: Value{WebRtcDisableNonProxiedUDP, "String"}, obsolete: true,
+	},
+	{
+		key: BravePolicyKey, name: WebRtcPolicyName, owner: WebRTCBraveOwnerName,
+		want: Value{WebRtcDisableNonProxiedUDP, "String"}, chromium: true,
+	},
+	{
+		key: FirefoxPolicyKey, name: "media.peerconnection.ice.no_host", owner: WebRTCFirefoxNoHostName,
+		want: Value{"true", "String"},
+	},
+	{
+		key: FirefoxPolicyKey, name: "media.peerconnection.ice.default_address_only", owner: WebRTCFirefoxAddressName,
+		want: Value{"true", "String"},
+	},
+	{
+		key: FirefoxPolicyKey, name: FirefoxProxyOnlyName, owner: WebRTCFirefoxProxyName,
+		want: Value{"true", "String"},
+	},
+	{
+		key: FirefoxPolicyKey, name: "media.peerconnection.ice.proxy_only_if_behind_proxy", owner: WebRTCFirefoxBehindName,
+		want: Value{"true", "String"},
+	},
 }
 
 // WebRTC manages persistent browser protection independently of proxy toggles.
@@ -140,19 +164,19 @@ func (w *WebRTC) needsSetup() (bool, error) {
 }
 
 func (w *WebRTC) enable() error {
-	missing, err := w.needsSetup()
+	needsSetup, err := w.needsSetup()
 	if err != nil {
 		return err
 	}
-	if missing {
+	if needsSetup {
 		if err := w.change("on"); err != nil {
 			return err
 		}
-		missing, err = w.needsSetup()
+		needsSetup, err = w.needsSetup()
 		if err != nil {
 			return err
 		}
-		if missing {
+		if needsSetup {
 			return i18n.New("Windows did not retain all WebRTC policies; retry 'sbc webrtc on'")
 		}
 	}
@@ -187,7 +211,10 @@ func (w *WebRTC) cleanupSettings() error {
 	}
 	needsChange := false
 	for _, policy := range webRTCPolicies {
-		needsChange = needsChange || owned[policy.owner].Kind != ""
+		if owned[policy.owner].Kind != "" {
+			needsChange = true
+			break
+		}
 	}
 	if needsChange {
 		if err := w.change("off"); err != nil {
@@ -202,13 +229,8 @@ func (w *WebRTC) cleanupSettings() error {
 			return err
 		}
 		for _, policy := range webRTCPolicies {
-			if remaining[policy.owner].Kind != "" {
+			if remaining[policy.owner].Kind != "" || (owned[policy.owner].Kind != "" && values[policy.owner] == policy.want) {
 				return i18n.New("Windows did not remove all owned WebRTC policies; retry cleanup")
-			}
-			if owned[policy.owner].Kind != "" {
-				if values[policy.owner] == policy.want {
-					return i18n.New("Windows did not remove all owned WebRTC policies; retry cleanup")
-				}
 			}
 		}
 	}

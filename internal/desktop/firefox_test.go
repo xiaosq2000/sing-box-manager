@@ -173,11 +173,17 @@ func TestFirefoxProfileFailuresAreReported(t *testing.T) {
 }
 
 func TestFirefoxProfilesContinueAfterErrors(t *testing.T) {
-	for _, discoveryFailure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "profile reads", true: "discovery and profile reads"}[discoveryFailure], func(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		discoveryFailure bool
+	}{
+		{"profile reads", false},
+		{"discovery and profile reads", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			base := t.TempDir()
 			var failedPaths []string
-			if discoveryFailure {
+			if test.discoveryFailure {
 				path := filepath.Join(base, "profiles.ini")
 				if err := os.Mkdir(path, 0700); err != nil {
 					t.Fatal(err)

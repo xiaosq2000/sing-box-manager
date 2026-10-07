@@ -327,7 +327,7 @@ func TestWebRTCCleanupFailureLeavesIntentAndModeForRetry(t *testing.T) {
 }
 
 func TestWebRTCProfileFailuresPreserveOptOutAndUninstallState(t *testing.T) {
-	w, registry, changes := webRTCFixture(t)
+	w, _, changes := webRTCFixture(t)
 	if err := w.Set(false); err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,6 @@ func TestWebRTCProfileFailuresPreserveOptOutAndUninstallState(t *testing.T) {
 	if len(*changes) != 2 {
 		t.Fatal("unexpected policy changes")
 	}
-	registry.readError = nil
 	w.RevertProfiles = nil
 	if err := w.Cleanup(); err != nil || len(*changes) != 2 {
 		t.Fatalf("profile-only retry requested UAC: %v %v", err, *changes)
@@ -554,13 +553,19 @@ func TestWebRTCCleanupKeepsOptOutUntilExplicitOnOrFinalUninstall(t *testing.T) {
 }
 
 func TestWebRTCOffErrorClaimsOptOutOnlyAfterPersistenceSucceeds(t *testing.T) {
-	for _, persisted := range []bool{false, true} {
-		t.Run(map[bool]string{false: "state write fails", true: "cleanup fails"}[persisted], func(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		persisted bool
+	}{
+		{"state write fails", false},
+		{"cleanup fails", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			w, _, _ := webRTCFixture(t)
 			failure := errors.New("fixture: profile cleanup failed")
 			callbacks := 0
 			w.RevertProfiles = func() error { callbacks++; return failure }
-			if !persisted {
+			if !test.persisted {
 				w.StateFile = ""
 			}
 			err := w.Set(false)
@@ -568,10 +573,10 @@ func TestWebRTCOffErrorClaimsOptOutOnlyAfterPersistenceSucceeds(t *testing.T) {
 				t.Fatal("failed off operation reported success")
 			}
 			claim := strings.Contains(err.Error(), "automatic WebRTC setup is now off")
-			if claim != persisted {
+			if claim != test.persisted {
 				t.Fatalf("incorrect opt-out claim: %v", err)
 			}
-			if persisted {
+			if test.persisted {
 				assertOffMarker(t, w, true)
 				if !errors.Is(err, failure) || !strings.Contains(err.Error(), "retry 'sbc webrtc off'") || callbacks != 1 {
 					t.Fatalf("cleanup error lost cause or retry instructions: %v", err)

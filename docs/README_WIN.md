@@ -116,13 +116,12 @@ The Windows desktop proxy is opt-in via `sbc desktop on`. Once enabled, it follo
   `SOCKS_PROXY`, `ALL_PROXY`, and `NO_PROXY` in `HKCU\Environment` and broadcasts a
   `WM_SETTINGCHANGE` message to the system.
 - **WebRTC leak prevention**: when browser policies are missing, `sbc desktop on`
-  requests administrator approval for a registry-only helper. It sets `WebRtcIPHandling` to
-  `disable_non_proxied_udp` for Chrome and Brave. Edge uses
-  `WebRtcLocalhostIpHandling` with the same value. It also sets Firefox WebRTC
-  preferences. It targets `HKEY_USERS\<original-user-SID>\Software\Policies`, even if
-  elevation uses a different administrator. The installer, client and service stay
-  unelevated; Firefox profile edits also run unelevated. Browser registry ACLs are
-  not changed.
+  requests administrator approval for a registry-only helper. The helper sets
+  `WebRtcIPHandling` to `disable_non_proxied_udp` for Chrome and Brave. For Edge, it
+  sets `WebRtcLocalhostIpHandling` to the same value. It also sets Firefox WebRTC
+  preferences. The helper targets `HKEY_USERS\<original-user-SID>\Software\Policies`,
+  even if elevation uses a different administrator. The installer, client, service
+  and Firefox profile edits stay unelevated. Browser registry ACLs are not changed.
 - **Persistent protection**: `sbc off` and `sbc desktop off` leave browser protection
   enabled. Ordinary toggles need no further approval unless a policy is missing.
   This can restrict WebRTC calls while the proxy is off. `sbc webrtc off` removes
@@ -213,9 +212,9 @@ Client files and binaries reside in `%LOCALAPPDATA%\sbc`:
 | `webrtc-mode`                 | Explicit WebRTC opt-out                          |
 | `sing-box.log`                | Runtime log                                      |
 
-The WebRTC opt-out is stored in `%LOCALAPPDATA%\sbc\webrtc-mode`. Policy ownership is recorded
-separately under `HKCU\Software\Policies\sbc\WebRTC`, protected against unelevated
-writes. Cleanup removes its ownership records and the key when empty.
+`%LOCALAPPDATA%\sbc\webrtc-mode` records the WebRTC opt-out. Policy ownership records
+are separate, under `HKCU\Software\Policies\sbc\WebRTC`. This key is protected against
+unelevated writes. Cleanup removes the ownership records and deletes the key when empty.
 
 ## Uninstallation
 
@@ -256,10 +255,10 @@ reg delete "HKCU\Software\Policies\Google\Chrome" /v WebRtcIPHandling
 
 If access is denied, run this command elevated for the same Windows user. If
 elevation uses another account, replace `HKCU` with
-`HKEY_USERS\<Chrome-user-SID>`; obtain that SID with `whoami /user` in the Chrome
+`HKEY_USERS\<Chrome-user-SID>`. Obtain that SID with `whoami /user` in the Chrome
 user's normal terminal. Reload browser policies afterward. Keep policies required
-by your administrator. Edge and Brave use the corresponding keys listed by `sbc`;
-do not delete an entire browser policy key.
+by your administrator. Edge and Brave use the corresponding keys listed by `sbc`.
+Do not delete an entire browser policy key.
 
 Firefox copies `user.js` preferences into its saved profile settings. After
 `sbc webrtc off` or uninstall, restart Firefox and open `about:config` in each
