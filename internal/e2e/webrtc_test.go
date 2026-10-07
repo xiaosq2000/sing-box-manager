@@ -189,9 +189,11 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 })();
 </script>`, strconv.Quote(stunURL))
 	results := make(chan browserWebRTCResult, 1)
+	var pageRequested atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/":
+			pageRequested.Store(true)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			fmt.Fprint(w, page)
@@ -211,13 +213,8 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 		}
 	}))
 	defer server.Close()
-	command := exec.Command(browser,
-		"--headless=new", "--user-data-dir="+t.TempDir(),
-		"--no-first-run", "--no-default-browser-check", "--disable-background-networking",
-		"--disable-component-update", "--disable-default-apps", "--disable-sync",
-		"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost", server.URL)
-	prepareBrowserProcess(command)
-	var output bytes.Buffer
+	command := browserWebRTCCommand(browser, t.TempDir(), server.URL)
+	var output browserOutput
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
@@ -253,9 +250,9 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 	case result := <-results:
 		return result
 	case <-done:
-		t.Fatalf("Browser exited before the WebRTC result: %v\n%s", exitErr, output.String())
+		t.Fatalf("Browser %s exited before the WebRTC result (page requested=%t): %v\n%s", browser, pageRequested.Load(), exitErr, output.String())
 	case <-time.After(60 * time.Second):
-		t.Fatal("Browser did not report the local WebRTC result within 60 seconds")
+		t.Fatalf("Browser %s did not report the local WebRTC result within 60 seconds (page requested=%t)\n%s", browser, pageRequested.Load(), output.String())
 	}
 	return browserWebRTCResult{}
 }

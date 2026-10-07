@@ -31,6 +31,41 @@ func TestWebRTCCommandsWorkWithoutDesktopOrConfig(t *testing.T) {
 		})
 	}
 }
+func TestWebRTCOffReportsOnlyPreservedForeignSettings(t *testing.T) {
+	for _, foreign := range []bool{false, true} {
+		h := newHarness(t)
+		privacy := h.useDesktop()
+		if foreign {
+			privacy.remainingPolicies = []string{"fixture/browser/policies/manual.json"}
+		}
+		if code := Run(h.env, []string{"webrtc", "off"}); code != 0 {
+			t.Fatal(h.errOut)
+		}
+		output := h.out.String()
+		if !strings.Contains(output, "Managed WebRTC settings were removed") || strings.Contains(output, "manual WebRTC cleanup") || strings.Contains(output, "about:config") {
+			t.Fatalf("off left generic manual work: %s", output)
+		}
+		if !strings.Contains(output, "the four Firefox WebRTC preferences were reset") {
+			t.Fatalf("off did not explain the Firefox reset scope: %s", output)
+		}
+		if strings.Contains(output, "from another source were preserved") != foreign {
+			t.Fatalf("foreign setting report: %s", output)
+		}
+	}
+}
+
+func TestWebRTCOffFailureDoesNotClaimCleanupSuccess(t *testing.T) {
+	h := newHarness(t)
+	privacy := h.useDesktop()
+	privacy.privacyErr = errors.New("close Firefox and retry")
+	if code := Run(h.env, []string{"webrtc", "off"}); code == 0 {
+		t.Fatal("active profile reported cleanup success")
+	}
+	if strings.Contains(h.out.String(), "settings were removed") || !strings.Contains(h.errOut.String(), "close Firefox and retry") {
+		t.Fatalf("cleanup failure output: %s, %s", h.out, h.errOut)
+	}
+}
+
 func TestUnixUninstallCleansPrivacyWithoutDesktop(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin"} {
 		t.Run(goos, func(t *testing.T) {

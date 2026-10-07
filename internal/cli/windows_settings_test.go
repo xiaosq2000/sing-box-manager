@@ -255,7 +255,7 @@ func TestWindowsUninstallCleansPrivacyEvenWhenDesktopIsOff(t *testing.T) {
 	if desk.privacyCleanups != 1 || len(desk.calls) != 0 {
 		t.Fatalf("cleanup depended on the proxy being on: %+v", desk)
 	}
-	if !strings.Contains(h.out.String(), "not removed automatically") || !strings.Contains(h.out.String(), "manual WebRTC cleanup") {
+	if !strings.Contains(h.out.String(), "from another source were preserved") || !strings.Contains(h.out.String(), "administrator or externally changed settings") {
 		t.Fatal("uninstall concealed a pre-existing policy")
 	}
 	if _, err := os.Stat(h.layout.ConfigFile()); !os.IsNotExist(err) {

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
@@ -154,7 +153,7 @@ func TestWindowsDesktopDoesNotEnableProxyAfterPolicyFailure(t *testing.T) {
 	}
 }
 
-func TestWindowsRemainingWebRTCIncludesFirefoxManualReset(t *testing.T) {
+func TestWindowsRemainingWebRTCReportsOnlyActualFirefoxPreferences(t *testing.T) {
 	appData := t.TempDir()
 	t.Setenv("APPDATA", appData)
 	profile := filepath.Join(appData, "Mozilla", "Firefox", "Profiles", "fixture")
@@ -163,8 +162,16 @@ func TestWindowsRemainingWebRTCIncludesFirefoxManualReset(t *testing.T) {
 	}
 	desk := &Windows{Privacy: &fakeWebRTC{}}
 	remaining, err := desk.RemainingWebRTC()
-	if err != nil || len(remaining) != 1 || !strings.Contains(remaining[0], "about:config") {
-		t.Fatalf("missing Firefox manual reset guidance: %v, %v", remaining, err)
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("clean profile needs no manual work: %v, %v", remaining, err)
+	}
+	path := filepath.Join(profile, "prefs.js")
+	if err := os.WriteFile(path, []byte(firefoxPrefs[0]+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	remaining, err = desk.RemainingWebRTC()
+	if err != nil || len(remaining) != 1 || remaining[0] != path {
+		t.Fatalf("unowned saved preference was hidden: %v, %v", remaining, err)
 	}
 }
 

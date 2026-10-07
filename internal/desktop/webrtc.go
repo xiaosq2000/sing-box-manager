@@ -62,20 +62,6 @@ func (p *browserPrivacy) RemainingWebRTC() ([]string, error) {
 	return remainingFirefox(p.goos, remaining)
 }
 
-func remainingFirefox(goos string, remaining []string) ([]string, error) {
-	for _, dir := range firefoxDataDirs(goos) {
-		profiles, err := findFirefoxProfiles(dir)
-		if err != nil {
-			return nil, err
-		}
-		if len(profiles) > 0 {
-			remaining = append(remaining, i18n.T("Firefox profiles: check saved WebRTC preferences in about:config; see the WebRTC guide"))
-			break
-		}
-	}
-	return remaining, nil
-}
-
 type unixPolicy struct {
 	location, name string
 	programs       []string
@@ -111,7 +97,11 @@ func (p *unixPrivacy) enable() error {
 }
 
 func (p *unixPrivacy) remove() error {
-	return errors.Join(p.setPolicies(false), p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
+	var legacyErr error
+	if p.goos == "linux" {
+		legacyErr = p.removeLegacyLinuxPolicies()
+	}
+	return errors.Join(legacyErr, p.setPolicies(false), p.reloadMacPreferences(), revertFirefoxWebRTC(p.goos))
 }
 
 func (p *unixPrivacy) setPolicies(enabled bool) error {
@@ -135,13 +125,21 @@ func (p *unixPrivacy) Remaining() ([]string, error) {
 	return p.remainingLinuxPolicies()
 }
 
-func privateFile(path string) ([]byte, error) {
+// regularFileInfo checks the path itself, without following symbolic links.
+func regularFileInfo(path string) (os.FileInfo, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
 		return nil, i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
+	}
+	return info, nil
+}
+
+func privateFile(path string) ([]byte, error) {
+	if _, err := regularFileInfo(path); err != nil {
+		return nil, err
 	}
 	return os.ReadFile(filepath.Clean(path))
 }

@@ -8,15 +8,15 @@
 
 "SECURITY.md" = "e29ee1e653e07664"
 
-"docs/DEVELOPMENT.md" = "5a23faf01adf8362"
+"docs/DEVELOPMENT.md" = "0191bc12bc5b3695"
 
 "docs/README_LINUX.md" = "e6e5c707f32085a3"
 
 "docs/README_MACOS.md" = "edb285e2237d641b"
 
-"docs/README_WIN.md" = "34a320cc042da023"
+"docs/README_WIN.md" = "c034cf78bb6b4755"
 
-"docs/REFACTOR_SPEC.md" = "89f4ed62dc4d32bc"
+"docs/REFACTOR_SPEC.md" = "c437880c14766e77"
 
 "docs/RELEASE_AND_PORTAL.md" = "e1106b6c310fae7b"
 
@@ -28,4 +28,4 @@
 
 "docs/VPS_DEPLOYMENT.md" = "dee3a4f5d7027190"
 
-"docs/WEBRTC.md" = "2415ae57f07591b3"
+"docs/WEBRTC.md" = "83fd48cfe2906a21"

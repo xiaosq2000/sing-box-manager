@@ -55,13 +55,34 @@ func applyFirefoxWebRTC(goos string) error {
 	return result
 }
 
-// revertFirefoxWebRTC removes sbc-managed settings from user.js across all found Firefox installations.
+// revertFirefoxWebRTC resets the four WebRTC preferences in discovered profiles.
 func revertFirefoxWebRTC(goos string) error {
 	var result error
 	for _, dir := range firefoxDataDirs(goos) {
 		result = errors.Join(result, revertFirefoxProfiles(dir))
 	}
 	return result
+}
+
+func remainingFirefox(goos string, remaining []string) ([]string, error) {
+	for _, dir := range firefoxDataDirs(goos) {
+		profiles, err := findFirefoxProfiles(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, profile := range profiles {
+			for _, name := range []string{"user.js", "prefs.js"} {
+				data, err := readFirefoxFile(profile, name)
+				if err != nil {
+					return nil, err
+				}
+				if hasFirefoxProtection(data) {
+					remaining = append(remaining, filepath.Join(profile, name))
+				}
+			}
+		}
+	}
+	return remaining, nil
 }
 
 // findFirefoxProfiles finds all profile directories under baseDir.
@@ -151,100 +172,19 @@ func findFirefoxProfiles(baseDir string) ([]string, error) {
 	return profiles, discoveryErr
 }
 
-// Replace only the profile file. Unlike executable replacement, a locked
-// Firefox file must fail without moving the original to a leftover .old file.
-func writeFirefoxUserJS(path string, data []byte) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".sbc-webrtc-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if _, err = file.Write(data); err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
-}
-
 func applyFirefoxProfiles(baseDir string) error {
 	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
-		userJSPath := filepath.Join(profile, "user.js")
-		content, err := os.ReadFile(userJSPath)
-		if err != nil && !os.IsNotExist(err) {
-			result = errors.Join(result, err)
-			continue
-		}
-		text := string(content)
-		if strings.Contains(text, "media.peerconnection.ice.proxy_only") || strings.Contains(text, firefoxMarker) {
-			continue
-		}
-		var newContent strings.Builder
-		if len(text) > 0 {
-			newContent.WriteString(text)
-			if !strings.HasSuffix(text, "\n") {
-				newContent.WriteString("\n")
-			}
-		}
-		newContent.WriteString(firefoxMarker + "\n")
-		for _, pref := range firefoxPrefs {
-			newContent.WriteString(pref + "\n")
-		}
-		if err := writeFirefoxUserJS(userJSPath, []byte(newContent.String())); err != nil {
-			result = errors.Join(result, err)
-		}
+		result = errors.Join(result, applyFirefoxProfile(profile))
 	}
 	return result
 }
 
-// revertFirefoxProfiles removes sbc-managed settings from user.js for all profiles under baseDir.
+// revertFirefoxProfiles resets saved preferences before removing obsolete state.
 func revertFirefoxProfiles(baseDir string) error {
 	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {
-		userJSPath := filepath.Join(profile, "user.js")
-		content, err := os.ReadFile(userJSPath)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			result = errors.Join(result, err)
-			continue
-		}
-		text := string(content)
-		if !strings.Contains(text, firefoxMarker) {
-			continue
-		}
-		prefMap := make(map[string]bool)
-		for _, pref := range firefoxPrefs {
-			prefMap[strings.TrimSpace(pref)] = true
-		}
-		var lines []string
-		inManagedBlock := false
-		for _, line := range strings.Split(text, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == firefoxMarker {
-				inManagedBlock = true
-				continue
-			}
-			if inManagedBlock && prefMap[trimmed] {
-				continue
-			}
-			inManagedBlock = false
-			lines = append(lines, line)
-		}
-		remaining := strings.TrimSpace(strings.Join(lines, "\n"))
-		if remaining == "" {
-			if err := os.Remove(userJSPath); err != nil {
-				result = errors.Join(result, err)
-			}
-		} else if err := writeFirefoxUserJS(userJSPath, []byte(strings.Join(lines, "\n"))); err != nil {
-			result = errors.Join(result, err)
-		}
+		result = errors.Join(result, revertFirefoxProfile(profile))
 	}
 	return result
 }

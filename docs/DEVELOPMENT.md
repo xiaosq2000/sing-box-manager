@@ -77,11 +77,25 @@ verification, ownership, interrupted cleanup, persistent opt-out and repair whil
 the proxy is already on. CLI tests verify that failed browser cleanup leaves the
 client and proxy available for retry. Concurrency fixtures pause policy or profile
 setup and check that opt-out and uninstall cleanup wait for completion.
-Firefox fixtures use temporary profiles. They check that profile failures do not
-skip healthy profiles and that WebRTC setup and cleanup return those failures.
+Firefox discovery lives in `internal/desktop/firefox.go`; profile parsing, writes
+and cleanup live in `internal/desktop/firefox_profile.go`. Reads, writes, obsolete
+snapshots and native lock files share a regular-file check. Its fixtures cover
+regular files, missing paths, directories, symbolic links and dangling links.
+Firefox fixtures use temporary profiles. They check resetting exactly the four
+supported preferences in both profile files, including pre-existing values,
+orphaned profiles and stale or corrupt snapshots. Unrelated preferences and clean
+profiles remain unchanged. Discovery fixtures cover traditional, Snap, Flatpak,
+macOS and Windows locations; orphan cleanup leaves no remaining-settings warning.
+A subprocess holds the native profile lock to verify that cleanup rejects active
+managed and orphaned profiles and succeeds after the lock is released. Fixtures
+also cover symlink refusal, retry after failed cleanup, and reporting only actual
+remaining settings. Profile failures do not skip healthy profiles, and WebRTC
+setup and cleanup return those failures.
 Unix fixtures execute the embedded Linux helper in a temporary policy directory,
-without sudo. They cover ownership, conflicts, changed values, another account,
-failed writes, retry and concurrent commands. A macOS native fixture uses disposable
+without sudo. They cover ownership, exact legacy-file cleanup, conflicts, changed
+values, another account, failed writes, retry and concurrent commands. Legacy
+cleanup fixtures change a file or replace it with a symlink before the helper
+runs, and check that the elevated recheck refuses deletion. A macOS native fixture uses disposable
 plist paths and the native `plutil` and `PlistBuddy` tools, without sudo or browser preferences.
 The WebRTC lifecycle in `internal/browserprivacy` is shared with Windows.
 The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
@@ -120,15 +134,20 @@ Edge policy change that requires a restart. This IPv4 UDP check runs only in the
 gated lifecycle. Unix runners require Chrome and also probe Edge and Brave when
 installed. They check positive controls, protection after proxy toggles, explicit
 opt-out, repair after policy deletion, and cleanup after uninstall. Browser
-processes use disposable profiles. Unix process groups and Windows taskkill stop
+processes use disposable profiles. Startup flags suppress first-run UI, including
+Edge's `msEdgeFirstRunExperience`, without overriding WebRTC or proxy policies.
+Timeouts report whether the browser requested the probe page and include captured
+browser output. Log capture is synchronized because a timeout can read it while
+the browser is still running. Unix process groups and Windows taskkill stop
 only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
 helper's root ownership and setuid mode before launching Edge. Browser sandboxing
 stays enabled. The macOS lifecycle verifies cache refresh after managed policy
 changes, including off and uninstall. Unit tests stub that service operation.
-The fixture responder alone can be checked without changing host settings:
+The responder, startup arguments and concurrent log capture have fixture-only
+checks that do not launch a browser or change host settings:
 
 ```sh
-pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTCSTUNFixture$' -count=1
+pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput)$' -count=1
 ```
 
 Windows restores the runner's registry settings even after a failure.
