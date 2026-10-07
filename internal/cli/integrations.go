@@ -115,9 +115,8 @@ func switchDesktop(env Env, layout paths.Layout, local singbox.Local, on bool) e
 	switch {
 	case state == desktop.Other:
 		fmt.Fprintf(env.Stdout, i18n.T("The desktop proxy (%s) points at another proxy, so sbc left it alone.\n"), desk.Name())
-	// Windows must also repair missing browser policies after an upgrade or a
-	// manual deletion, even when WinINet already points at this proxy.
-	case on && (state == desktop.Off || env.OS == "windows"):
+	// Repair browser policies even when the desktop already uses this proxy.
+	case on:
 		if local.Username != "" {
 			return errPasswordOnDesktop
 		}
@@ -141,21 +140,17 @@ func runWebRTC(env Env, args []string) int {
 		fmt.Fprintln(env.Stderr, i18n.T("sbc: webrtc takes on or off"))
 		return 2
 	}
-	if env.OS != "windows" {
-		return fail(env, i18n.New("sbc webrtc is available only on Windows"))
-	}
-	desk, err := env.Desktop()
+	privacy, err := env.Privacy()
 	if err != nil {
 		return fail(env, err)
-	}
-	privacy, ok := desk.(desktop.BrowserPrivacy)
-	if !ok {
-		return fail(env, i18n.New("Windows WebRTC settings are unavailable"))
 	}
 	if err := privacy.SetWebRTC(args[0] == "on"); err != nil {
 		return fail(env, err)
 	}
 	if args[0] == "on" {
+		if env.OS == "darwin" {
+			fmt.Fprintln(env.Stdout, i18n.T("Safari WebRTC protection is not managed by sbc."))
+		}
 		fmt.Fprintln(env.Stdout, i18n.T("WebRTC protection is configured and stays enabled across proxy toggles. Restart open browsers to apply the changes."))
 		return 0
 	}
@@ -172,7 +167,7 @@ func reportRemainingWebRTC(env Env, privacy desktop.BrowserPrivacy) error {
 		return err
 	}
 	if len(remaining) != 0 {
-		fmt.Fprintf(env.Stdout, i18n.T("Browser settings not removed automatically:\n  %s\nSee the Windows guide's manual WebRTC cleanup instructions. Keep policies required by your administrator.\n"), strings.Join(remaining, "\n  "))
+		fmt.Fprintf(env.Stdout, i18n.T("Browser settings not removed automatically:\n  %s\nSee the WebRTC guide's manual WebRTC cleanup instructions. Keep policies required by your administrator.\n"), strings.Join(remaining, "\n  "))
 	}
 	return nil
 }

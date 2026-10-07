@@ -8,7 +8,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
-// BrowserPrivacy manages Windows browser settings independently of proxy toggles.
+// BrowserPrivacy manages browser settings independently of proxy toggles.
 // CleanupWebRTC must finish before uninstall removes the client and its state.
 type BrowserPrivacy interface {
 	SetWebRTC(enabled bool) error
@@ -93,17 +93,5 @@ func (w *Windows) RemainingWebRTC() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Firefox copies user.js preferences into its saved profile settings.
-	// Do not rewrite a live prefs.js; give the user the explicit reset path.
-	for _, dir := range firefoxDataDirs("windows") {
-		profiles, err := findFirefoxProfiles(dir)
-		if err != nil {
-			return nil, err
-		}
-		if len(profiles) != 0 {
-			remaining = append(remaining, i18n.T("Firefox profiles: check saved WebRTC preferences in about:config; see the Windows guide"))
-			break
-		}
-	}
-	return remaining, nil
+	return remainingFirefox("windows", remaining)
 }

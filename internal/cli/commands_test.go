@@ -169,6 +169,7 @@ func newHarness(t *testing.T) *harness {
 	os.MkdirAll(home, 0o755)
 	h.env.Home = func() (string, error) { return home, nil }
 	// Tests never read or change this machine's desktop or Docker settings.
+	h.env.Privacy = func() (desktop.BrowserPrivacy, error) { return &fakeDesktop{}, nil }
 	h.env.Desktop = func() (desktop.Desktop, error) { return nil, desktop.ErrUnsupported }
 	h.env.Docker = func() (*docker.Daemon, error) { return nil, docker.ErrUnsupported }
 	return h
@@ -239,6 +240,7 @@ func (f *fakeDesktop) RemainingWebRTC() ([]string, error) {
 func (h *harness) useDesktop() *fakeDesktop {
 	desk := &fakeDesktop{}
 	h.env.Desktop = func() (desktop.Desktop, error) { return desk, nil }
+	h.env.Privacy = func() (desktop.BrowserPrivacy, error) { return desk, nil }
 	return desk
 }
 

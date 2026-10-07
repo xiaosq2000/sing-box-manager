@@ -242,10 +242,7 @@ func TestWindowsWebRTCExplicitSwitchDoesNotToggleProxy(t *testing.T) {
 			t.Fatalf("invalid command %v: %d", args, code)
 		}
 	}
-	h.env.OS = "linux"
-	if code := Run(h.env, []string{"webrtc", "off"}); code == 0 {
-		t.Fatal("Windows-only command succeeded on Linux")
-	}
+
 }
 
 func TestWindowsUninstallCleansPrivacyEvenWhenDesktopIsOff(t *testing.T) {

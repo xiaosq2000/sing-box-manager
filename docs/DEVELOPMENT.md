@@ -78,7 +78,12 @@ the proxy is already on. CLI tests verify that failed browser cleanup leaves the
 client and proxy available for retry. Concurrency fixtures pause policy or profile
 setup and check that opt-out and uninstall cleanup wait for completion.
 Firefox fixtures use temporary profiles. They check that profile failures do not
-skip healthy profiles and that Unix desktop commands return those failures.
+skip healthy profiles and that WebRTC setup and cleanup return those failures.
+Unix fixtures execute the embedded Linux helper in a temporary policy directory,
+without sudo. They cover ownership, conflicts, changed values, another account,
+failed writes, retry and concurrent commands. A macOS native fixture uses disposable
+plist paths and the native `plutil` and `PlistBuddy` tools, without sudo or browser preferences.
+The WebRTC lifecycle in `internal/browserprivacy` is shared with Windows.
 The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
 Native registry tests use disposable keys, not browser or environment keys. They
 check registry types and rollback, and run the fixed WebRTC payload in a disposable
@@ -112,7 +117,14 @@ uses a fresh profile with loopback HTTP and STUN fixtures. The unprotected contr
 must gather a fixture server-reflexive candidate. The protected run must complete
 ICE gathering without direct STUN. The runner needs Chrome and Edge installed. Each probe starts a new process, including after an
 Edge policy change that requires a restart. This IPv4 UDP check runs only in the
-gated Windows lifecycle.
+gated lifecycle. Unix runners require Chrome and also probe Edge and Brave when
+installed. They check positive controls, protection after proxy toggles, explicit
+opt-out, repair after policy deletion, and cleanup after uninstall. Browser
+processes use disposable profiles. Unix process groups and Windows taskkill stop
+only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
+helper's root ownership and setuid mode before launching Edge. Browser sandboxing
+stays enabled. The macOS lifecycle verifies cache refresh after managed policy
+changes, including off and uninstall. Unit tests stub that service operation.
 The fixture responder alone can be checked without changing host settings:
 
 ```sh

@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -217,6 +216,7 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 		"--no-first-run", "--no-default-browser-check", "--disable-background-networking",
 		"--disable-component-update", "--disable-default-apps", "--disable-sync",
 		"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost", server.URL)
+	prepareBrowserProcess(command)
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {
@@ -235,15 +235,12 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 		default:
 		}
 		// Kill only this browser's process tree, never other browser instances.
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := exec.CommandContext(ctx, "taskkill.exe", "/PID", strconv.Itoa(command.Process.Pid), "/T", "/F").Run(); err != nil {
+		if err := stopBrowserProcess(command); err != nil {
 			select {
 			case <-done:
 				return
 			default:
 				t.Errorf("stop disposable browser process tree: %v", err)
-				command.Process.Kill()
 			}
 		}
 		select {

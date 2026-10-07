@@ -109,6 +109,8 @@ func testLifecycle(t *testing.T, engine string) {
 	expectPage(t, proxy, site.URL)
 	if runtime.GOOS == "windows" {
 		checkWindowsSwitches(t, layout)
+	} else {
+		checkUnixWebRTC(t, layout)
 	}
 	pid := singBoxPID(t, layout.SingBox())
 
@@ -148,6 +150,8 @@ func testLifecycle(t *testing.T, engine string) {
 	expectServiceGone(t)
 	if runtime.GOOS == "windows" {
 		checkWindowsSettingsRemoved(t, layout)
+	} else {
+		checkUnixWebRTCRemoved(t)
 	}
 	for _, path := range []string{layout.Config, layout.Data} {
 		for try := 0; ; try++ {

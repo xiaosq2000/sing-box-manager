@@ -304,19 +304,18 @@ Client:
 - `sbc status` shows this billing cycle's traffic from the `subscription-userinfo`
   header of the last refresh.
 - `sbc` lives in a directory of its own, which `sbc init` puts on PATH.
-- `sbc desktop on` points the GNOME or macOS proxy settings at `sbc`. In
-  addition, it configures browser WebRTC leak prevention (`WebRtcIPHandling` =
-  `disable_non_proxied_udp` for Chromium browsers, WebRTC proxy preferences for
-  Firefox, and `pfctl` STUN filtering for Safari on macOS) so browsers do not
-  leak real IPs over WebRTC STUN requests. `sbc desktop off` and `sbc uninstall`
-  revert these browser settings. Firefox setup and cleanup continue through healthy
-  profiles and report errors from failed profiles or profile discovery.
-  `sbc docker on`
-  writes the Docker daemon's systemd drop-in on Linux and restarts Docker, after
-  asking, or with `--yes` where nobody can answer. Both take over the settings the
-  bash client wrote, leave settings that point elsewhere alone, and refuse while
-  the proxy requires a password: the desktop has nowhere to keep one, and every
-  account shares the daemon.
+- `sbc desktop on` points the GNOME or macOS proxy settings at `sbc`.
+  WebRTC protection persists across proxy toggles on Linux, macOS and Windows.
+  `sbc webrtc off` removes owned settings and disables automatic setup.
+  `sbc webrtc on` enables it again, independently of desktop detection.
+  Browser policies use native mandatory settings. Firefox uses managed profile
+  preferences. Safari is not managed. See [WebRTC protection](WEBRTC.md) for
+  platform scope, ownership, restart requirements and manual cleanup.
+  Firefox setup and cleanup continue through healthy profiles and report failures.
+  `sbc docker on` writes the Docker daemon's systemd drop-in on Linux and restarts
+  Docker after confirmation, or with `--yes`. Desktop and Docker integration refuse
+  authenticated local proxies. Desktop settings cannot hold the password, and all
+  accounts share the Docker daemon.
 - The git proxy integration is dropped, because git reads `https_proxy`.
 - Running `install.sh` over a bash install migrates it, side by side so the machine
   never loses its proxy. It exchanges the saved machine token for the subscription

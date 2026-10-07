@@ -114,6 +114,7 @@ tun = ["scripts/lib/tun.sh"]
   "internal/cli/",
   "internal/desktop/",
   "internal/winsettings/",
+  "internal/browserprivacy/",
   "internal/powershell/",
   "internal/paths/",
   "internal/service/",
@@ -130,4 +131,13 @@ tun = ["scripts/lib/tun.sh"]
   "scripts/sing-box.service",
   "cmd/",
   "internal/",
+]
+
+"docs/WEBRTC.md" = [
+  "internal/browserprivacy/",
+  "internal/desktop/",
+  "internal/winsettings/",
+  "internal/cli/",
+  "internal/paths/",
+  "internal/e2e/",
 ]

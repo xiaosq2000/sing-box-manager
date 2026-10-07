@@ -1,11 +1,9 @@
 package winsettings
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 
+	"github.com/xiaosq2000/sing-box-manager/internal/browserprivacy"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
 
@@ -117,37 +115,6 @@ func (w *WebRTC) change(action string) error {
 	return changeWebRTCPolicies(action)
 }
 
-func (w *WebRTC) optedOut() (bool, error) {
-	if w.StateFile == "" {
-		return false, nil
-	}
-	data, err := os.ReadFile(w.StateFile)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, i18n.Errorf("could not read the WebRTC mode state: %w", err)
-	}
-	if strings.TrimSpace(string(data)) != "off" {
-		return false, i18n.New("the WebRTC mode state is invalid; use 'sbc webrtc on' or 'sbc webrtc off'")
-	}
-	return true, nil
-}
-
-// Ensure defaults to enabled, but never reverses an explicit opt-out.
-func (w *WebRTC) Ensure() error {
-	unlock, err := lockWebRTC()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	off, err := w.optedOut()
-	if err != nil || off {
-		return err
-	}
-	return w.enable()
-}
-
 func (w *WebRTC) policyValues() (map[string]Value, error) {
 	result := map[string]Value{}
 	for _, policy := range webRTCPolicies {
@@ -219,44 +186,6 @@ func (w *WebRTC) enable() error {
 	return nil
 }
 
-// Set(false) records the choice before cleanup: cancellation or a partial
-// cleanup must not let a later automatic Ensure recreate removed policies.
-// Set(true) clears that choice only after verified setup and profile success.
-func (w *WebRTC) Set(enabled bool) error {
-	unlock, err := lockWebRTC()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	if enabled {
-		if err := w.enable(); err != nil {
-			return err
-		}
-		return w.removeState()
-	}
-	if err := w.writeOff(); err != nil {
-		return err
-	}
-	if err := w.cleanupSettings(); err != nil {
-		return i18n.Errorf("automatic WebRTC setup is now off, but cleanup failed; retry 'sbc webrtc off' or uninstall: %w", err)
-	}
-	return nil
-}
-
-// Cleanup leaves mode state intact even on success: a later uninstall step
-// might fail, so the caller owns final config-directory removal. Failures
-// propagate so uninstall can keep recovery files and the binary for retry.
-// Pre-existing or externally changed policies survive; Remaining lists their
-// locations without including values.
-func (w *WebRTC) Cleanup() error {
-	unlock, err := lockWebRTC()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	return w.cleanupSettings()
-}
-
 func (w *WebRTC) ownership() (map[string]Value, error) {
 	names := make([]string, 0, len(webRTCPolicies))
 	for _, policy := range webRTCPolicies {
@@ -325,41 +254,9 @@ func (w *WebRTC) Remaining() ([]string, error) {
 	return locations, nil
 }
 
-func (w *WebRTC) removeState() error {
-	if w.StateFile == "" {
-		return nil
-	}
-	if err := os.Remove(w.StateFile); err != nil && !os.IsNotExist(err) {
-		return i18n.Errorf("could not remove the WebRTC mode state: %w", err)
-	}
-	return nil
+func (w *WebRTC) manager() *browserprivacy.Manager {
+	return &browserprivacy.Manager{StateFile: w.StateFile, Lock: lockWebRTC, Enable: w.enable, Remove: w.cleanupSettings}
 }
-
-func (w *WebRTC) writeOff() error {
-	if w.StateFile == "" {
-		return i18n.New("a state file is required to persist the WebRTC opt-out")
-	}
-	dir := filepath.Dir(w.StateFile)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return i18n.Errorf("could not save the WebRTC opt-out: %w", err)
-	}
-	file, err := os.CreateTemp(dir, ".webrtc-*")
-	if err != nil {
-		return i18n.Errorf("could not save the WebRTC opt-out: %w", err)
-	}
-	defer os.Remove(file.Name())
-	if _, err = file.WriteString("off\n"); err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(file.Name(), w.StateFile)
-	}
-	if err != nil {
-		return i18n.Errorf("could not save the WebRTC opt-out: %w", err)
-	}
-	return nil
-}
+func (w *WebRTC) Ensure() error          { return w.manager().Ensure() }
+func (w *WebRTC) Set(enabled bool) error { return w.manager().Set(enabled) }
+func (w *WebRTC) Cleanup() error         { return w.manager().Cleanup() }
