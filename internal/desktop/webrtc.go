@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/browserprivacy"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
@@ -61,34 +60,6 @@ func (p *browserPrivacy) RemainingWebRTC() ([]string, error) {
 		return nil, err
 	}
 	return remainingFirefox(p.goos, remaining)
-}
-
-func remainingFirefox(goos string, remaining []string) ([]string, error) {
-	for _, dir := range firefoxDataDirs(goos) {
-		profiles, err := findFirefoxProfiles(dir)
-		if err != nil {
-			return nil, err
-		}
-		for _, profile := range profiles {
-			for _, name := range []string{"user.js", "prefs.js"} {
-				path := filepath.Join(profile, name)
-				data, err := privateFile(path)
-				if os.IsNotExist(err) {
-					continue
-				}
-				if err != nil {
-					return nil, err
-				}
-				for _, line := range strings.Split(string(data), "\n") {
-					if _, value, ok := firefoxPreference(line); ok && value == "true" {
-						remaining = append(remaining, path)
-						break
-					}
-				}
-			}
-		}
-	}
-	return remaining, nil
 }
 
 type unixPolicy struct {

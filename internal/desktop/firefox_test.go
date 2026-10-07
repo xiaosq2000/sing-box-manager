@@ -156,7 +156,7 @@ func TestFirefoxProfileFailuresAreReported(t *testing.T) {
 	if err := revertFirefoxProfiles(base); err == nil {
 		t.Fatal("cleanup reported success without reading user.js")
 	}
-	if err := writeFirefoxUserJS(filepath.Join(profile, "user.js"), []byte("fixture")); err == nil {
+	if err := writeFirefoxFile(filepath.Join(profile, "user.js"), []byte("fixture")); err == nil {
 		t.Fatal("replacement moved an unusable target aside")
 	}
 	entries, err := os.ReadDir(profile)

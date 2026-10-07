@@ -24,12 +24,41 @@ func firefoxPreference(line string) (name, value string, ok bool) {
 	return match[1], value, json.Valid([]byte(value))
 }
 
-type firefoxSaved struct {
+func hasFirefoxProtection(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		if _, value, ok := firefoxPreference(line); ok && value == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+type firefoxSnapshot struct {
 	Version  int                 `json:"version"`
 	Original map[string][]string `json:"original"`
 }
 
-func readFirefoxSaved(profile string) (*firefoxSaved, error) {
+func (snapshot *firefoxSnapshot) valid() bool {
+	if snapshot.Version != 1 || len(snapshot.Original) != len(firefoxPrefs) {
+		return false
+	}
+	for _, pref := range firefoxPrefs {
+		name, _, _ := firefoxPreference(pref)
+		lines, present := snapshot.Original[name]
+		if !present {
+			return false
+		}
+		for _, line := range lines {
+			key, _, valid := firefoxPreference(line)
+			if !valid || key != name || strings.ContainsAny(line, "\r\n") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func readFirefoxSnapshot(profile string) (*firefoxSnapshot, error) {
 	data, err := privateFile(filepath.Join(profile, firefoxStateName))
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -37,24 +66,11 @@ func readFirefoxSaved(profile string) (*firefoxSaved, error) {
 	if err != nil {
 		return nil, err
 	}
-	var saved firefoxSaved
-	if json.Unmarshal(data, &saved) != nil || saved.Version != 1 || len(saved.Original) != len(firefoxPrefs) {
+	var snapshot firefoxSnapshot
+	if json.Unmarshal(data, &snapshot) != nil || !snapshot.valid() {
 		return nil, i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
 	}
-	for _, pref := range firefoxPrefs {
-		name, _, _ := firefoxPreference(pref)
-		lines, ok := saved.Original[name]
-		if !ok {
-			return nil, i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
-		}
-		for _, line := range lines {
-			key, _, valid := firefoxPreference(line)
-			if !valid || key != name || strings.ContainsAny(line, "\r\n") {
-				return nil, i18n.New("the WebRTC policy ownership record is invalid; cleanup cannot safely continue")
-			}
-		}
-	}
-	return &saved, nil
+	return &snapshot, nil
 }
 
 func readFirefoxFile(profile, name string) ([]byte, error) {
@@ -63,6 +79,35 @@ func readFirefoxFile(profile, name string) ([]byte, error) {
 		return nil, nil
 	}
 	return data, err
+}
+
+func saveFirefoxSnapshot(profile string) error {
+	snapshot, err := readFirefoxSnapshot(profile)
+	if err != nil {
+		return err
+	}
+	if snapshot != nil {
+		return nil // Keep the original values after interrupted setup.
+	}
+	prefs, err := readFirefoxFile(profile, "prefs.js")
+	if err != nil {
+		return err
+	}
+	snapshot = &firefoxSnapshot{Version: 1, Original: map[string][]string{}}
+	for _, pref := range firefoxPrefs {
+		name, _, _ := firefoxPreference(pref)
+		snapshot.Original[name] = nil
+	}
+	for _, line := range strings.Split(string(prefs), "\n") {
+		if name, _, ok := firefoxPreference(line); ok {
+			snapshot.Original[name] = append(snapshot.Original[name], strings.TrimSuffix(line, "\r"))
+		}
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	return writeFirefoxFile(filepath.Join(profile, firefoxStateName), data)
 }
 
 func applyFirefoxProfile(profile string) error {
@@ -80,39 +125,15 @@ func applyFirefoxProfile(profile string) error {
 			return nil // Never override a user.js preference from another source.
 		}
 	}
-	saved, err := readFirefoxSaved(profile)
-	if err != nil {
+	// Persist the original values before user.js can change prefs.js.
+	if err := saveFirefoxSnapshot(profile); err != nil {
 		return err
-	}
-	if saved == nil {
-		prefs, err := readFirefoxFile(profile, "prefs.js")
-		if err != nil {
-			return err
-		}
-		saved = &firefoxSaved{Version: 1, Original: map[string][]string{}}
-		for _, pref := range firefoxPrefs {
-			name, _, _ := firefoxPreference(pref)
-			saved.Original[name] = nil
-		}
-		for _, line := range strings.Split(string(prefs), "\n") {
-			if name, _, ok := firefoxPreference(line); ok {
-				saved.Original[name] = append(saved.Original[name], strings.TrimSuffix(line, "\r"))
-			}
-		}
-		data, err := json.Marshal(saved)
-		if err != nil {
-			return err
-		}
-		// Persist the original values before user.js can change prefs.js.
-		if err := writeFirefoxUserJS(filepath.Join(profile, firefoxStateName), data); err != nil {
-			return err
-		}
 	}
 	if len(text) > 0 && !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
 	text += firefoxMarker + "\n" + strings.Join(firefoxPrefs, "\n") + "\n"
-	return writeFirefoxUserJS(filepath.Join(profile, "user.js"), []byte(text))
+	return writeFirefoxFile(filepath.Join(profile, "user.js"), []byte(text))
 }
 
 func stripFirefoxManaged(text string) (string, map[string]bool) {
@@ -134,17 +155,51 @@ func stripFirefoxManaged(text string) (string, map[string]bool) {
 	return strings.Join(lines, "\n"), owned
 }
 
+func restoreFirefoxPreferences(prefs []byte, userJS string, owned map[string]bool, snapshot *firefoxSnapshot) []byte {
+	replacements := map[string][]string{}
+	for name, managed := range owned {
+		// Also preserve custom JavaScript syntax outside the managed block.
+		if !managed || strings.Contains(userJS, name) {
+			continue
+		}
+		replacements[name] = nil // Legacy blocks reset to browser defaults.
+		if snapshot != nil {
+			replacements[name] = snapshot.Original[name]
+		}
+	}
+	lines := strings.Split(string(prefs), "\n")
+	for _, line := range lines {
+		if name, value, ok := firefoxPreference(line); ok && value != "true" {
+			delete(replacements, name) // Preserve externally changed saved values.
+		}
+	}
+	var restored []string
+	for _, line := range lines {
+		name, value, valid := firefoxPreference(line)
+		original, replace := replacements[name]
+		if valid && replace && value == "true" {
+			restored = append(restored, original...)
+			// Restore once, but still remove any duplicate managed entries.
+			replacements[name] = nil
+			continue
+		}
+		restored = append(restored, line)
+	}
+	return []byte(strings.Join(restored, "\n"))
+}
+
 func revertFirefoxProfile(profile string) error {
 	content, err := readFirefoxFile(profile, "user.js")
 	if err != nil {
 		return err
 	}
-	saved, err := readFirefoxSaved(profile)
+	snapshot, err := readFirefoxSnapshot(profile)
 	if err != nil {
 		return err
 	}
 	text := string(content)
-	if !strings.Contains(text, firefoxMarker) && saved == nil {
+	managed := strings.Contains(text, firefoxMarker)
+	if !managed && snapshot == nil {
 		return nil
 	}
 	unlock, err := lockFirefoxProfile(profile)
@@ -153,45 +208,19 @@ func revertFirefoxProfile(profile string) error {
 	}
 	defer unlock()
 	remaining, owned := stripFirefoxManaged(text)
-	if saved != nil && !strings.Contains(text, firefoxMarker) {
+	if !managed && snapshot != nil {
 		// Retry after user.js removal or interrupted setup.
-		for name := range saved.Original {
+		for name := range snapshot.Original {
 			owned[name] = true
-		}
-	}
-	// Conservatively preserve preferences mentioned outside the managed block,
-	// including custom JavaScript syntax which our saved-value parser ignores.
-	for name := range owned {
-		if strings.Contains(remaining, name) {
-			delete(owned, name)
 		}
 	}
 	prefs, err := readFirefoxFile(profile, "prefs.js")
 	if err != nil {
 		return err // Keep the managed block and snapshot available for retry.
 	}
-	lines := strings.Split(string(prefs), "\n")
-	for _, line := range lines {
-		if name, value, ok := firefoxPreference(line); ok && value != "true" {
-			delete(owned, name) // Preserve externally changed saved values.
-		}
-	}
-	var restored []string
-	restoredNames := map[string]bool{}
-	for _, line := range lines {
-		name, value, ok := firefoxPreference(line)
-		if ok && owned[name] && value == "true" {
-			if saved != nil && !restoredNames[name] {
-				restored = append(restored, saved.Original[name]...)
-				restoredNames[name] = true
-			}
-			continue // Legacy blocks have no snapshot: reset to browser defaults.
-		}
-		restored = append(restored, line)
-	}
-	data := []byte(strings.Join(restored, "\n"))
+	data := restoreFirefoxPreferences(prefs, remaining, owned, snapshot)
 	if !bytes.Equal(data, prefs) {
-		if err := writeFirefoxUserJS(filepath.Join(profile, "prefs.js"), data); err != nil {
+		if err := writeFirefoxFile(filepath.Join(profile, "prefs.js"), data); err != nil {
 			return err
 		}
 	}
@@ -200,13 +229,13 @@ func revertFirefoxProfile(profile string) error {
 		if strings.TrimSpace(remaining) == "" {
 			err = os.Remove(path)
 		} else {
-			err = writeFirefoxUserJS(path, []byte(remaining))
+			err = writeFirefoxFile(path, []byte(remaining))
 		}
 		if err != nil {
 			return err
 		}
 	}
-	if saved != nil {
+	if snapshot != nil {
 		return os.Remove(filepath.Join(profile, firefoxStateName))
 	}
 	return nil

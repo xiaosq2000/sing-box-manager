@@ -64,6 +64,27 @@ func revertFirefoxWebRTC(goos string) error {
 	return result
 }
 
+func remainingFirefox(goos string, remaining []string) ([]string, error) {
+	for _, dir := range firefoxDataDirs(goos) {
+		profiles, err := findFirefoxProfiles(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, profile := range profiles {
+			for _, name := range []string{"user.js", "prefs.js"} {
+				data, err := readFirefoxFile(profile, name)
+				if err != nil {
+					return nil, err
+				}
+				if hasFirefoxProtection(data) {
+					remaining = append(remaining, filepath.Join(profile, name))
+				}
+			}
+		}
+	}
+	return remaining, nil
+}
+
 // findFirefoxProfiles finds all profile directories under baseDir.
 // It checks profiles.ini if present, and scans for subdirectories containing prefs.js.
 func findFirefoxProfiles(baseDir string) ([]string, error) {
@@ -153,7 +174,7 @@ func findFirefoxProfiles(baseDir string) ([]string, error) {
 
 // Replace only the profile file. Unlike executable replacement, a locked
 // Firefox file must fail without moving the original to a leftover .old file.
-func writeFirefoxUserJS(path string, data []byte) error {
+func writeFirefoxFile(path string, data []byte) error {
 	mode := os.FileMode(0600)
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() {

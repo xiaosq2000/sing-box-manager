@@ -70,8 +70,9 @@ account opts out.
 Linux cleanup also removes a legacy `webrtc.json` when its entire contents match
 exactly what older sbc versions wrote:
 
+<!-- prettier-ignore -->
 ```json
-{ "WebRtcIPHandling": "disable_non_proxied_udp" }
+{"WebRtcIPHandling": "disable_non_proxied_udp"}
 ```
 
 The file must include the original trailing newline. The elevated helper rechecks

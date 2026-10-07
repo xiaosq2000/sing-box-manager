@@ -63,15 +63,15 @@ func TestLinuxWebRTCOffCleansLegacyPolicyAndFirefoxWithoutManualEdits(t *testing
 }
 
 func TestLinuxLegacyCleanupPreservesOtherPolicyFiles(t *testing.T) {
-	for _, test := range []struct{ name, data string }{
-		{"manual.json", legacyLinuxPolicyData},
-		{"webrtc.json", `{"WebRtcIPHandling":"default"}`},
-		{"webrtc.json", `{"WebRtcIPHandling": "disable_non_proxied_udp", "OtherPolicy": true}`},
-		{"webrtc.json", `{"WebRtcIPHandling":"disable_non_proxied_udp"}`},
+	for _, test := range []struct{ name, filename, data string }{
+		{"other filename", "manual.json", legacyLinuxPolicyData},
+		{"changed value", "webrtc.json", `{"WebRtcIPHandling":"default"}`},
+		{"additional policy", "webrtc.json", `{"WebRtcIPHandling": "disable_non_proxied_udp", "OtherPolicy": true}`},
+		{"different formatting", "webrtc.json", `{"WebRtcIPHandling":"disable_non_proxied_udp"}`},
 	} {
-		t.Run(test.name+test.data, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			p := linuxFixture(t)
-			file := filepath.Join(p.policies[0].location, test.name)
+			file := filepath.Join(p.policies[0].location, test.filename)
 			if err := os.WriteFile(file, []byte(test.data), 0644); err != nil {
 				t.Fatal(err)
 			}

@@ -36,15 +36,17 @@ func TestFirefoxCleanupRestoresSavedPreferences(t *testing.T) {
 			base, profile := firefoxProfileFixture(t)
 			unrelated := "// Firefox saved preferences\nuser_pref(\"browser.tabs.warnOnClose\", false);\n"
 			original := unrelated + strings.Replace(firefoxPrefs[0], "true", "false", 1) + "\n" + firefoxPrefs[1] + "\n"
+			custom := "// custom\nuser_pref(\"browser.startup.page\", 3);\n"
+			managed := strings.Join(firefoxPrefs, "\n") + "\n"
 			writeFirefoxFixture(t, profile, "prefs.js", original)
-			writeFirefoxFixture(t, profile, "user.js", "// custom\nuser_pref(\"browser.startup.page\", 3);\n")
+			writeFirefoxFixture(t, profile, "user.js", custom)
 			if legacy {
-				writeFirefoxFixture(t, profile, "user.js", "// custom\nuser_pref(\"browser.startup.page\", 3);\n"+firefoxMarker+"\n"+strings.Join(firefoxPrefs, "\n")+"\n")
+				writeFirefoxFixture(t, profile, "user.js", custom+firefoxMarker+"\n"+managed)
 			} else if err := applyFirefoxProfiles(base); err != nil {
 				t.Fatal(err)
 			}
 			// Model Firefox copying user.js into prefs.js at startup.
-			writeFirefoxFixture(t, profile, "prefs.js", unrelated+strings.Join(firefoxPrefs, "\n")+"\n")
+			writeFirefoxFixture(t, profile, "prefs.js", unrelated+managed)
 			if err := revertFirefoxProfiles(base); err != nil {
 				t.Fatal(err)
 			}
@@ -57,7 +59,7 @@ func TestFirefoxCleanupRestoresSavedPreferences(t *testing.T) {
 				t.Fatalf("saved preferences: %q, %v; want %q", got, err, want)
 			}
 			user, err := os.ReadFile(filepath.Join(profile, "user.js"))
-			if err != nil || string(user) != "// custom\nuser_pref(\"browser.startup.page\", 3);\n" {
+			if err != nil || string(user) != custom {
 				t.Fatalf("custom preferences: %q, %v", user, err)
 			}
 			if _, err := os.Stat(filepath.Join(profile, firefoxStateName)); !os.IsNotExist(err) {
@@ -80,17 +82,16 @@ func TestFirefoxCleanupPreservesChangedAndUnownedSavedPreferences(t *testing.T) 
 				}
 			}
 			want := firefoxPrefs[0] + "\n"
-			if scenario == "changed saved value" {
+			switch scenario {
+			case "changed saved value":
 				want = strings.Replace(want, "true", "false", 1)
-			}
-			if scenario == "foreign user.js" {
+			case "foreign user.js":
 				user, err := os.ReadFile(filepath.Join(profile, "user.js"))
 				if err != nil {
 					t.Fatal(err)
 				}
 				writeFirefoxFixture(t, profile, "user.js", firefoxPrefs[0]+"\n"+string(user))
-			}
-			if scenario == "changed block" {
+			case "changed block":
 				writeFirefoxFixture(t, profile, "user.js", firefoxMarker+"\n"+strings.Replace(firefoxPrefs[0], "true", "false", 1)+"\n")
 			}
 			writeFirefoxFixture(t, profile, "prefs.js", want)
@@ -242,7 +243,11 @@ func TestFirefoxRunningProfileCleanupFailsSafelyAndRetries(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { input.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	t.Cleanup(func() {
+		input.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
 	waitFirefoxLockFixture(t, filepath.Join(profile, "ready"))
 	if err := revertFirefoxProfiles(base); err == nil || !strings.Contains(err.Error(), "close Firefox and retry") {
 		t.Fatalf("running profile not protected: %v", err)
