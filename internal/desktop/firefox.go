@@ -172,38 +172,6 @@ func findFirefoxProfiles(baseDir string) ([]string, error) {
 	return profiles, discoveryErr
 }
 
-// Replace only the profile file. Unlike executable replacement, a locked
-// Firefox file must fail without moving the original to a leftover .old file.
-func writeFirefoxFile(path string, data []byte) error {
-	mode := os.FileMode(0600)
-	if info, err := os.Lstat(path); err == nil {
-		if !info.Mode().IsRegular() {
-			return i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
-		}
-		mode = info.Mode().Perm()
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".sbc-webrtc-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if err = file.Chmod(mode); err == nil {
-		_, err = file.Write(data)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
-}
-
 func applyFirefoxProfiles(baseDir string) error {
 	profiles, result := findFirefoxProfiles(baseDir)
 	for _, profile := range profiles {

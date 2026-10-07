@@ -125,13 +125,21 @@ func (p *unixPrivacy) Remaining() ([]string, error) {
 	return p.remainingLinuxPolicies()
 }
 
-func privateFile(path string) ([]byte, error) {
+// regularFileInfo checks the path itself, without following symbolic links.
+func regularFileInfo(path string) (os.FileInfo, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
 		return nil, i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
+	}
+	return info, nil
+}
+
+func privateFile(path string) ([]byte, error) {
+	if _, err := regularFileInfo(path); err != nil {
+		return nil, err
 	}
 	return os.ReadFile(filepath.Clean(path))
 }

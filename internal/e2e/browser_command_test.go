@@ -3,11 +3,44 @@
 package e2e
 
 import (
+	"bytes"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 )
+
+// Capture output safely even when a timeout reads it before the browser exits.
+type browserOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (output *browserOutput) Write(data []byte) (int, error) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.buffer.Write(data)
+}
+
+func (output *browserOutput) String() string {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.buffer.String()
+}
+
+func browserWebRTCCommand(browser, profile, pageURL string) *exec.Cmd {
+	command := exec.Command(browser,
+		"--headless=new", "--user-data-dir="+profile,
+		"--no-first-run", "--no-default-browser-check", "--disable-background-networking",
+		// Edge's own first-run flow can replace the probe tab in a fresh profile.
+		// This is a UI feature, not a WebRTC policy override.
+		"--disable-features=msEdgeFirstRunExperience",
+		"--disable-component-update", "--disable-default-apps", "--disable-sync",
+		"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost", pageURL)
+	prepareBrowserProcess(command)
+	return command
+}
 
 // These fixtures neither launch a browser nor change host settings.
 func TestWebRTCBrowserCommand(t *testing.T) {

@@ -13,9 +13,7 @@ import (
 
 func lockFirefoxProfile(profile string) (func(), error) {
 	path := filepath.Join(profile, "parent.lock")
-	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
-		return nil, i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
-	} else if err != nil && !os.IsNotExist(err) {
+	if _, err := regularFileInfo(path); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	name, err := syscall.UTF16PtrFromString(path)

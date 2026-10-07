@@ -15,9 +15,7 @@ import (
 // cleanup, so Firefox cannot race or overwrite the preference reset.
 func lockFirefoxProfile(profile string) (func(), error) {
 	path := filepath.Join(profile, ".parentlock")
-	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
-		return nil, i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
-	} else if err != nil && !os.IsNotExist(err) {
+	if _, err := regularFileInfo(path); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)

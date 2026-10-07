@@ -77,6 +77,10 @@ verification, ownership, interrupted cleanup, persistent opt-out and repair whil
 the proxy is already on. CLI tests verify that failed browser cleanup leaves the
 client and proxy available for retry. Concurrency fixtures pause policy or profile
 setup and check that opt-out and uninstall cleanup wait for completion.
+Firefox discovery lives in `internal/desktop/firefox.go`; profile parsing, writes
+and cleanup live in `internal/desktop/firefox_profile.go`. Reads, writes, obsolete
+snapshots and native lock files share a regular-file check. Its fixtures cover
+regular files, missing paths, directories, symbolic links and dangling links.
 Firefox fixtures use temporary profiles. They check resetting exactly the four
 supported preferences in both profile files, including pre-existing values,
 orphaned profiles and stale or corrupt snapshots. Unrelated preferences and clean

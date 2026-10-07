@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
 
 // Older clients saved original values here. Off now resets the four preferences
@@ -41,6 +39,35 @@ func readFirefoxFile(profile, name string) ([]byte, error) {
 		return nil, nil
 	}
 	return data, err
+}
+
+// Replace only the profile file. Unlike executable replacement, a locked
+// Firefox file must fail without moving the original to a leftover .old file.
+func writeFirefoxFile(path string, data []byte) error {
+	mode := os.FileMode(0600)
+	if info, err := regularFileInfo(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".sbc-webrtc-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if err = file.Chmod(mode); err == nil {
+		_, err = file.Write(data)
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 func applyFirefoxProfile(profile string) error {
@@ -81,17 +108,11 @@ func resetFirefoxPreferences(content []byte) []byte {
 
 func legacyFirefoxSnapshotExists(profile string) (bool, error) {
 	path := filepath.Join(profile, legacyFirefoxStateName)
-	info, err := os.Lstat(path)
+	_, err := regularFileInfo(path)
 	if os.IsNotExist(err) {
 		return false, nil
 	}
-	if err != nil {
-		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return false, i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
-	}
-	return true, nil
+	return err == nil, err
 }
 
 func firefoxProfileNeedsReset(profile string) (bool, error) {
