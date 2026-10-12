@@ -1,7 +1,6 @@
 """Tests for Trojan, Hysteria2, Naive, and auth snapshot renderer helpers."""
 
 import copy
-import json
 from pathlib import Path
 
 import pytest
@@ -23,11 +22,12 @@ from sing_box_manager.release.platforms import MIXED_PROFILE, MOBILE_TUN_PROFILE
 from sing_box_manager.release.profiles import build_server_config, client_base_config
 from sing_box_manager.release.renderers import (
     ADGUARD_RULE_SET_TAG,
+    AI_ANTHROPIC_RULE_SET_TAG,
     AI_GEOSITE_RULE_SET_TAG,
-    AI_SERVICE_RULE_SET_TAG,
+    AI_RULE_SET_URLS,
     API_SERVICE_TAG,
+    ai_rule_sets,
     apply_desktop_route_strategy,
-    load_ai_service_rules,
     render_auth_snapshot,
     render_hysteria2_client_config,
     render_naive_client_config,
@@ -54,94 +54,27 @@ KEY_LINES = [
 ]
 
 
-def test_ai_service_catalog_is_exact_sorted_and_unique() -> None:
-    rules = load_ai_service_rules()
-    assert len(rules) == 1
-    keywords = rules[0]["domain_keyword"]
-    suffixes = rules[0]["domain_suffix"]
-
-    assert keywords == ["anthropic", "openai"]
-    assert suffixes == [
-        "accounts.google.com",
-        "anthropic.com",
-        "apis.google.com",
-        "arkoselabs.com",
-        "auth0.com",
-        "challenges.cloudflare.com",
-        "chat.com",
-        "chatgpt.com",
-        "clau.de",
-        "claude.ai",
-        "claude.com",
-        "claudeusercontent.com",
-        "identrust.com",
-        "oaistatic.com",
-        "oaistatsig.com",
-        "oaiusercontent.com",
-        "oauth2.googleapis.com",
-        "openai.com",
-        "recaptcha.net",
-        "sora.com",
-        "ssl.gstatic.com",
-    ]
-    assert keywords == sorted(set(keywords))
-    assert suffixes == sorted(set(suffixes))
-
-
-@pytest.mark.parametrize(
-    ("payload", "message"),
-    [
-        ({"version": 2, "rules": [{"domain": ["a.com"]}]}, "source format version 1"),
-        ({"version": 1, "rules": []}, "must contain rules"),
-        ({"version": 1, "rules": [{"ip_cidr": ["10.0.0.0/8"]}]}, "Unsupported"),
-        ({"version": 1, "rules": [{}]}, "at least one matcher"),
-        ({"version": 1, "rules": [{"domain": "a.com"}]}, "non-empty list"),
-        (
-            {"version": 1, "rules": [{"domain": [], "domain_suffix": ["a.com"]}]},
-            "non-empty list",
-        ),
-        ({"version": 1, "rules": [{"domain": [""]}]}, "non-empty strings"),
-        (
-            {"version": 1, "rules": [{"domain": ["b.com", "a.com"]}]},
-            "sorted and unique",
-        ),
-    ],
-)
-def test_ai_service_catalog_rejects_malformed_payloads(
-    tmp_path: Path, payload: dict, message: str
+@pytest.mark.parametrize("bundled", [True, False])
+def test_ai_rule_sets_use_community_binaries_and_proxied_daily_updates(
+    bundled: bool,
 ) -> None:
-    path = tmp_path / "ai-services.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-
-    with pytest.raises(ValueError, match=message):
-        load_ai_service_rules(path)
-
-
-def test_ai_service_catalog_matchers_are_sorted_independently(tmp_path: Path) -> None:
-    # A keyword and a suffix can legitimately overlap, so the invariant applies
-    # per matcher rather than to one flattened list.
-    path = tmp_path / "ai-services.json"
-    path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "rules": [
-                    {
-                        "domain_keyword": ["openai"],
-                        "domain_suffix": ["anthropic.com", "openai.com"],
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
+    rules = ai_rule_sets(bundled=bundled)
+    assert {rule["tag"]: rule["url"] for rule in rules} == AI_RULE_SET_URLS
+    assert AI_RULE_SET_URLS[AI_ANTHROPIC_RULE_SET_TAG] == (
+        "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/"
+        "sing/geo/geosite/anthropic.srs"
     )
-
-    assert load_ai_service_rules(path) == [
-        {
-            "domain_keyword": ["openai"],
-            "domain_suffix": ["anthropic.com", "openai.com"],
-        }
-    ]
+    for rule in rules:
+        assert rule["type"] == "remote"
+        assert rule["format"] == "binary"
+        assert rule["http_client"] == "rule-downloads"
+        assert rule["update_interval"] == "1d"
+        assert "rules" not in rule
+        assert "download_detour" not in rule
+        if bundled:
+            assert rule["initial_path"].startswith("rules/")
+        else:
+            assert "initial_path" not in rule
 
 
 def test_desktop_caches_are_distinct_and_rule_downloads_use_named_client() -> None:
@@ -203,6 +136,31 @@ def _rule_index(rules: list[dict], predicate) -> int:
     return next(index for index, rule in enumerate(rules) if predicate(rule))
 
 
+@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
+def test_mobile_ai_rules_outrank_mode_overrides_and_china_direct(protocol: str) -> None:
+    config = client_base_config(protocol, MOBILE_TUN_PROFILE)
+    rules = config["route"]["rules"]
+    ai_tags = list(AI_RULE_SET_URLS)
+    ai_index = _rule_index(rules, lambda rule: rule.get("rule_set") == ai_tags)
+    assert rules[ai_index]["outbound"] == "proxy"
+    for index, rule in enumerate(rules):
+        if "clash_mode" in rule or rule.get("rule_set") == [
+            "geoip-cn",
+            "geosite-geolocation-cn",
+        ]:
+            assert ai_index < index
+        if rule.get("action") in {"hijack-dns", "reject"}:
+            assert index < ai_index
+    assert config["dns"]["rules"][0] == {"rule_set": ai_tags, "server": "google"}
+    assert config["dns"]["rules"][1]["server"] == "remote"
+    assert (
+        next(s for s in config["dns"]["servers"] if s["tag"] == "google")["detour"]
+        == "proxy"
+    )
+    assert config["route"]["rule_set"][:2] == ai_rule_sets(bundled=False)
+    assert config["route"]["final"] == "proxy"
+
+
 @pytest.mark.parametrize("strategy", ["china", "gfw", "ai", "global"])
 def test_ai_rule_outranks_adguard_reject_in_all_modes(strategy: str) -> None:
     template = client_base_config("trojan")
@@ -223,7 +181,7 @@ def test_ai_rule_outranks_adguard_reject_in_all_modes(strategy: str) -> None:
     proxied = [
         index
         for index, rule in enumerate(rules)
-        if AI_SERVICE_RULE_SET_TAG in rule.get("rule_set", [])
+        if AI_ANTHROPIC_RULE_SET_TAG in rule.get("rule_set", [])
     ]
 
     # Ahead of AdGuard so a filtered feature-flag host still reaches the vendor,
@@ -232,13 +190,13 @@ def test_ai_rule_outranks_adguard_reject_in_all_modes(strategy: str) -> None:
     assert quic < proxied[0]
 
 
-def test_ai_strategy_embeds_catalog_for_dns_and_route_without_remote_ai_rules() -> None:
+def test_ai_strategy_uses_bundled_community_sets_for_dns_and_route() -> None:
     template = client_base_config("trojan")
     rendered = apply_desktop_route_strategy(template, "ai", os_name="linux")
-    inline = next(
+    anthropic = next(
         rule_set
         for rule_set in rendered["route"]["rule_set"]
-        if rule_set["tag"] == AI_SERVICE_RULE_SET_TAG
+        if rule_set["tag"] == AI_ANTHROPIC_RULE_SET_TAG
     )
     adguard = next(
         rule_set
@@ -250,15 +208,10 @@ def test_ai_strategy_embeds_catalog_for_dns_and_route_without_remote_ai_rules() 
         for rule_set in rendered["route"]["rule_set"]
         if rule_set["tag"] == AI_GEOSITE_RULE_SET_TAG
     )
-    ai_tags = [AI_SERVICE_RULE_SET_TAG, AI_GEOSITE_RULE_SET_TAG]
+    ai_tags = list(AI_RULE_SET_URLS)
 
-    assert inline == {
-        "rules": load_ai_service_rules(),
-        "tag": AI_SERVICE_RULE_SET_TAG,
-        "type": "inline",
-    }
-    assert "url" not in inline
-    for remote in (adguard, geosite):
+    assert all(rule["type"] == "remote" for rule in rendered["route"]["rule_set"])
+    for remote in (adguard, anthropic, geosite):
         assert remote["type"] == "remote"
         assert remote["format"] == "binary"
         assert "download_detour" not in remote

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import tomllib
 from pathlib import Path
@@ -52,7 +53,7 @@ def test_policy_rejects_operational_files(path: str) -> None:
     "path",
     [
         "config/inventory/example.yaml",
-        "config/rules/ai-services.json",
+        "sing_box_manager/desktop_config.py",
         ".sops.example.yaml",
         ".env.example",
         "nested/.env.example",
@@ -66,7 +67,7 @@ def test_policy_allows_public_source(path: str) -> None:
     assert not policy.forbidden_path(path)
 
 
-def test_fixture_allowlists_are_rule_scoped_and_value_specific() -> None:
+def test_allowlists_are_rule_scoped_and_value_specific() -> None:
     config = tomllib.loads((ROOT / ".gitleaks.toml").read_text())
     assert config["extend"]["useDefault"] is True
     for allowlist in config["allowlists"]:
@@ -78,6 +79,37 @@ def test_fixture_allowlists_are_rule_scoped_and_value_specific() -> None:
             regex.startswith("^") and regex.endswith("$")
             for regex in allowlist["regexes"]
         )
+
+
+def test_document_fingerprint_exception_is_exact_and_path_scoped() -> None:
+    config = tomllib.loads((ROOT / ".gitleaks.toml").read_text())
+    exception = next(
+        entry
+        for entry in config["allowlists"]
+        if entry["description"]
+        == "Reviewed public fingerprint for docs/SECRET_HANDLING.md"
+    )
+    assert exception["condition"] == "AND"
+    assert exception["targetRules"] == ["generic-api-key"]
+    assert exception["regexTarget"] == "secret"
+    assert len(exception["paths"]) == 1
+    assert len(exception["regexes"]) == 1
+    path_pattern = exception["paths"][0]
+    value_pattern = exception["regexes"][0]
+    assert re.fullmatch(path_pattern, "docstale.lock")
+    for path in (
+        "docstale.lock.backup",
+        "nested/docstale.lock",
+        "tests/test_config_loader.py",
+    ):
+        assert not re.fullmatch(path_pattern, path)
+    assert re.fullmatch(value_pattern, "fb3cd53af6289e44")
+    for value in (
+        "fb3cd53af6289e440",
+        "private-api-key-0123456789",
+        "0123456789abcdef",
+    ):
+        assert not re.fullmatch(value_pattern, value)
 
 
 def test_public_index_contains_no_operational_files() -> None:

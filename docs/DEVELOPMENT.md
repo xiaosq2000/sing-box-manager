@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-06.
+Checked on 2026-10-12.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -24,8 +24,9 @@ bash scripts/dev/check-secrets.sh
 ```
 
 The scanner is pinned by version and SHA-256 and redacts findings. Its narrow
-allowlists cover only reviewed synthetic fixture values, and a negative control
-checks that they do not hide new credentials. Keep these safeguards
+allowlists cover only reviewed non-secret values, including synthetic fixtures
+and one exact documentation fingerprint. A negative control checks that they do
+not hide new credentials. Keep these safeguards
 and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 
 ## Checks
@@ -240,6 +241,10 @@ platform it is rendered for, since the desktop configs differ by platform in the
 system resolver the `ai` route names, plus desktop startup with failed rule
 updates, and DNS persistence and expiry. Routing fixtures cover all four desktop
 strategies, direct exceptions with the proxy unavailable, and mobile FakeIP bypass.
+Dedicated Anthropic fixtures test proxy routing and DNS ahead of AdGuard and
+China-direct matches. Desktop fixtures also test failed updates and no direct
+fallback when the proxy is unavailable. Mobile fixtures test AI priority under
+Direct, Global, and Rule modes for every protocol.
 TUN DNS and routing fixtures use a loopback mixed inlet; they do not exercise
 tunnel interface capture. Supply the custom Linux server binary built with
 `with_v2ray_api` to include all the single multi-inbound traffic-statistics config:

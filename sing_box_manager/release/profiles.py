@@ -12,8 +12,10 @@ from sing_box_manager.release.platforms import (
     ClientProfile,
 )
 from sing_box_manager.release.renderers import (
+    AI_RULE_SET_URLS,
     _apply_api_service_settings,
     _apply_v2ray_api_settings,
+    ai_rule_sets,
     apply_desktop_route_strategy,
     apply_tls_settings,
     bundled_remote_rule_set,
@@ -89,9 +91,17 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
     common.update(
         {
             "dns": {
-                "rules": [{"query_type": ["A", "AAAA"], "server": "remote"}],
+                "rules": [
+                    {"rule_set": list(AI_RULE_SET_URLS), "server": "google"},
+                    {"query_type": ["A", "AAAA"], "server": "remote"},
+                ],
                 "servers": [
-                    {"type": "tls", "tag": "google", "server": "8.8.8.8"},
+                    {
+                        "type": "tls",
+                        "tag": "google",
+                        "server": "8.8.8.8",
+                        "detour": "proxy",
+                    },
                     {"type": "udp", "tag": "local", "server": "223.5.5.5"},
                     {
                         "type": "fakeip",
@@ -112,7 +122,9 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
             "route": {
                 "default_domain_resolver": {"server": "local"},
                 "default_http_client": "rule-downloads",
-                "rule_set": [
+                "final": "proxy",
+                "rule_set": ai_rule_sets(bundled=False)
+                + [
                     {
                         "type": "remote",
                         "format": "binary",
@@ -140,8 +152,6 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
                         "action": "hijack-dns",
                     },
                     {"ip_is_private": True, "outbound": "direct"},
-                    {"clash_mode": "Direct", "outbound": "direct"},
-                    {"clash_mode": "Global", "outbound": "proxy"},
                     {
                         "type": "logical",
                         "mode": "or",
@@ -152,6 +162,9 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
                         ],
                         "action": "reject",
                     },
+                    {"rule_set": list(AI_RULE_SET_URLS), "outbound": "proxy"},
+                    {"clash_mode": "Direct", "outbound": "direct"},
+                    {"clash_mode": "Global", "outbound": "proxy"},
                     {
                         "outbound": "direct",
                         "rule_set": ["geoip-cn", "geosite-geolocation-cn"],

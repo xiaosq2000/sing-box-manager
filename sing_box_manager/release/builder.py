@@ -72,7 +72,6 @@ from sing_box_manager.release.profiles import (
 )
 from sing_box_manager.release.renderers import (
     apply_desktop_route_strategy,
-    load_ai_service_rules,
     render_auth_snapshot,
 )
 from sing_box_manager.release.rule_sets import desktop_rule_sets, prepare_rule_snapshots
@@ -212,7 +211,6 @@ class ReleaseBuilder:
         self._prefixes: dict[str, Prefix] = {}
         self._prefixes_built = 0
         self._payload_digests: set[str] = set()
-        self._ai_service_rules = load_ai_service_rules()
         self._rule_snapshot_paths: list[Path] = []
 
     def _resolve_path(self, path: str | Path) -> Path:
@@ -913,7 +911,6 @@ class ReleaseBuilder:
             apply_desktop_route_strategy(
                 client_base_config(protocol),
                 strategy,
-                self._ai_service_rules,
                 # Only the rule sets are read back here, and those are the same
                 # on every platform.
                 os_name="linux",
@@ -1117,7 +1114,6 @@ class ReleaseBuilder:
                         apply_desktop_route_strategy(
                             base,
                             strategy,
-                            self._ai_service_rules,
                             os_name=platform.os_name,
                         ),
                     )

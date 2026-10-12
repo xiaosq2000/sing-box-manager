@@ -1,5 +1,7 @@
 # Contributing
 
+Checked on 2026-10-12.
+
 ## Development environment
 
 Use Linux x86-64, Pixi, and the locked environment:
@@ -27,9 +29,9 @@ private operator repository or another restricted location. See
 
 Never copy production credentials into a test. Use documentation domains,
 reserved example IP addresses, and clearly synthetic values. Public verification
-keys are not private keys. Secret-scanner exceptions must identify both the exact
-fixture path and the exact reviewed synthetic value; do not exempt whole test
-directories. Inline `gitleaks:allow` comments are not accepted by the scanner.
+keys are not private keys. Secret-scanner exceptions must identify the exact public-file path and the exact
+reviewed non-secret value. Fixture credentials must remain synthetic. Do not exempt
+whole test directories. Inline `gitleaks:allow` comments are not accepted by the scanner.
 
 ## Checks before a pull request
 

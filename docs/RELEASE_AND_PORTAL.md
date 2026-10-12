@@ -1,5 +1,7 @@
 # Release Build and Portal Usage
 
+Checked on 2026-10-12.
+
 This guide covers the local operator workflow for:
 
 - building release artifacts with `pixi run sbm release`
@@ -162,15 +164,16 @@ means the Android archive, and deploy records it. `/api/client-update` reports t
 
 The Android archive contains one `<protocol>-tun-client.json` mobile profile for
 each authorized protocol. The config `sbc` fetches offers `china`, `gfw`, `ai` and
-`global` as modes. The reviewed AI service catalog in `config/rules/`
-is embedded in every desktop route, so all four modes match AI destinations before any
-rule download succeeds. It is deliberately narrow: OpenAI, Anthropic, and the
-sign-in, captcha, and OAuth hosts those vendors check for a matching egress
-address. The remaining vendors come from the `AI-Geosite` rule set, which ships
-as a snapshot like every other remote set and refreshes itself between releases.
-Because the AdGuard filter blocks feature-flag and telemetry hosts some AI
-services depend on, every desktop route matches both AI rule sets ahead of the
-AdGuard reject. Routing and DNS use the same reviewed catalog and upstream set.
+`global` as modes. Every desktop route uses two community AI rule sets:
+`AI-Anthropic` for Anthropic and `AI-Geosite` for other AI vendors, including OpenAI.
+Both ship as validated snapshots, so the first start does not require a successful
+rule download. Both refresh daily through the proxy.
+
+Routing and DNS use the same AI sets. Desktop AI matches precede AdGuard rejection,
+mode overrides, and China-direct rules. This order permits community-listed AI
+hosts that AdGuard also blocks. Android uses the same AI sets before mode overrides
+and China-direct routing, with proxied Google DNS before FakeIP. Android downloads
+the sets into GUI-managed storage instead of receiving desktop snapshots.
 
 `china` proxies unknown destinations and sends recognized China destinations
 directly. `gfw` proxies GFWList and AI destinations and sends other destinations
@@ -180,8 +183,33 @@ Desktop profiles retain Dreista's narrow China-domain, Apple-China, GFWList,
 and AdGuard sets. MetaCubeX's `sing/geo/geoip/cn.srs` supplies one combined
 China IPv4/IPv6 set. Domain rules precede IP matching without resolving unknown
 hostnames merely to test GeoIP. GFWList and AI matches precede China-direct rules.
-These five binaries plus SagerNet's AI set form the six bundled remote snapshots.
+These five binaries plus the two AI sets form the seven bundled remote snapshots.
 All remote desktop sets refresh daily through the proxy.
+
+### Community AI rules
+
+| Tag            | Community source                                                                                                                       | Purpose                                |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `AI-Anthropic` | [MetaCubeX `anthropic.srs`](https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs)                 | Dedicated Anthropic and Claude domains |
+| `AI-Geosite`   | [SagerNet `geosite-category-ai-!cn.srs`](https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs) | Broader AI coverage, including OpenAI  |
+
+MetaCubeX rebuilds its binaries daily. The readable
+[v2fly Anthropic list](https://github.com/v2fly/domain-list-community/blob/master/data/anthropic)
+covers API, authentication, MCP, content, and website CDN domains. The repository
+keeps no personal domain catalog or keyword fallback.
+
+Community coverage is not a complete Anthropic firewall allowlist. Neither checked
+AI set includes `claude.app`, which the
+[official Desktop requirements](https://code.claude.com/docs/en/desktop#network-access-requirements)
+list. Shared sign-in, captcha, and external artifact CDN hosts are not all included.
+Use the [official network requirements](https://code.claude.com/docs/en/network-config#network-access-requirements)
+when diagnosing a missing host. Prefer a correction in the community source to a
+local domain list.
+
+Configured direct exceptions and private-network rules retain priority over AI
+routing. DNS interception and encrypted-DNS, QUIC, and STUN restrictions also retain
+priority. A rule applies only to traffic that enters sing-box. An application that
+ignores the shell and desktop proxy settings can still connect directly.
 
 Every client profile includes direct exceptions for the exact `deployment.host`
 and explicit `deployment.direct_domain_suffixes`. Suffixes include the apex and

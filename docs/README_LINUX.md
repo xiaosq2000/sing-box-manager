@@ -1,5 +1,7 @@
 # Sing-box VPN Client for Linux
 
+Checked on 2026-10-12.
+
 > [!NOTE]
 > This guide covers the bash client, whose command is `proxy`. Releases no longer
 > pack it, so a new machine installs `sbc` with the
@@ -292,12 +294,12 @@ proxy route global
 proxy check route
 ```
 
-| Route    | Application traffic                                                             | DNS                                                                           |
-| -------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `china`  | China destinations direct; other public traffic proxied                         | China queries use Aliyun directly; other queries use Google through the proxy |
-| `gfw`    | GFWList and AI destinations proxied; other traffic direct                       | GFWList and AI queries use proxied Google; other queries use direct Aliyun    |
-| `ai`     | AI services proxied, with their sign-in and captcha hosts; other traffic direct | AI queries use Google through the proxy; other queries use systemd-resolved   |
-| `global` | Public traffic proxied except configured direct exceptions                      | Queries use proxied Google except direct exceptions                           |
+| Route    | Application traffic                                        | DNS                                                                           |
+| -------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `china`  | China destinations direct; other public traffic proxied    | China queries use Aliyun directly; other queries use Google through the proxy |
+| `gfw`    | GFWList and AI destinations proxied; other traffic direct  | GFWList and AI queries use proxied Google; other queries use direct Aliyun    |
+| `ai`     | Community-listed AI services proxied; other traffic direct | AI queries use Google through the proxy; other queries use systemd-resolved   |
+| `global` | Public traffic proxied except configured direct exceptions | Queries use proxied Google except direct exceptions                           |
 
 The exact deployment host and configured `deployment.direct_domain_suffixes`
 remain direct in every profile. A suffix covers its apex and subdomains; the host
@@ -324,12 +326,12 @@ unknown hostnames are not resolved just to test their IPs against that set.
 Older installations without `config-gfw.json` must be reinstalled before switching
 to `gfw`; the command refuses before changing configs or services.
 
-In every desktop route, a reviewed catalog shipped inside the config covers OpenAI,
-Anthropic, and the sign-in, captcha, and OAuth hosts they check for a matching
-egress address; a bundled AI geosite snapshot adds the remaining vendors and
-refreshes itself between releases. AI destinations are matched before the AdGuard
-filter in all four routes, so a filtered feature-flag host an AI service depends on
-still reaches the vendor.
+Generated desktop configs use a dedicated community Anthropic set and a broader
+community AI set, including OpenAI. Both ship as validated snapshots and refresh
+daily through the proxy. AI matches precede AdGuard, mode overrides, and China-direct
+rules. Shared sign-in and captcha hosts depend on community coverage, not a local
+catalog. See [community AI rules](RELEASE_AND_PORTAL.md#community-ai-rules) for
+sources and coverage limits.
 
 Private addresses remain direct in every route. DNS hijacking, AdGuard filtering,
 encrypted-DNS/QUIC/STUN rejection, and Clash Direct/Global overrides also remain

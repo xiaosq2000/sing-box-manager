@@ -3,7 +3,7 @@ title = "Public source secret scanning"
 [extend]
 useDefault = true
 
-# These exceptions require both the exact fixture path and a known synthetic
+# Each exception requires an exact public-file path and a reviewed non-secret
 # value. Do not exempt entire test directories or production key formats.
 # Target a rule: global path allowlists can skip a file before value checks.
 [[allowlists]]
@@ -12,6 +12,15 @@ description = "Public Ed25519 verification key derived from test seed bytes 0..3
 paths = ['''(^|/)internal/trust/trust_test\.go$''']
 regexTarget = "secret"
 regexes = ['''^A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=$''']
+targetRules = ["generic-api-key"]
+
+# This generated documentation fingerprint is public, not an API key.
+[[allowlists]]
+condition = "AND"
+description = "Reviewed public fingerprint for docs/SECRET_HANDLING.md"
+paths = ['''^docstale\.lock$''']
+regexTarget = "secret"
+regexes = ['''^fb3cd53af6289e44$''']
 targetRules = ["generic-api-key"]
 
 [[allowlists]]

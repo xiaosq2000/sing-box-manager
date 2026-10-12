@@ -19,13 +19,10 @@ from sing_box_manager.release.platforms import ROUTE_STRATEGIES
 from sing_box_manager.release.renderers import (
     ADGUARD_RULE_SET_TAG,
     ADGUARD_RULE_SET_URL,
-    AI_GEOSITE_RULE_SET_TAG,
-    AI_GEOSITE_RULE_SET_URL,
-    AI_SERVICE_RULE_SET_TAG,
+    AI_RULE_SET_URLS,
     SUPPORTED_CLIENT_OS,
     apply_tls_settings,
     bundled_remote_rule_set,
-    load_ai_service_rules,
     system_dns_server,
 )
 from sing_box_manager.settings import (
@@ -47,11 +44,11 @@ CACHE_FILE = "cache.db"
 GFWLIST_TAG = "GFWList"
 CHINA_DOMAIN_TAGS = ["GeoSite-CN", "GeoSite-Apple-CN"]
 CHINA_IP_TAG = "GeoIP-CN"
-AI_TAGS = [AI_SERVICE_RULE_SET_TAG, AI_GEOSITE_RULE_SET_TAG]
+AI_TAGS = list(AI_RULE_SET_URLS)
 
 RULE_SET_URLS = {
     ADGUARD_RULE_SET_TAG: ADGUARD_RULE_SET_URL,
-    AI_GEOSITE_RULE_SET_TAG: AI_GEOSITE_RULE_SET_URL,
+    **AI_RULE_SET_URLS,
     GFWLIST_TAG: "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/"
     "rule-set/gfwlist.txt.srs",
     "GeoSite-CN": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/"
@@ -335,11 +332,6 @@ def _route(exceptions: dict) -> dict:
                 )
                 for tag, url in RULE_SET_URLS.items()
             ),
-            {
-                "type": "inline",
-                "tag": AI_SERVICE_RULE_SET_TAG,
-                "rules": load_ai_service_rules(),
-            },
         ],
         "rules": rules,
         "final": PROXY_TAG,
