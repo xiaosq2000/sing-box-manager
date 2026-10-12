@@ -1,5 +1,7 @@
 # TUN Mode (`proxy tun`)
 
+Checked on 2026-10-12.
+
 Design spec for a `proxy tun on|off` toggle that runs the Linux client as a
 transparent TUN tunnel instead of a local mixed inbound.
 
@@ -828,3 +830,7 @@ apex and subdomains; IP-valued hosts use an exact IP exception. Matching DNS
 queries and direct outbound resolution use Aliyun directly. Mobile exceptions
 precede FakeIP. DNS interception and transport restrictions remain in effect.
 The four desktop route strategies do not change the TUN policy.
+Generated Android profiles use community Anthropic and AI sets before mode
+overrides and China-direct rules. AI DNS queries use Google through the proxy
+before FakeIP. See [community AI rules](RELEASE_AND_PORTAL.md#community-ai-rules).
+This does not change existing self-managed Linux TUN profiles.

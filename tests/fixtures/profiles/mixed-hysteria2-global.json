@@ -9,7 +9,7 @@
         "server": "aliyun"
       },
       {
-        "rule_set": ["AI-Services", "AI-Geosite"],
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
         "server": "google"
       }
     ],
@@ -103,43 +103,20 @@
       {
         "format": "binary",
         "http_client": "rule-downloads",
+        "initial_path": "rules/8f8c33ffe1d8831043298dc039861d8f505b4c74a265de95e94ceaeb106ea1ae.srs",
+        "tag": "AI-Anthropic",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
         "initial_path": "rules/26532516f1b4f6ca8f95a66fa62cb27808eecbabebd8aee1b7c533335a734b60.srs",
         "tag": "AI-Geosite",
         "type": "remote",
         "update_interval": "1d",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs"
-      },
-      {
-        "rules": [
-          {
-            "domain_keyword": ["anthropic", "openai"],
-            "domain_suffix": [
-              "accounts.google.com",
-              "anthropic.com",
-              "apis.google.com",
-              "arkoselabs.com",
-              "auth0.com",
-              "challenges.cloudflare.com",
-              "chat.com",
-              "chatgpt.com",
-              "clau.de",
-              "claude.ai",
-              "claude.com",
-              "claudeusercontent.com",
-              "identrust.com",
-              "oaistatic.com",
-              "oaistatsig.com",
-              "oaiusercontent.com",
-              "oauth2.googleapis.com",
-              "openai.com",
-              "recaptcha.net",
-              "sora.com",
-              "ssl.gstatic.com"
-            ]
-          }
-        ],
-        "tag": "AI-Services",
-        "type": "inline"
       }
     ],
     "rules": [
@@ -187,7 +164,7 @@
       },
       {
         "outbound": "proxy",
-        "rule_set": ["AI-Services", "AI-Geosite"]
+        "rule_set": ["AI-Anthropic", "AI-Geosite"]
       },
       {
         "action": "reject",

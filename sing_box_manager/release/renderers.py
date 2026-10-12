@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import ipaddress
-import json
 from pathlib import Path
 
 from sing_box_manager.release.rule_sets import snapshot_filename
@@ -20,12 +19,9 @@ from sing_box_manager.settings import (
     split_listen_address,
 )
 
-AI_SERVICE_RULE_SET_TAG = "AI-Services"
+AI_ANTHROPIC_RULE_SET_TAG = "AI-Anthropic"
 AI_GEOSITE_RULE_SET_TAG = "AI-Geosite"
 ADGUARD_RULE_SET_TAG = "AdGuard-DNS-Filter"
-AI_SERVICE_RULES_PATH = (
-    Path(__file__).resolve().parents[2] / "config" / "rules" / "ai-services.json"
-)
 ADGUARD_RULE_SET_URL = (
     "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/"
     "rule-set/filter.txt.srs"
@@ -34,63 +30,20 @@ AI_GEOSITE_RULE_SET_URL = (
     "https://raw.githubusercontent.com/SagerNet/sing-geosite/"
     "rule-set/geosite-category-ai-!cn.srs"
 )
+AI_ANTHROPIC_RULE_SET_URL = (
+    "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/"
+    "sing/geo/geosite/anthropic.srs"
+)
+AI_RULE_SET_URLS = {
+    AI_ANTHROPIC_RULE_SET_TAG: AI_ANTHROPIC_RULE_SET_URL,
+    AI_GEOSITE_RULE_SET_TAG: AI_GEOSITE_RULE_SET_URL,
+}
 
 # systemd-resolved's stub listener, which is what /etc/resolv.conf points every
 # other program on a systemd Linux desktop at.
 RESOLVED_STUB_ADDRESS = "127.0.0.53"
 
 SUPPORTED_CLIENT_OS = ("linux", "darwin", "windows")
-
-# sing-box unions these within a single headless rule, so a catalog entry only
-# has to pick the cheapest matcher for the shape of host it describes.
-AI_SERVICE_MATCHERS = ("domain", "domain_keyword", "domain_suffix")
-
-
-def _ai_service_matchers(rule: dict) -> dict[str, list[str]]:
-    """Validate one catalog rule and return the matcher lists it declares."""
-    if unknown := set(rule) - set(AI_SERVICE_MATCHERS):
-        raise ValueError(f"Unsupported AI service matchers: {sorted(unknown)}")
-    if not any(rule.get(matcher) for matcher in AI_SERVICE_MATCHERS):
-        raise ValueError("AI service rules must contain at least one matcher")
-
-    collected: dict[str, list[str]] = {}
-    for matcher in AI_SERVICE_MATCHERS:
-        values = rule.get(matcher)
-        if values is None:
-            continue
-        if not isinstance(values, list) or not values:
-            raise ValueError(f"AI service {matcher} must be a non-empty list")
-        if not all(isinstance(value, str) and value for value in values):
-            raise ValueError(f"AI service {matcher} must be non-empty strings")
-        collected[matcher] = values
-
-    return collected
-
-
-def load_ai_service_rules(path: Path = AI_SERVICE_RULES_PATH) -> list[dict]:
-    """Load and validate the reviewed source-format AI rule catalog."""
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("version") != 1:
-        raise ValueError("AI service rule set must use source format version 1")
-
-    rules = payload.get("rules")
-    if not isinstance(rules, list) or not rules:
-        raise ValueError("AI service rule set must contain rules")
-
-    matched: dict[str, list[str]] = {matcher: [] for matcher in AI_SERVICE_MATCHERS}
-    for rule in rules:
-        if not isinstance(rule, dict):
-            raise ValueError("AI service rules must be mappings")
-        for matcher, values in _ai_service_matchers(rule).items():
-            matched[matcher].extend(values)
-
-    # Each matcher is checked on its own: a keyword and a suffix can legitimately
-    # overlap, and interleaving them in one list would have no readable order.
-    for matcher, values in matched.items():
-        if values != sorted(set(values)):
-            raise ValueError(f"AI service {matcher} must be sorted and unique")
-
-    return copy.deepcopy(rules)
 
 
 def _find_tagged_entry(entries: list[dict], tag: str) -> dict | None:
@@ -106,7 +59,7 @@ def _desktop_common_rules(priority_rules: list[dict] | None = None) -> list[dict
     `priority_rules` land immediately ahead of the AdGuard reject. The filter
     blocks feature-flag and telemetry hosts that AI vendors depend on, so a
     strategy that proxies those vendors has to outrank it or the reject wins and
-    the catalog entry never matches.
+    the AI rule never matches.
     """
     return [
         {"action": "sniff"},
@@ -158,20 +111,20 @@ def _adguard_rule_set(route: dict) -> dict:
     return bundled_remote_rule_set(rule_set)
 
 
-def _ai_geosite_rule_set() -> dict:
-    """Carry the breadth the reviewed catalog deliberately does not.
-
-    The inline catalog stays small enough to read in a diff; this upstream set
-    supplies the long tail of AI vendors and refreshes itself between releases.
-    """
-    return bundled_remote_rule_set(
+def ai_rule_sets(*, bundled: bool) -> list[dict]:
+    """Use community Anthropic and AI rules with daily updates through proxy."""
+    rules = [
         {
             "format": "binary",
-            "tag": AI_GEOSITE_RULE_SET_TAG,
+            "tag": tag,
             "type": "remote",
-            "url": AI_GEOSITE_RULE_SET_URL,
+            "url": url,
+            "http_client": "rule-downloads",
+            "update_interval": "1d",
         }
-    )
+        for tag, url in AI_RULE_SET_URLS.items()
+    ]
+    return [bundled_remote_rule_set(rule) for rule in rules] if bundled else rules
 
 
 def system_dns_server(os_name: str) -> dict:
@@ -208,7 +161,6 @@ def _set_outbound_resolver(rendered: dict, outbound_type: str, server: str) -> N
 def apply_desktop_route_strategy(
     rendered: dict,
     strategy: str,
-    ai_rules: list[dict] | None = None,
     *,
     os_name: str,
 ) -> dict:
@@ -245,17 +197,8 @@ def apply_desktop_route_strategy(
         if rule_set.get("type") == "remote":
             bundled_remote_rule_set(rule_set)
 
-    ai_tags = [AI_SERVICE_RULE_SET_TAG, AI_GEOSITE_RULE_SET_TAG]
-    ai_sets = [
-        _ai_geosite_rule_set(),
-        {
-            "rules": copy.deepcopy(ai_rules)
-            if ai_rules is not None
-            else load_ai_service_rules(),
-            "tag": AI_SERVICE_RULE_SET_TAG,
-            "type": "inline",
-        },
-    ]
+    ai_tags = list(AI_RULE_SET_URLS)
+    ai_sets = ai_rule_sets(bundled=True)
     direct_resolver = "system" if strategy == "ai" else "aliyun"
     dns["servers"] = [
         {"detour": "proxy", "server": "8.8.8.8", "tag": "google", "type": "tls"},

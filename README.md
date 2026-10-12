@@ -1,5 +1,7 @@
 # sing-box-manager
 
+Checked on 2026-10-12.
+
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
 The primary deployment target is a single VPS that runs:
@@ -92,6 +94,12 @@ Desktop mixed mode offers `china` (the default), `gfw`, `ai`, and `global` route
 and sends other traffic directly. Every client profile keeps the exact
 `deployment.host` and optional `deployment.direct_domain_suffixes` direct, with
 matching direct DNS rules. Suffixes cover the apex and subdomains.
+
+Generated desktop and Android profiles proxy community-listed Anthropic and AI
+destinations before mode overrides and China-direct rules. The dedicated Anthropic
+set and broader AI set replace local domain maintenance. See
+[community AI rules](docs/RELEASE_AND_PORTAL.md#community-ai-rules) for sources and
+coverage limits.
 
 The `sbc` downloads include initial rule files, so the proxy
 can start before rule downloads succeed. DNS answers persist across service restarts,

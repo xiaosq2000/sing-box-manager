@@ -1171,8 +1171,10 @@ def test_cli_deploy_prints_deployment_errors(
 
 def test_deploy_ships_the_files_the_portal_reads_at_runtime() -> None:
     """The portal renders subscriptions on the server, which needs these."""
-    from sing_box_manager.release.renderers import AI_SERVICE_RULES_PATH
+    from sing_box_manager import desktop_config
+    from sing_box_manager.release import profiles, renderers
 
     root = Path(__file__).resolve().parents[1]
-    relative = AI_SERVICE_RULES_PATH.relative_to(root).as_posix()
-    assert any(relative.startswith(f"{tree}/") for tree in CODE_TREE_PATHS)
+    for module in (desktop_config, profiles, renderers):
+        relative = Path(module.__file__).relative_to(root).as_posix()
+        assert any(relative.startswith(f"{tree}/") for tree in CODE_TREE_PATHS)

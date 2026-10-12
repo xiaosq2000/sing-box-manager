@@ -1,5 +1,7 @@
 # Remote Deployment
 
+Checked on 2026-10-12.
+
 `sbm deploy` ships two things in one command: the project **code** and the active
 **release artifacts**. The remote is a plain directory, not a git checkout — it needs
 no git, no Git LFS, and no credential that can read this repo.
@@ -75,7 +77,7 @@ appear on stderr.
 1. checks the bundled LFS fonts locally, before any remote contact
 1. checks the remote root is writable and has `sudo`, `systemctl`, and the expected
    `rsync`; verifies local and remote `rsync` report the same version
-1. syncs the code: `sing_box_manager/`, `scripts/`, `docs/` and `config/rules/`, which the portal reads to render subscriptions,
+1. syncs the code: `sing_box_manager/`, `scripts/`, and `docs/`,
    with `--delete` scoped strictly inside each, plus `pixi.toml`, `pixi.lock`,
    `pyproject.toml` and `config/inventory/example.yaml` one file at a time
 1. runs `pixi install --locked` remotely **only if `pixi.lock` changed**, then
@@ -153,8 +155,8 @@ pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-h
 
 ## Server-Local State
 
-`--delete` is confined to `sing_box_manager/`, `scripts/`, `docs/` and `config/rules/`, directories git owns entirely. These paths are never delete
-targets:
+`--delete` is confined to `sing_box_manager/`, `scripts/`, and `docs/`, directories
+git owns entirely. These paths are never delete targets:
 
 | Path                          | What it is                          |
 | ----------------------------- | ----------------------------------- |

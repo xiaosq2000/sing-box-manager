@@ -38,6 +38,12 @@ from sing_box_manager.settings import TrafficStatsSettings
 from tests.fetch_sing_box import TEST_BINARY, pinned_version
 
 ROOT = Path(__file__).resolve().parents[1]
+ANTHROPIC_FIXTURE_HOSTS = (
+    "api.anthropic.com",
+    "claude.ai",
+    "widget.claudemcpcontent.com",
+    "bridge.claudeusercontent.com",
+)
 
 
 @pytest.fixture(scope="module")
@@ -346,7 +352,7 @@ def routing_fixtures():
 def use_routing_fixtures(
     config: dict, tmp_path: Path, binary: Path, fixtures: RoutingFixtures
 ) -> None:
-    """Point a desktop config's inbound, DNS, rule sets and updates at fixtures.
+    """Point a client config's inbound, DNS, rule sets and updates at fixtures.
 
     The first inbound moves to a free port, and a UDP inlet on
     `fixtures.dns_port` hands queries to the config's DNS rules.
@@ -380,18 +386,30 @@ def use_routing_fixtures(
         if rule_set["type"] != "remote":
             continue
         tag = rule_set["tag"]
-        # filtered.fixture.invalid is deliberately in both the AdGuard set
-        # and the AI geosite set: real AI vendors depend on feature-flag and
-        # telemetry hosts the filter blocks, and the ai route has to resolve
-        # that overlap in the vendor's favor.
+        # AI hosts overlap with AdGuard and China-direct rules. Anthropic
+        # hosts are absent from AI-Geosite to test the dedicated set itself.
         domains = (
-            ["blocked.fixture.invalid", "filtered.fixture.invalid"]
+            [
+                "blocked.fixture.invalid",
+                "filtered.fixture.invalid",
+                *ANTHROPIC_FIXTURE_HOSTS,
+            ]
             if tag == "AdGuard-DNS-Filter"
             else ["proxy.fixture.invalid"]
             if tag == "GFWList"
-            else ["geosite.fixture.invalid", "filtered.fixture.invalid"]
+            else list(ANTHROPIC_FIXTURE_HOSTS)
+            if tag == "AI-Anthropic"
+            else [
+                "geosite.fixture.invalid",
+                "filtered.fixture.invalid",
+                "api.openai.com",
+            ]
             if tag == "AI-Geosite"
-            else ["direct.fixture.invalid", "proxy.fixture.invalid"]
+            else [
+                "direct.fixture.invalid",
+                "proxy.fixture.invalid",
+                *ANTHROPIC_FIXTURE_HOSTS,
+            ]
         )
         domains += ["portal.fixture.invalid", "vpn.example.com"]
         rules = (
@@ -401,14 +419,23 @@ def use_routing_fixtures(
         )
         source = tmp_path / "source.json"
         source.write_text(json.dumps({"version": 1, "rules": rules}))
-        initial = tmp_path / rule_set["initial_path"]
+        initial_path = rule_set.get("initial_path", f"rules/{tag}.srs")
+        initial = tmp_path / initial_path
         initial.parent.mkdir(exist_ok=True)
         subprocess.run(
             [str(binary), "rule-set", "compile", str(source), "-o", str(initial)],
             check=True,
             capture_output=True,
         )
-        rule_set["url"] = f"http://127.0.0.1:{fixtures.updates.server_address[1]}/{tag}"
+        if "initial_path" in rule_set:
+            rule_set["url"] = (
+                f"http://127.0.0.1:{fixtures.updates.server_address[1]}/{tag}"
+            )
+        else:
+            # Mobile startup normally downloads the GUI-managed rule files.
+            # Load local compiled stand-ins here, without network or TUN setup.
+            rule_set.clear()
+            rule_set.update(type="local", tag=tag, format="binary", path=initial_path)
 
 
 def assert_desktop_routing(
@@ -439,6 +466,11 @@ def assert_desktop_routing(
         assert host not in proxy.targets
     assert dns.queries > 0
     if not proxy_available:
+        direct_connections = direct.connections
+        for host in ANTHROPIC_FIXTURE_HOSTS:
+            assert not _connect(port, host, direct.server_address[1])
+            assert host not in proxy.targets
+        assert direct.connections == direct_connections
         return
     for host in (
         "unknown.fixture.invalid",
@@ -453,7 +485,15 @@ def assert_desktop_routing(
     assert proxied in proxy.targets
     assert not _connect(port, "blocked.fixture.invalid", direct.server_address[1])
     assert "blocked.fixture.invalid" not in proxy.targets
-    for host in ("geosite.fixture.invalid", "filtered.fixture.invalid"):
+    for host in (
+        "geosite.fixture.invalid",
+        "filtered.fixture.invalid",
+        *ANTHROPIC_FIXTURE_HOSTS,
+    ):
+        if host in ANTHROPIC_FIXTURE_HOSTS:
+            queries = google_dns.queries
+            assert _query_dns(dns_port, host) == "127.0.0.1"
+            assert google_dns.queries == queries + 1
         assert b"proxied" in _connect(port, host, direct.server_address[1])
         assert host in proxy.targets
     if strategy != "global":
@@ -466,6 +506,43 @@ def assert_desktop_routing(
     while not fixtures.updates.requests and time.monotonic() < deadline:
         time.sleep(0.02)
     assert fixtures.updates.requests > 0
+
+
+@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
+@pytest.mark.parametrize("mode", ["Direct", "Global", "Rule"])
+def test_mobile_anthropic_routing_and_dns_override_china_and_modes(
+    tmp_path: Path,
+    binary: Path,
+    deployment: DeploymentConfig,
+    protocol: str,
+    mode: str,
+) -> None:
+    config = render_client(protocol, "-tun", deployment)
+    # Test the mobile rules with a mixed inlet, not a real TUN interface.
+    config["inbounds"] = [{"type": "mixed"}]
+    config["experimental"] = {"clash_api": {"default_mode": mode}}
+    with routing_fixtures() as fixtures:
+        config["outbounds"][0] = {
+            "type": "socks",
+            "tag": "proxy",
+            "server": "127.0.0.1",
+            "server_port": fixtures.proxy.server_address[1],
+        }
+        # All AI DNS queries resolve to a China-IP fixture answer. The domain
+        # priority must still proxy traffic rather than use the GeoIP bypass.
+        fixtures.google_dns.answer = "203.0.113.10"
+        use_routing_fixtures(config, tmp_path, binary, fixtures)
+        port = config["inbounds"][0]["listen_port"]
+        with _running(binary, tmp_path, config):
+            for host in ANTHROPIC_FIXTURE_HOSTS:
+                assert _query_dns(fixtures.dns_port, host) == "203.0.113.10"
+                assert b"proxied" in _connect(
+                    port, host, fixtures.direct.server_address[1]
+                )
+                assert host in fixtures.proxy.targets
+            assert fixtures.google_dns.queries == len(ANTHROPIC_FIXTURE_HOSTS)
+            assert fixtures.dns.queries == 0
+            assert fixtures.direct.connections == 0
 
 
 @pytest.mark.parametrize("proxy_available", [True, False])

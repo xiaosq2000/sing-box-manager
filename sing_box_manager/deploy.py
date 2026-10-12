@@ -78,8 +78,6 @@ CODE_TREE_PATHS = (
     "sing_box_manager",
     "scripts",
     "docs",
-    # The portal reads the AI rule catalog when it renders a subscription.
-    "config/rules",
 )
 # Tracked files that live next to untracked siblings. Synced individually and
 # never with `--delete`, because their parent directories are mixed.

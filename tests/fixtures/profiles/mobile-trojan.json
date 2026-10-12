@@ -7,12 +7,17 @@
         "server": "aliyun"
       },
       {
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "server": "google"
+      },
+      {
         "query_type": ["A", "AAAA"],
         "server": "remote"
       }
     ],
     "servers": [
       {
+        "detour": "proxy",
         "server": "8.8.8.8",
         "tag": "google",
         "type": "tls"
@@ -85,7 +90,24 @@
       "server": "local"
     },
     "default_http_client": "rule-downloads",
+    "final": "proxy",
     "rule_set": [
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "tag": "AI-Anthropic",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "tag": "AI-Geosite",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs"
+      },
       {
         "format": "binary",
         "http_client": "rule-downloads",
@@ -143,6 +165,10 @@
         "domain": ["vpn.example.com"],
         "domain_suffix": ["portal.example.net"],
         "outbound": "direct"
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": ["AI-Anthropic", "AI-Geosite"]
       },
       {
         "clash_mode": "Direct",

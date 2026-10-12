@@ -1865,8 +1865,9 @@ def test_rule_preparation_covers_every_desktop_template_and_route(
 
     def prepare(rules, destination, binary, token):
         calls.append(rules)
-        # Five regional/filter sets plus the shared AI geosite snapshot.
-        assert len(rules) == 6
+        # Five regional/filter sets plus dedicated Anthropic and broader AI.
+        assert len(rules) == 7
+        assert {rule["tag"] for rule in rules.values()} >= {"AI-Anthropic", "AI-Geosite"}
         assert destination == builder._staging_dir / "rules"
         assert binary == builder._upstream_payload_dir(_linux_platform()) / "sing-box"
         assert token is None
@@ -1876,9 +1877,9 @@ def test_rule_preparation_covers_every_desktop_template_and_route(
 
     monkeypatch.setattr(builder, "_github_token", lambda: None)
     monkeypatch.setattr(builder_module, "prepare_rule_snapshots", prepare)
-    assert PREPARE_RULE_SETS(builder) == 6
+    assert PREPARE_RULE_SETS(builder) == 7
     assert len(calls) == 1
-    assert len(builder._rule_snapshot_paths) == 7
+    assert len(builder._rule_snapshot_paths) == 8
 
 
 def test_failed_rule_refresh_preserves_published_release_and_auth(
