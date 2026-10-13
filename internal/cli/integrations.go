@@ -36,10 +36,6 @@ func readLocal(layout paths.Layout) (singbox.Local, error) {
 }
 
 func runDesktop(env Env, args []string) int {
-	if len(args) > 1 || (len(args) == 1 && args[0] != "on" && args[0] != "off") {
-		fmt.Fprintln(env.Stderr, i18n.T("sbc: desktop takes on or off"))
-		return 2
-	}
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -136,10 +132,6 @@ func switchDesktop(env Env, layout paths.Layout, local singbox.Local, on bool) e
 // runWebRTC is separate from proxy switching so an explicit opt-out persists.
 // It can also clean browser settings after an interrupted installation.
 func runWebRTC(env Env, args []string) int {
-	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
-		fmt.Fprintln(env.Stderr, i18n.T("sbc: webrtc takes on or off"))
-		return 2
-	}
 	privacy, err := env.Privacy()
 	if err != nil {
 		return fail(env, err)
@@ -172,19 +164,7 @@ func reportRemainingWebRTC(env Env, privacy desktop.BrowserPrivacy) error {
 	return nil
 }
 
-func runDocker(env Env, args []string) int {
-	action, yes := "", false
-	for _, arg := range args {
-		switch {
-		case arg == "--yes":
-			yes = true
-		case (arg == "on" || arg == "off") && action == "":
-			action = arg
-		default:
-			fmt.Fprintln(env.Stderr, i18n.T("sbc: docker takes on or off, and --yes"))
-			return 2
-		}
-	}
+func runDocker(env Env, action string, yes bool) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)

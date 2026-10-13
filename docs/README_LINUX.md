@@ -1,12 +1,13 @@
 # Sing-box VPN Client for Linux
 
-Checked on 2026-10-12.
+Checked on 2026-10-13.
 
 > [!NOTE]
 > This guide covers the bash client, whose command is `proxy`. Releases no longer
 > pack it, so a new machine installs `sbc` with the
 > [hosted one-liner](#hosted-portal-install). The guide stays for machines that
-> still run the bash client, including those with TUN mode.
+> still run the bash client, including those with TUN mode. For current `sbc`
+> commands, help, and completion, see [the CLI guide](README_SBC.md).
 
 ## Features
 

@@ -1,6 +1,6 @@
 # Sing-box VPN Client for Windows
 
-Checked on 2026-10-06.
+Checked on 2026-10-13.
 
 `sbc` is the Sing-box client CLI for Windows. It runs unelevated, manages background
 services via Windows Task Scheduler, and configures user and desktop proxy settings.
@@ -51,28 +51,28 @@ If installation fails, the legacy client remains active and untouched.
 
 ## Commands
 
-| Command                  | Description                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `sbc on`                 | Set user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)  |
-| `sbc off`                | Clear user environment proxy variables; leaves sing-box running                 |
-| `sbc desktop on`         | Direct Windows system/browser proxy (WinINet) to the local proxy                |
-| `sbc desktop off`        | Clear Windows system proxy settings; retain WebRTC protection                   |
-| `sbc webrtc on`          | Enable persistent browser WebRTC protection; may request administrator approval |
-| `sbc webrtc off`         | Remove owned policies, reset Firefox WebRTC preferences, stop automatic setup   |
-| `sbc env`                | Print PowerShell commands to apply proxy settings to the current session        |
-| `sbc env off`            | Print PowerShell commands to clear proxy settings from the current session      |
-| `sbc route <strategy>`   | Switch route strategy (`china`, `gfw`, `ai`, `global`) without restarting       |
-| `sbc protocol <name>`    | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting    |
-| `sbc port <number>`      | Move local proxy listen port and update associated settings                     |
-| `sbc status`             | Show proxy state, active protocol and route, and monthly traffic usage          |
-| `sbc ip`                 | Query exit IP addresses and geo-location through the proxy                      |
-| `sbc speed`              | Test latency; add `--download` to test download throughput                      |
-| `sbc update`             | Fetch latest subscription configuration and check for updates                   |
-| `sbc start` / `sbc stop` | Start or stop the background service                                            |
-| `sbc restart`            | Restart sing-box background service                                             |
-| `sbc link show` / `set`  | Display or replace the active subscription URL                                  |
-| `sbc uninstall`          | Remove scheduled tasks, files, PATH entry, and owned proxy settings             |
-| `sbc version`            | Display `sbc` version and commit information                                    |
+| Command                     | Description                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `sbc on`                    | Set user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)  |
+| `sbc off`                   | Clear user environment proxy variables; leaves sing-box running                 |
+| `sbc desktop on`            | Direct Windows system/browser proxy (WinINet) to the local proxy                |
+| `sbc desktop off`           | Clear Windows system proxy settings; retain WebRTC protection                   |
+| `sbc webrtc on`             | Enable persistent browser WebRTC protection; may request administrator approval |
+| `sbc webrtc off`            | Remove owned policies, reset Firefox WebRTC preferences, stop automatic setup   |
+| `sbc env`                   | Print PowerShell commands to apply proxy settings to the current session        |
+| `sbc env off`               | Print PowerShell commands to clear proxy settings from the current session      |
+| `sbc route <strategy>`      | Switch route strategy (`china`, `gfw`, `ai`, `global`) without restarting       |
+| `sbc protocol <name>`       | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting    |
+| `sbc port <number>`         | Move local proxy listen port and update associated settings                     |
+| `sbc status`                | Show proxy state, active protocol and route, and monthly traffic usage          |
+| `sbc ip`                    | Query exit IP addresses and geo-location through the proxy                      |
+| `sbc speed`                 | Test latency; add `--download` to test download throughput                      |
+| `sbc update`                | Fetch latest subscription configuration and check for updates                   |
+| `sbc start` / `sbc stop`    | Start or stop the background service                                            |
+| `sbc restart`               | Restart sing-box background service                                             |
+| `sbc link` / `sbc link set` | Display or replace the active subscription URL                                  |
+| `sbc uninstall`             | Remove scheduled tasks, files, PATH entry, and owned proxy settings             |
+| `sbc version`               | Display `sbc` version and commit information                                    |
 
 ### Current session environment
 
@@ -88,6 +88,25 @@ To clear them from the current session:
 ```powershell
 sbc env off | Invoke-Expression
 ```
+
+### Help and completion
+
+Use `sbc <command> --help` or `sbc help <command>` for command details.
+Help does not require an installation and does not perform the command's action.
+The CLI rejects unknown flags and extra arguments.
+
+Load completion in the current PowerShell session:
+
+```powershell
+sbc completion powershell | Out-String | Invoke-Expression
+```
+
+For persistent completion, add that line to the `$PROFILE` file for each
+PowerShell host and version you use. The installer does not edit profiles or
+change execution policy. Completion works in Windows PowerShell 5.1 and
+PowerShell 7, for both `sbc` and `sbc.exe`.
+Route and protocol suggestions come from the local config, without a server
+request or running proxy. See the [cross-platform CLI guide](README_SBC.md).
 
 ## Architecture and runtime
 

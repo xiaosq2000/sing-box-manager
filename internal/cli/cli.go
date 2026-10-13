@@ -26,78 +26,6 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
-const usage = `Usage: sbc <command>
-
-Setup:
-  install [--shell bash|zsh] [--no-rc] [--auth on|off] [--route NAME] [--protocol NAME]
-                     Set up from a subscription link, read from standard input
-  init bash|zsh      Print the shell code the rc file runs
-  link [set]         Show the subscription link, or replace it from standard input
-  upgrade            Install a newer sbc and sing-box from the signed release
-  uninstall [--yes]  Stop the service and remove sbc's files
-
-Shells and programs:
-  on, off            Point every shell at the proxy, or stop, from its next prompt,
-                     and the desktop too after 'desktop on'; Windows applies to new programs
-  env [on|off]       Print shell variables; PowerShell: sbc env | Invoke-Expression
-  desktop [on|off]   Show or switch the desktop proxy (GNOME, macOS, Windows)
-  webrtc on|off      Set up or remove persistent WebRTC protection; may request approval
-  docker [on|off] [--yes]
-                     Show or switch the Docker daemon's proxy (Linux); restarts Docker
-
-Proxy:
-  status             Show the service, route, protocol, port, shells and traffic
-  ip                 Show where Gemini, sites abroad and sites in China place you
-  speed [--all] [--download [MB]]
-                     Time a small page through the protocol in use, or download
-                     20 MB or the given size through it; --all tests every protocol
-  route [name]       Show or switch the route
-  protocol [name]    Show or switch the protocol
-  port [number]      Show or change the local proxy port
-  update             Refresh the config from the subscription now
-  start, stop, restart
-                     Control the service that runs sing-box
-  run                Run sing-box in the foreground, where no service manager runs it
-
-  help, version
-`
-
-const usageZH = `用法：sbc <命令>
-
-安装：
-  install [--shell bash|zsh] [--no-rc] [--auth on|off] [--route NAME] [--protocol NAME]
-                     用订阅链接安装，链接从标准输入读取
-  init bash|zsh      输出 rc 文件要运行的 shell 代码
-  link [set]         显示订阅链接，或从标准输入读取新链接来替换它
-  upgrade            从签名的发布中安装更新的 sbc 和 sing-box
-  uninstall [--yes]  停止服务并删除 sbc 的文件
-
-shell 与程序：
-  on, off            让每个 shell 从下一个提示符起使用或停用代理，
-                     运行过 'desktop on' 后桌面也一起切换；Windows 对新程序生效
-  env [on|off]       输出 shell 代理变量；PowerShell：sbc env | Invoke-Expression
-  desktop [on|off]   显示或切换桌面代理（GNOME、macOS、Windows）
-  webrtc on|off      设置或移除持久 WebRTC 保护，可能需要管理员授权
-  docker [on|off] [--yes]
-                     显示或切换 Docker 守护进程的代理（Linux），会重启 Docker
-
-代理：
-  status             显示服务、路由、协议、端口、shell 的状态和流量
-  ip                 显示 Gemini、境外网站和境内网站看到的你的位置
-  speed [--all] [--download [MB]]
-                     测试经当前协议打开一个小网页的用时，或经它下载 20 MB 或指定
-                     大小；加 --all 则测试每种协议
-  route [name]       显示或切换路由
-  protocol [name]    显示或切换协议
-  port [number]      显示或更改本地代理端口
-  update             立即从订阅更新配置
-  start, stop, restart
-                     控制运行 sing-box 的服务
-  run                在没有服务管理器的环境中，于前台运行 sing-box
-
-  help, version
-`
-
 // Env is what commands read and write, so tests can replace it.
 type Env struct {
 	// Windows holds the per-user Windows environment settings.
@@ -172,65 +100,6 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 	}
 }
 
-// Run runs the command that args name and returns the process exit code.
-func Run(env Env, args []string) int {
-	if len(args) == 0 {
-		fmt.Fprint(env.Stdout, i18n.Pick(usage, usageZH))
-		return 0
-	}
-	switch args[0] {
-	case "help", "-h", "--help":
-		fmt.Fprint(env.Stdout, i18n.Pick(usage, usageZH))
-		return 0
-	case "version", "--version":
-		fmt.Fprintf(env.Stdout, "sbc %s\n", env.Version)
-		return 0
-	case "install":
-		return runInstall(env, args[1:])
-	case "env":
-		return runEnv(env, args[1:])
-	case "on":
-		return runOn(env)
-	case "off":
-		return runOff(env)
-	case "port":
-		return runPort(env, args[1:])
-	case "link":
-		return runLink(env, args[1:])
-	case "init":
-		return runInit(env, args[1:])
-	case "start", "stop", "restart":
-		return runService(env, args[0])
-	case "upgrade":
-		return runUpgrade(env)
-	case "run":
-		return runSingBox(env)
-	case "status":
-		return runStatus(env)
-	case "ip":
-		return runIP(env)
-	case "speed":
-		return runSpeed(env, args[1:])
-	case "route":
-		return runSwitch(env, args[1:], "route")
-	case "protocol":
-		return runSwitch(env, args[1:], "protocol")
-	case "update":
-		return runUpdate(env)
-	case "uninstall":
-		return runUninstall(env, args[1:])
-	case "desktop":
-		return runDesktop(env, args[1:])
-	case "webrtc":
-		return runWebRTC(env, args[1:])
-	case "docker":
-		return runDocker(env, args[1:])
-	default:
-		fmt.Fprintf(env.Stderr, i18n.T("sbc: unknown command %q\nRun 'sbc help' for usage.\n"), args[0])
-		return 2
-	}
-}
-
 func fail(env Env, err error) int {
 	fmt.Fprintf(env.Stderr, "sbc: %v\n", err)
 	return 1
@@ -244,12 +113,7 @@ func prompt(env Env, text string) {
 	}
 }
 
-func runInstall(env Env, args []string) int {
-	options, err := parseInstallFlags(args)
-	if err != nil {
-		fmt.Fprintf(env.Stderr, "sbc: %v\n", err)
-		return 2
-	}
+func runInstall(env Env, options installOptions) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -568,7 +432,7 @@ func runUpdate(env Env) int {
 	return 0
 }
 
-func runUninstall(env Env, args []string) int {
+func runUninstall(env Env, yes bool) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -581,7 +445,7 @@ func runUninstall(env Env, args []string) int {
 			return fail(env, i18n.New("the Docker daemon uses the proxy; run 'sbc docker off' first, which restarts Docker"))
 		}
 	}
-	if len(args) == 0 || args[0] != "--yes" {
+	if !yes {
 		fmt.Fprint(env.Stderr, i18n.T("Stop sing-box and remove sbc, its config and its subscription link? [y/N] "))
 		answer, _ := bufio.NewReader(env.Stdin).ReadString('\n')
 		answer = strings.TrimPrefix(strings.TrimSpace(answer), "\ufeff")

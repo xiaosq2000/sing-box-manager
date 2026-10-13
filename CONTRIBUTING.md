@@ -1,6 +1,6 @@
 # Contributing
 
-Checked on 2026-10-12.
+Checked on 2026-10-13.
 
 ## Development environment
 
@@ -12,9 +12,10 @@ pixi run precommit-install
 ```
 
 See [Development](docs/DEVELOPMENT.md) for focused checks and native-platform test
-requirements. The `sbc` client uses only the Go standard library and builds with
-cgo disabled. Shared Unix scripts must remain compatible with bash 3.2; Windows
-scripts must remain compatible with Windows PowerShell 5.1.
+requirements. The `sbc` command layer uses Cobra and pflag. Other client code
+uses the Go standard library, and builds keep cgo disabled. Shared Unix scripts
+must remain compatible with bash 3.2. Windows scripts must remain compatible with
+Windows PowerShell 5.1.
 
 ## Keep operations private
 

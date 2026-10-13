@@ -30,7 +30,7 @@ func TestVersionPrintsTheBuildVersion(t *testing.T) {
 func TestHelpAndNoArgumentsPrintUsage(t *testing.T) {
 	for _, args := range [][]string{nil, {"help"}, {"-h"}, {"--help"}} {
 		code, stdout, stderr := run(args...)
-		if code != 0 || !strings.HasPrefix(stdout, "Usage: sbc <command>\n") || stderr != "" {
+		if code != 0 || !strings.Contains(stdout, "Usage: sbc <command> [flags]\n") || stderr != "" {
 			t.Errorf("sbc %v: got code %d, stdout %q, stderr %q", args, code, stdout, stderr)
 		}
 	}

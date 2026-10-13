@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-12.
+Checked on 2026-10-13.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -31,7 +31,7 @@ complexity comes from machinery built around premises that the target design dro
 | sing-box is the only proxy core on nodes and clients                                              | Decided                                    |
 | Security fixes come first, then the client CLI                                                    | Decided                                    |
 | The control plane uses Django and Postgres                                                        | Proposed                                   |
-| The client CLI, `sbc`, is written in Go with only the standard library                            | Decided                                    |
+| The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                    |
 | The node agent is written in Go                                                                   | Proposed                                   |
 | Each user gets one subscription URL that carries a secret token; each device gets its own from M7 | Decided                                    |
 | A client runs one config per user, with routes as Clash modes and protocols in a selector         | Decided                                    |
@@ -188,7 +188,7 @@ Linux TUN.
 
 | Area         | Bash client                                                                  | `sbc`                                                                                                    |
 | ------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Client code  | `setup.sh` and four libraries, about 8,500 lines, sourced into every shell   | A Go binary that uses only the standard library, and one `sbc init` line in the rc file                  |
+| Client code  | `setup.sh` and four libraries, about 8,500 lines, sourced into every shell   | A Go binary with a Cobra command layer, and one `sbc init` line in the rc file                           |
 | Install      | `bash <(curl …/install/linux.sh)` or `macos.sh` downloads a per-user archive | `curl -fsSL …/install.sh \| sh` downloads `sbc`, which asks for the subscription URL                     |
 | Auth         | Portal password, then a machine token                                        | A subscription token                                                                                     |
 | Config       | The archive holds a config for each protocol and route                       | The server renders one config per user, and `sbc` fetches it                                             |
@@ -264,6 +264,14 @@ Client:
   accounts show up. `sbc install --auth on|off` overrides the check, and a
   reinstall keeps the earlier choice. If port 1080 is taken for TCP or UDP,
   `sbc install` picks a free port.
+- Cobra and pflag define commands, flags, validation, help and completion.
+  Existing valid syntax stays supported, including `sbc speed --download [MB]`.
+  `sbc <command> --help` and `sbc help <command>` show localized help without
+  performing the command's action. Unknown flags and extra arguments fail.
+  `sbc completion bash|zsh|powershell` prints completion code. Bash and Zsh
+  load it through `sbc init` in interactive shells. PowerShell users add a
+  profile command themselves. Route and protocol choices come from the local
+  config without a network request or running service. See [the CLI guide](README_SBC.md).
 - Users type `sbc`. A program cannot change the shell that started it, so the rc
   file runs `sbc init bash|zsh`, whose output puts `sbc` on PATH and adds a prompt
   hook. Each prompt applies `sbc on` and `sbc off` from a small file, so every open
@@ -344,7 +352,7 @@ switches route and protocol without a restart, rolls back a bad refresh and
 uninstalls, and when a bash install without TUN migrates.
 
 These follow M1a as separate pull requests: `doctor`, a redacted report for support
-requests; shell completion; `lan on|off`, which listens on all interfaces with a
+requests; `lan on|off`, which listens on all interfaces with a
 generated username and password; and the Docker container proxy, which listens on
 the Docker bridge address with auth.
 

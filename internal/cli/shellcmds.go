@@ -3,13 +3,12 @@ package cli
 import (
 	"bufio"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
 	"github.com/xiaosq2000/sing-box-manager/internal/docker"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
@@ -28,39 +27,6 @@ type installOptions struct {
 	// moving from the bash client keeps its choices.
 	route    string
 	protocol string
-}
-
-func parseInstallFlags(args []string) (installOptions, error) {
-	flags := flag.NewFlagSet("install", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	shellName := flags.String("shell", "", "")
-	noRC := flags.Bool("no-rc", false, "")
-	auth := flags.String("auth", "", "")
-	route := flags.String("route", "", "")
-	protocol := flags.String("protocol", "", "")
-	if err := flags.Parse(args); err != nil {
-		return installOptions{}, i18n.Errorf("install: %v", err)
-	}
-	if flags.NArg() > 0 {
-		return installOptions{}, i18n.Errorf("install: unexpected argument %q", flags.Arg(0))
-	}
-	options := installOptions{shell: *shellName, noRC: *noRC, route: *route, protocol: *protocol}
-	switch *auth {
-	case "":
-	case "on":
-		options.auth = install.AuthOn
-	case "off":
-		options.auth = install.AuthOff
-	default:
-		return installOptions{}, i18n.Errorf("install: --auth takes on or off")
-	}
-	if options.shell == "" {
-		options.shell = shell.DetectShell()
-	}
-	if _, err := shell.RCFile("/", options.shell); err != nil {
-		return installOptions{}, err
-	}
-	return options, nil
 }
 
 // setUpShell turns the proxy on for shells and adds the rc block that runs
@@ -98,10 +64,6 @@ func writeEnvFile(layout paths.Layout) error {
 }
 
 func runEnv(env Env, args []string) int {
-	if len(args) > 1 || (len(args) == 1 && args[0] != "on" && args[0] != "off") {
-		fmt.Fprintln(env.Stderr, i18n.T("sbc: env takes on or off"))
-		return 2
-	}
 	if len(args) == 1 && args[0] == "off" {
 		if env.OS == "windows" {
 			fmt.Fprint(env.Stdout, winsettings.PowerShellEnv(0, "", "", false))
@@ -126,11 +88,7 @@ func runEnv(env Env, args []string) int {
 	return 0
 }
 
-func runInit(env Env, args []string) int {
-	if len(args) != 1 {
-		fmt.Fprintln(env.Stderr, i18n.T("sbc: init takes bash or zsh"))
-		return 2
-	}
+func runInit(env Env, args []string, root *cobra.Command) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -140,6 +98,15 @@ func runInit(env Env, args []string) int {
 		return fail(env, err)
 	}
 	fmt.Fprint(env.Stdout, code)
+	fmt.Fprint(env.Stdout, "case $- in\n*i*)\n")
+	if args[0] == "zsh" {
+		// Do not bypass compinit's security checks or repeat an existing setup.
+		fmt.Fprint(env.Stdout, "if ! typeset -f compdef >/dev/null; then autoload -Uz compinit && compinit; fi\n")
+	}
+	if err := writeCompletion(root, args[0], env.Stdout); err != nil {
+		return fail(env, err)
+	}
+	fmt.Fprint(env.Stdout, ";;\nesac\n")
 	return 0
 }
 
@@ -385,10 +352,6 @@ func runLink(env Env, args []string) int {
 		}
 		fmt.Fprintln(env.Stdout, link.Masked())
 		return 0
-	}
-	if args[0] != "set" {
-		fmt.Fprintln(env.Stderr, i18n.T("sbc: link takes no argument, or set"))
-		return 2
 	}
 	prompt(env, "New subscription link: ")
 	line, err := bufio.NewReader(env.Stdin).ReadString('\n')
