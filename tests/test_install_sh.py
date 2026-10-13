@@ -11,12 +11,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.test_client_install import (
-    _linux_env,
-    _prepare_client_archive,
-    _prepare_fake_commands,
-)
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "sing_box_manager" / "web" / "client" / "install.sh"
 PORTAL = "https://vpn.example.com"
@@ -108,23 +102,13 @@ def _fakes(tmp_path: Path, bin_dir: Path) -> dict[str, str]:
     }
 
 
-# Answers like GNOME's dconf, with a manual proxy when DCONF_PROXY_HOST is set.
-FAKE_DCONF = r"""#!/bin/sh
-[ "$1" = read ] || exit 0
-case "$2" in
-/system/proxy/mode) if [ -n "${DCONF_PROXY_HOST:-}" ]; then echo "'manual'"; else echo "'none'"; fi ;;
-*/host) if [ -n "${DCONF_PROXY_HOST:-}" ]; then echo "'$DCONF_PROXY_HOST'"; fi ;;
-*/port) if [ -n "${DCONF_PROXY_HOST:-}" ]; then echo "$DCONF_PROXY_PORT"; fi ;;
-esac
-"""
-
-
 def _run(
     tmp_path: Path,
     *args: str,
     answer: str = LINK,
     system: str = "Linux",
     machine: str = "x86_64",
+    command: list[str] | None = None,
     **extra_env: str,
 ):
     bin_dir = tmp_path / "bin"
@@ -136,11 +120,10 @@ def _run(
         f'#!/bin/sh\ncase "$1" in -s) echo {system} ;; -m) echo {machine} ;; esac\n',
     )
     _executable(bin_dir / "stty", "#!/bin/sh\nexit 0\n")
-    _executable(bin_dir / "dconf", FAKE_DCONF)
     tty = tmp_path / "tty"
     tty.write_text(answer + "\n")
     result = subprocess.run(
-        ["sh", str(SCRIPT), *args],
+        command if command is not None else ["sh", str(SCRIPT), *args],
         env={
             **env,
             "PATH": f"{bin_dir}:/usr/bin:/bin",
@@ -149,6 +132,7 @@ def _run(
             "SBM_TUN_ROOT": os.environ["SBM_TUN_ROOT"],
             **extra_env,
         },
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,
@@ -172,8 +156,13 @@ def _bash_client(home: Path, *, preferences: str = "rc_enabled=false\nshell=zsh\
     data = home / ".local" / "share" / "sing-box"
     (config / "trojan").mkdir(parents=True)
     (data / "lib").mkdir(parents=True)
-    for library in ("platform.sh", "system-proxy.sh"):
-        shutil.copy(ROOT / "scripts" / "lib" / library, data / "lib" / library)
+    # The installer asks the installed client's libraries for desktop ownership.
+    # Stub that interface instead of maintaining the retired proxy implementation.
+    (data / "lib" / "platform.sh").write_text("# legacy platform fixture\n")
+    (data / "lib" / "system-proxy.sh").write_text(
+        "system_proxy_target_name() { printf 'fixture\\n'; }\n"
+        'system_proxy_classify() { printf "%s\\n" "${FAKE_DESKTOP_STATE:-off}"; }\n'
+    )
     (config / "trojan" / "config.json").write_text(
         '{"inbounds": [{"type": "mixed", "listen_port": 1080}]}\n'
     )
@@ -181,7 +170,7 @@ def _bash_client(home: Path, *, preferences: str = "rc_enabled=false\nshell=zsh\
     (config / "selected-route").write_text("gfw\n")
     (config / "selected-port").write_text("1085\n")
     (config / "portal-token").write_text(TOKEN)
-    (data / "setup.sh").write_text("# the bash client\n")
+    shutil.copy(ROOT / "tests/fixtures/legacy-unix/setup.sh", data / "setup.sh")
     (data / "portal-base-url").write_text(PORTAL + "\n")
     (data / "install-preferences").write_text(preferences)
     _executable(
@@ -189,7 +178,8 @@ def _bash_client(home: Path, *, preferences: str = "rc_enabled=false\nshell=zsh\
         "#!/bin/sh\n"
         'printf "uninstaller %s clean=%s\\n" "$*" "${SBM_UNINSTALL_CLEAN_PROXY-}"'
         ' >> "$FAKE_LOG"\n'
-        'rm -rf "$HOME/.config/sing-box" "$HOME/.local/share/sing-box"\n',
+        'rm -rf "$HOME/.config/sing-box" "$HOME/.local/share/sing-box" '
+        '"$HOME/.local/state/sing-box" "$HOME/.local/bin/sing-box"\n',
     )
     return config, data
 
@@ -303,15 +293,15 @@ def test_rc_files_the_user_manages_are_left_alone(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("host", "port", "turned_on"),
-    [("127.0.0.1", "1085", True), ("127.0.0.1", "7890", False), ("", "", False)],
+    ("desktop_state", "turned_on"),
+    [("ours", True), ("other", False), ("off", False)],
 )
 def test_the_desktop_proxy_comes_back_only_when_it_was_the_bash_clients(
-    tmp_path: Path, host: str, port: str, turned_on: bool
+    tmp_path: Path, desktop_state: str, turned_on: bool
 ) -> None:
     _bash_client(tmp_path / "home")
 
-    result, log = _run(tmp_path, DCONF_PROXY_HOST=host, DCONF_PROXY_PORT=port)
+    result, log = _run(tmp_path, FAKE_DESKTOP_STATE=desktop_state)
 
     assert result.returncode == 0, result.stderr
     assert ("sbc desktop on\n" in log) is turned_on
@@ -327,10 +317,13 @@ def test_the_desktop_proxy_comes_back_only_when_it_was_the_bash_clients(
         ("var/lib/sing-box-manager-tun.status", "unclean\n"),
     ],
 )
-def test_a_machine_with_tun_set_up_keeps_the_bash_client(
-    tmp_path: Path, path: str, content: str
+@pytest.mark.parametrize("legacy_present", [False, True])
+def test_legacy_tun_state_blocks_installation_without_changes(
+    tmp_path: Path, path: str, content: str, legacy_present: bool
 ) -> None:
-    _, data = _bash_client(tmp_path / "home")
+    config = data = None
+    if legacy_present:
+        config, data = _bash_client(tmp_path / "home")
     marker = Path(os.environ["SBM_TUN_ROOT"]) / path
     marker.parent.mkdir(parents=True)
     marker.write_text(content)
@@ -338,9 +331,35 @@ def test_a_machine_with_tun_set_up_keeps_the_bash_client(
     result, log = _run(tmp_path)
 
     assert result.returncode == 1
-    assert "Keep using the bash client until sbc supports TUN" in result.stderr
+    assert "legacy Linux TUN state is present" in result.stderr
+    assert "No files were changed" in result.stderr
     assert log == ""
-    assert (data / "setup.sh").exists()
+    assert marker.read_text() == content
+    if legacy_present:
+        assert (config / "portal-token").read_text() == TOKEN
+        assert (data / "setup.sh").exists()
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling-symlink"])
+def test_nonregular_legacy_tun_unit_blocks_installation(
+    tmp_path: Path, kind: str
+) -> None:
+    marker = (
+        Path(os.environ["SBM_TUN_ROOT"])
+        / "etc/systemd/system/sing-box-manager-tun.service"
+    )
+    marker.parent.mkdir(parents=True)
+    if kind == "directory":
+        marker.mkdir()
+    else:
+        marker.symlink_to("missing-unit")
+
+    result, log = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "legacy Linux TUN state is present" in result.stderr
+    assert log == ""
+    assert marker.is_dir() if kind == "directory" else marker.is_symlink()
 
 
 def test_a_tunnel_that_was_turned_off_safely_does_not_block_the_move(
@@ -482,63 +501,41 @@ def test_rc_lines_that_still_run_the_bash_client_are_named(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
-def test_proxy_upgrade_moves_a_real_bash_install_to_sbc(
+def test_legacy_upgrade_caller_migrates_and_does_not_restore_old_state(
     tmp_path: Path, shell: str
 ) -> None:
-    """The bash client's own `proxy upgrade` runs install.sh and ends cleanly."""
+    """Exercise the installed caller's post-install source step in Bash and Zsh."""
     shell_path = shutil.which(shell)
     if shell_path is None:
         pytest.skip(f"{shell} is not available")
-    install_script = _prepare_client_archive(tmp_path)
-    fakebin = _prepare_fake_commands(tmp_path)
-    env = {**_linux_env(tmp_path, fakebin), **_fakes(tmp_path, fakebin)}
-    env["SBM_SKIP_UPDATE_CHECK"] = "1"
-    # The bash client set the GNOME proxy, which its uninstaller turns off.
-    env["DCONF_PROXY_HOST"], env["DCONF_PROXY_PORT"] = "127.0.0.1", "1085"
-    for name in list(env):
-        if name.lower().endswith("_proxy"):
-            del env[name]
-    installed = subprocess.run(
-        ["bash", str(install_script), "--shell", shell],
-        env=env,
-        input="n\n",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert installed.returncode == 0, installed.stdout + installed.stderr
-    config = Path(env["XDG_CONFIG_HOME"]) / "sing-box"
-    data = Path(env["XDG_DATA_HOME"]) / "sing-box"
-    state = Path(env["XDG_STATE_HOME"]) / "sing-box"
-    (data / "portal-base-url").write_text(PORTAL + "\n")
-    (config / "portal-token").write_text(TOKEN)
-    (config / "selected-route").write_text("gfw\n")
-    (config / "selected-port").write_text("1085\n")
-    rc = Path(env["HOME"]) / (".zshrc" if shell == "zsh" else ".bashrc")
-    assert "sing-box/setup.sh" in rc.read_text()
+    home = tmp_path / "home"
+    config, data = _bash_client(home, preferences=f"rc_enabled=true\nshell={shell}\n")
+    state = home / ".local/state/sing-box"
+    state.mkdir(parents=True)
+    binary = home / ".local/bin/sing-box"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("legacy executable\n")
+    rc = home / (".zshrc" if shell == "zsh" else ".bashrc")
+    rc.write_text(OLD_RC_BLOCK)
 
-    result = subprocess.run(
-        [
+    result, log = _run(
+        tmp_path,
+        command=[
             shell_path,
             "-f",
             "-c",
             f'source "{data}/setup.sh"; proxy upgrade; printf "RESULT=%s\\n" "$?"',
         ],
-        env=env,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        check=False,
+        FAKE_DESKTOP_STATE="ours",
     )
 
     output = result.stdout + result.stderr
     assert "RESULT=0" in result.stdout, output
-    log = (tmp_path / "log").read_text()
-    assert f"sbc install --shell {shell} --route gfw --protocol trojan\n" in log
+    assert "unexpected legacy" not in output
+    assert f"sbc install --shell {shell} --route gfw --protocol hysteria2\n" in log
     assert "sbc port 1085\n" in log
-    assert "/system/proxy/mode 'none'" in Path(env["DCONF_LOG"]).read_text()
     assert log.index("sbc port 1085") < log.index("sbc desktop on\n")
-    for path in (config, data, state, Path(env["HOME"]) / ".local/bin/sing-box"):
+    for path in (config, data, state, binary):
         assert not path.exists(), path
     assert "sing-box/setup.sh" not in rc.read_text()
     assert "sbc replaced the bash client" in output

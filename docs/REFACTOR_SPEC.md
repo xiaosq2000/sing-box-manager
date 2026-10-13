@@ -127,23 +127,23 @@ avoid automatic egress changes. This does not guarantee provider acceptance.
 These rules came from real failures. Carry each one into the code that replaces its
 current location.
 
-| Area               | Rule                                                                                                                                                                                                                                                                                                                                                | Original location                                    |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| SSH                | One ControlMaster connection, retries only on known reset messages, `-T -o RequestTTY=no` for rsync, control path under 90 characters without spaces                                                                                                                                                                                                | `sing_box_manager/ssh.py`                            |
-| Hysteria2 server   | Port hopping uses a nat PREROUTING REDIRECT of the range to one port, for IPv4 and IPv6. UDP buffers are 16 MiB                                                                                                                                                                                                                                     | `provision.py`, `scripts/server-install.sh`          |
-| TLS                | Use an ECDSA or RSA certificate, not Ed25519, for Chrome QUIC parroting. Restart sing-box after renewal                                                                                                                                                                                                                                             | `docs/SECRET_HANDLING.md`, `provision.py`            |
-| Client configs     | Ship rule snapshots through `initial_path` so the first start works when rule downloads fail                                                                                                                                                                                                                                                        | `release/rule_sets.py`, `release/renderers.py`       |
-| Client configs     | `sing-box check` doesn't prove DNS works. Probe with `sing-box tools fetch` against a temporary cache directory                                                                                                                                                                                                                                     | `scripts/setup.sh` near line 3242                    |
-| `ai-only` route    | Direct DNS uses the systemd-resolved stub because the local transport needs CAP_NET_RAW. Use community Anthropic and AI sets for routing and DNS. Shared sign-in and captcha hosts depend on community coverage                                                                                                                                     | `release/renderers.py`, `scripts/client-install.sh`  |
-| Client runtime     | Mixed mode and TUN are never active together, or traffic loops. Check TCP and UDP when picking the mixed port. Run TUN with `-c`, not `-C`                                                                                                                                                                                                          | `scripts/client-install.sh`, `scripts/setup.sh`      |
-| System proxy       | Revert only settings that point at our port. A PAC setting belongs to someone else                                                                                                                                                                                                                                                                  | `scripts/lib/system-proxy.sh`, `system-proxy.ps1`    |
-| API stream         | `interval` is in nanoseconds. Each subscription replays live connections, so deduplicate by connection ID with byte checkpoints. UPDATE carries deltas and CLOSED carries final totals. Events without a user are DNS lookups and health checks. sing-box drops events while nobody subscribes                                                      | `connection_stats.py`, `connection_tracking.py`      |
-| API service        | Disable its dashboard. Strip IPv6 brackets from the listen address                                                                                                                                                                                                                                                                                  | `release/renderers.py`, `settings.py`                |
-| Billing            | Per-user counters see one leg of relayed traffic; a host that bills both directions charges about twice that. A reset day past a short month's end moves to its last day                                                                                                                                                                            | `settings.py`, `traffic_models.py`                   |
-| Windows            | Launch the hosted installer with `& ([scriptblock]::Create((irm URL)))`. Use an S4U task with `ExecutionTimeLimit=PT0S`, limited run level and an Interactive fallback. Refuse to run elevated. Set WinINet as one `host:port`, separate bypass entries with `;`, refresh with InternetSetOption 39 then 95. Stop the task before replacing the exe | `scripts/client-install.ps1`, `lib/system-proxy.ps1` |
-| macOS              | Run `launchctl bootout` before `bootstrap` and poll after start. Clear the quarantine attribute. Read the login shell with `dscl`. Pick the `networksetup` service from the default-route interface                                                                                                                                                 | `scripts/setup.sh`, `lib/system-proxy.sh`            |
-| Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin                                                                                                                                                                                                                                                   | `scripts/lib/tun.sh`, `scripts/setup.sh`             |
-| Downloads in China | No CDN-hosted page assets. PowerShell `irm` needs `text/plain`. Send auth headers up front, since PowerShell 5.1 and wget wait for a challenge otherwise                                                                                                                                                                                            | `web/routes.py`, `install_windows.ps1`               |
+| Area               | Rule                                                                                                                                                                                                                                                                                                                                                | Code or requirement                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| SSH                | One ControlMaster connection, retries only on known reset messages, `-T -o RequestTTY=no` for rsync, control path under 90 characters without spaces                                                                                                                                                                                                | `sing_box_manager/ssh.py`                                                   |
+| Hysteria2 server   | Port hopping uses a nat PREROUTING REDIRECT of the range to one port, for IPv4 and IPv6. UDP buffers are 16 MiB                                                                                                                                                                                                                                     | `provision.py`, `scripts/server-install.sh`                                 |
+| TLS                | Use an ECDSA or RSA certificate, not Ed25519, for Chrome QUIC parroting. Restart sing-box after renewal                                                                                                                                                                                                                                             | `docs/SECRET_HANDLING.md`, `provision.py`                                   |
+| Client configs     | Ship rule snapshots through `initial_path` so the first start works when rule downloads fail                                                                                                                                                                                                                                                        | `release/rule_sets.py`, `release/renderers.py`                              |
+| Client configs     | `sing-box check` does not prove DNS works. Check a page request through the new proxy before accepting installation                                                                                                                                                                                                                                 | `internal/cli/cli.go`, `internal/api/api.go`                                |
+| `ai-only` route    | Direct DNS uses the systemd-resolved stub because the local transport needs CAP_NET_RAW. Use community Anthropic and AI sets for routing and DNS. Shared sign-in and captcha hosts depend on community coverage                                                                                                                                     | `release/renderers.py`, `desktop_config.py`                                 |
+| Client runtime     | Mixed mode and TUN are never active together, or traffic loops. Check TCP and UDP when picking the mixed port. Run TUN with `-c`, not `-C`                                                                                                                                                                                                          | `internal/singbox/singbox.go`; deferred M1b requirements                    |
+| System proxy       | Revert only settings that point at our port. A PAC setting belongs to someone else                                                                                                                                                                                                                                                                  | `internal/desktop/`, `internal/winsettings/`                                |
+| API stream         | `interval` is in nanoseconds. Each subscription replays live connections, so deduplicate by connection ID with byte checkpoints. UPDATE carries deltas and CLOSED carries final totals. Events without a user are DNS lookups and health checks. sing-box drops events while nobody subscribes                                                      | `connection_stats.py`, `connection_tracking.py`                             |
+| API service        | Disable its dashboard. Strip IPv6 brackets from the listen address                                                                                                                                                                                                                                                                                  | `release/renderers.py`, `settings.py`                                       |
+| Billing            | Per-user counters see one leg of relayed traffic; a host that bills both directions charges about twice that. A reset day past a short month's end moves to its last day                                                                                                                                                                            | `settings.py`, `traffic_models.py`                                          |
+| Windows            | Launch the hosted installer with `& ([scriptblock]::Create((irm URL)))`. Use an S4U task with `ExecutionTimeLimit=PT0S`, limited run level and an Interactive fallback. Refuse to run elevated. Set WinINet as one `host:port`, separate bypass entries with `;`, refresh with InternetSetOption 39 then 95. Stop the task before replacing the exe | `internal/service/`, `internal/winsettings/`, `web/client/install.ps1`      |
+| macOS              | Run `launchctl bootout` before `bootstrap` and poll after start. Clear the quarantine attribute. Read the login shell with `dscl`. Pick the `networksetup` service from the default-route interface                                                                                                                                                 | `internal/service/`, `internal/desktop/`; login-shell detection requirement |
+| Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin                                                                                                                                                                                                                                                   | Deferred M1b requirements                                                   |
+| Downloads in China | No CDN-hosted page assets. PowerShell `irm` needs `text/plain`. Send auth headers up front, since PowerShell 5.1 and wget wait for a challenge otherwise                                                                                                                                                                                            | `web/routes.py`, `web/client/install.ps1`                                   |
 
 ## Milestones
 
@@ -346,11 +346,12 @@ Client:
 - The portal's `/api/client-update` reports the `sbc` build, so bash clients are
   told to run `proxy upgrade`, which runs the new installer. `install.sh` leaves
   `proxy upgrade` a one-time `setup.sh` to source, so it ends without an error.
-- An install with TUN set up keeps the bash client until M1b.
-- The rewrite fixes these known bugs:
-  - `proxy protocol` requires `systemctl` on macOS (`setup.sh` near line 3130).
-  - Credentials are passed on the command line.
-  - About 400 helper functions are defined in every shell.
+- The legacy Unix client implementation, its tests, and its full guides are removed.
+  `README_SBC.md` is the client guide. Hosted migration uses the installed client's
+  own uninstaller and desktop library. Small fixtures cover that interface.
+- Legacy Linux TUN state blocks installation before downloads or file changes,
+  even when user-scoped client files are missing. The installed client's cleanup
+  tools must remove that state first. No current invited user uses Linux TUN.
 
 Done when CI on Linux and macOS runners installs from a test subscription, starts,
 switches route and protocol without a restart, rolls back a bad refresh and
@@ -363,19 +364,22 @@ the Docker bridge address with auth.
 
 #### M1b: Linux TUN
 
-- `proxy tun on|off` moves into `sbc`. It keeps the hardened root unit and its
-  verify step, and drops the journal, generations, manifest, safeguard timer and
-  attestation file.
-- The TUN lock is released when `sbc` exits, so Ctrl-C during `proxy tun on` can't
-  leave it held (`tun.sh` near line 585).
-- Bash installs with TUN migrate.
+Deferred. `sbc` supports mixed mode, not Linux TUN. The legacy implementation is
+not maintained, and no current invited user uses Linux TUN. Recheck the scope before
+starting this milestone.
 
-Removes `scripts/setup.sh`, the Unix install and uninstall scripts, `scripts/lib/*.sh`
-except `ui.sh`, which the server scripts use until M5, and their shell tests. `README_LINUX.md`, `README_MACOS.md` and `TUN_MODE.md` become
-one client guide.
+Requirements for a new implementation:
 
-Done when a Linux runner turns TUN on and off with the verify step, Ctrl-C during
-`proxy tun on` leaves no lock, and a bash install with TUN migrates.
+- Add `sbc tun on|off` for native Linux. Keep root-owned binaries and configs,
+  a hardened unit, a dedicated runtime account, and the capability probe.
+- Mixed mode and TUN must never run together. Load one exact config with `-c`.
+- Check interface capture, routing, DNS, and egress before accepting activation.
+- Release the operation lock when `sbc` exits, including after Ctrl-C.
+- Keep legacy TUN refusal in the hosted installer until a safe migration exists.
+
+Done when a disposable Linux runner checks activation, deactivation, failed
+activation recovery, and interrupted-operation cleanup. Keep `scripts/lib/ui.sh`
+for the server scripts until M5.
 
 ### M2: Client CLI for Windows
 
@@ -445,7 +449,7 @@ hosted installer works in Windows PowerShell 5.1.
 - `sbm release` runs `sing-box check` on every rendered config. CI downloads the
   pinned sing-box binary, so the real-binary tests in `tests/test_sing_box_114.py`
   always run.
-- Merge `settings.py` and `config_loader.py` into one pydantic model.
+- Use one strict Pydantic model for settings and inventory, without a compatibility loader.
 
 Removes the JSON templates, three per-protocol unit files, the path properties in
 `settings.py`, and `docker/` with its doc.

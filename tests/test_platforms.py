@@ -28,6 +28,11 @@ def test_supported_platforms() -> None:
         "android-arm64",
     }
     assert [platform.name for platform in ARCHIVE_PLATFORMS] == ["android-arm64"]
+    for platform in PLATFORMS:
+        if platform.os_name != "android":
+            assert platform.client_profiles == ()
+            assert platform.extras == []
+            assert platform.protocol_extras == {}
 
 
 @pytest.mark.parametrize("platform", PLATFORMS, ids=lambda platform: platform.name)

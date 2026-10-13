@@ -7,7 +7,47 @@ fetches subscription configs, and controls shell and desktop proxy settings.
 
 Install it with the [hosted installer](RELEASE_AND_PORTAL.md#one-liner-install).
 For Windows requirements and service details, see [the Windows guide](README_WIN.md).
-Linux TUN still uses the [legacy Bash client](TUN_MODE.md).
+The legacy Unix client implementation is not maintained in this repository.
+
+## Unix installation and migration
+
+Linux and macOS users install `sbc` with:
+
+```sh
+curl -fsSL "https://vpn.example.com/install.sh" | sh
+```
+
+The installer asks for the subscription link without echoing it. Do not put the
+link in shell history or command arguments. The first executable download trusts
+HTTPS. `sbc` checks the signed manifest for later binary and rule downloads.
+
+The installer accepts `--shell bash|zsh`, `--no-rc`, and `-p PROTOCOL`.
+Open a new terminal after installation. Run `sbc status` to check the client.
+See [command help](#command-help) for service and proxy controls.
+
+| Platform | Private config directory             | Service              |
+| -------- | ------------------------------------ | -------------------- |
+| Linux    | `~/.config/sbc/`                     | systemd user service |
+| macOS    | `~/Library/Application Support/sbc/` | LaunchAgent          |
+
+An installed Bash client can migrate through this installer or `proxy upgrade`.
+The hosted `/install/linux.sh` and `/install/macos.sh` aliases remain available.
+The installer checks the new proxy before removing the old client. It preserves
+port, route, protocol, and installer preferences. It uses the old client's
+installed uninstaller and desktop library, not repository copies.
+See [the migration procedure](RELEASE_AND_PORTAL.md#subscription-links) for
+failure recovery and settings ownership.
+
+## Linux TUN
+
+`sbc` does not support Linux TUN. [M1b](REFACTOR_SPEC.md#m1b-linux-tun) is deferred.
+Android and iOS apps manage their own tunnels and are not affected.
+
+The hosted installer refuses when a legacy TUN unit, transaction marker, or
+unsafe status remains. This check also applies when user-scoped client files
+are missing. It changes no files and performs no download in that case.
+Use the installed legacy client's cleanup tools before installing `sbc`.
+The installer does not remove privileged TUN state automatically.
 
 ## Command help
 

@@ -29,8 +29,8 @@ surrounding context.
 | Inventory, credentials, TLS, config rendering   | [SECRET_HANDLING.md](docs/SECRET_HANDLING.md)                                                                                                                                                                                                                                                         |
 | Release, portal, client configs, traffic stats  | [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md)                                                                                                                                                                                                                                                   |
 | Deploy, provisioning, SSH, server installers    | [VPS_DEPLOYMENT.md](docs/VPS_DEPLOYMENT.md), [REMOTE_DEPLOYMENT.md](docs/REMOTE_DEPLOYMENT.md)                                                                                                                                                                                                        |
-| Bash client for Linux and macOS                 | [README_LINUX.md](docs/README_LINUX.md), [README_MACOS.md](docs/README_MACOS.md)                                                                                                                                                                                                                      |
-| Linux TUN                                       | [TUN_MODE.md](docs/TUN_MODE.md), [README_LINUX.md](docs/README_LINUX.md)                                                                                                                                                                                                                              |
+| Unix installer and legacy migration             | [README_SBC.md](docs/README_SBC.md#unix-installation-and-migration), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#subscription-links)                                                                                                                                                           |
+| Linux TUN                                       | [REFACTOR_SPEC.md](docs/REFACTOR_SPEC.md#m1b-linux-tun), [README_SBC.md](docs/README_SBC.md#linux-tun)                                                                                                                                                                                                |
 | WebRTC browser protection                       | [WEBRTC.md](docs/WEBRTC.md)                                                                                                                                                                                                                                                                           |
 | Windows client, including the hosted installer  | [README_WIN.md](docs/README_WIN.md)                                                                                                                                                                                                                                                                   |
 | Checks, docstale, agent instructions and skills | [DEVELOPMENT.md](docs/DEVELOPMENT.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md)                                                                                                                                                                                                 |
@@ -47,8 +47,9 @@ surrounding context.
   tracked. Keep public PR jobs on GitHub-hosted runners.
 - `sbm release` uses the working tree config as-is. Do not add git-based config
   resets. Every `sbm` operation requires `--config PATH` or exported `SBM_CONFIG`.
-- Preserve authentication, host validation, and download path checks. Shared Unix
-  client scripts must stay bash 3.2 compatible, including code sourced by zsh.
+- Preserve authentication, host validation, and download path checks. The hosted Unix
+  installer must stay POSIX sh compatible. Shared Bash scripts and shell integration
+  must stay bash 3.2 compatible, including code sourced by zsh.
   Windows client scripts must stay Windows PowerShell 5.1 compatible.
 - `sbc` uses Cobra and pflag for its command layer. Keep other client code
   standard-library-only. Build with cgo off.

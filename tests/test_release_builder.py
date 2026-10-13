@@ -15,7 +15,7 @@ import pytest
 from github.GithubException import UnknownObjectException
 
 from sing_box_manager import runtime_env
-from sing_box_manager.config_loader import load_auth_snapshot, load_runtime_inventory
+from sing_box_manager.settings import load_auth_snapshot, load_runtime_inventory
 from sing_box_manager.release import builder as builder_module
 from sing_box_manager.release import packing
 from sing_box_manager.release.artifacts import ReleaseInfo, read_release_info
@@ -89,11 +89,6 @@ def _fixed_release_info(version: str) -> ReleaseInfo:
         date="20260401",
         upstream_version=version,
     )
-
-
-def _write_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _write_pem(path: Path, lines: list[str]) -> None:
@@ -172,207 +167,11 @@ def _write_inventory(
     )
 
 
-def _write_templates(config_repo: Path) -> None:
-    _write_json(
-        config_repo / "templates" / "client" / "trojan-client.json",
-        {
-            "template_marker": "trojan-client-template",
-            "inbounds": [{"type": "mixed", "set_system_proxy": True}],
-            "outbounds": [
-                {
-                    "type": "trojan",
-                    "server": "template-server",
-                    "server_port": 443,
-                    "password": "template-password",
-                    "tls": {
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "client" / "trojan-tun-client.json",
-        {
-            "template_marker": "trojan-tun-client-template",
-            "inbounds": [{"type": "tun"}],
-            "outbounds": [
-                {
-                    "type": "trojan",
-                    "server": "template-server",
-                    "server_port": 443,
-                    "password": "template-password",
-                    "tls": {
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "server" / "trojan-server.json",
-        {
-            "template_marker": "trojan-server-template",
-            "inbounds": [
-                {
-                    "type": "trojan",
-                    "listen_port": 443,
-                    "users": [{"name": "template-user", "password": "template-pass"}],
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-            "outbounds": [{"type": "direct"}],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "client" / "hysteria2-client.json",
-        {
-            "template_marker": "hysteria2-client-template",
-            "inbounds": [{"type": "mixed", "set_system_proxy": True}],
-            "outbounds": [
-                {
-                    "type": "hysteria2",
-                    "server": "template-server",
-                    "server_port": 443,
-                    "password": "template-password",
-                    "obfs": {"type": "salamander", "password": "template-obfs"},
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "client" / "hysteria2-tun-client.json",
-        {
-            "template_marker": "hysteria2-tun-client-template",
-            "inbounds": [{"type": "tun"}],
-            "outbounds": [
-                {
-                    "type": "hysteria2",
-                    "server": "template-server",
-                    "server_port": 443,
-                    "password": "template-password",
-                    "obfs": {"type": "salamander", "password": "template-obfs"},
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "server" / "hysteria2-server.json",
-        {
-            "template_marker": "hysteria2-server-template",
-            "inbounds": [
-                {
-                    "type": "hysteria2",
-                    "listen_port": 443,
-                    "obfs": {"type": "salamander", "password": "template-obfs"},
-                    "users": [{"name": "template-user", "password": "template-pass"}],
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-            "outbounds": [{"type": "direct"}],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "client" / "naive-client.json",
-        {
-            "template_marker": "naive-client-template",
-            "inbounds": [{"type": "mixed", "set_system_proxy": True}],
-            "outbounds": [
-                {
-                    "type": "naive",
-                    "server": "template-server",
-                    "server_port": 443,
-                    "username": "template-user",
-                    "password": "template-password",
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "client" / "naive-tun-client.json",
-        {
-            "template_marker": "naive-tun-client-template",
-            "inbounds": [{"type": "tun"}],
-            "outbounds": [
-                {
-                    "type": "naive",
-                    "server": "template-server",
-                    "server_port": 443,
-                    "username": "template-user",
-                    "password": "template-password",
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-        },
-    )
-    _write_json(
-        config_repo / "templates" / "server" / "naive-server.json",
-        {
-            "template_marker": "naive-server-template",
-            "inbounds": [
-                {
-                    "type": "naive",
-                    "listen_port": 443,
-                    "network": "tcp",
-                    "users": [
-                        {"username": "template-user", "password": "template-pass"}
-                    ],
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "template.example.com",
-                        "key_path": "/tmp/template.key",
-                        "certificate_path": "/tmp/template.crt",
-                    },
-                }
-            ],
-            "outbounds": [{"type": "direct"}],
-        },
-    )
-
-
 def _build_settings(tmp_path: Path) -> Settings:
     config_repo = tmp_path / "config-repo"
     config_repo.mkdir()
     inventory_path = config_repo / "inventory" / "runtime.yaml"
     _write_inventory(inventory_path)
-    _write_templates(config_repo)
 
     return Settings(
         sing_box_version="1.0.0",
@@ -388,16 +187,9 @@ def _build_relative_settings(project_root: Path) -> Settings:
     config_repo.mkdir(parents=True, exist_ok=True)
     inventory_path = config_repo / "inventory" / "runtime.yaml"
     _write_inventory(inventory_path)
-    _write_templates(config_repo)
 
     scripts_dir = project_root / "scripts" / "lib"
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    (project_root / "scripts" / "client-install.sh").write_text(
-        "client install", encoding="utf-8"
-    )
-    (project_root / "scripts" / "client-uninstall.sh").write_text(
-        "client uninstall", encoding="utf-8"
-    )
     (project_root / "scripts" / "server-install.sh").write_text(
         "server install", encoding="utf-8"
     )
@@ -445,7 +237,9 @@ def _seed_upstream(
 
     payload_dir = builder._upstream_payload_dir(platform)
     payload_dir.mkdir(parents=True, exist_ok=True)
-    (payload_dir / binary_name).write_text("binary", encoding="utf-8")
+    binary = payload_dir / binary_name
+    binary.write_text("binary", encoding="utf-8")
+    binary.chmod(0o755)
     return (1, 0)
 
 
@@ -454,17 +248,9 @@ def _linux_platform(extras: list[str] | None = None) -> Platform:
         name="linux-amd64",
         url_filename="sing-box-{version}-linux-amd64.tar.gz",
         client_profiles=(MIXED_PROFILE,),
-        extras=(
-            extras
-            if extras is not None
-            else [
-                "scripts/client-install.sh",
-                "scripts/client-uninstall.sh",
-                "docs/README_LINUX.md",
-                "scripts/setup.sh",
-                "scripts/lib/ui.sh",
-            ]
-        ),
+        # A synthetic mixed archive exercises the generic packing backend.
+        # Current desktop platforms have no per-user archive or shell extras.
+        extras=extras if extras is not None else [],
         protocol_extras={},
     )
 
@@ -654,19 +440,7 @@ def test_build_uses_split_rosters_for_rendered_outputs_and_auth_snapshot(
     builder._release_dir = tmp_path / "releases"
 
     builder_module = __import__("sing_box_manager.release.builder", fromlist=["_"])
-    platform = Platform(
-        name="linux-amd64",
-        url_filename="sing-box-{version}-linux-amd64.tar.gz",
-        client_profiles=(MIXED_PROFILE,),
-        extras=[
-            "scripts/client-install.sh",
-            "scripts/client-uninstall.sh",
-            "docs/README_LINUX.md",
-            "scripts/setup.sh",
-            "scripts/lib/ui.sh",
-        ],
-        protocol_extras={},
-    )
+    platform = _linux_platform()
     monkeypatch.setattr(builder_module, "PLATFORMS", [platform])
     monkeypatch.setattr(builder_module, "PROTOCOLS", _protocols())
 
@@ -721,14 +495,9 @@ def test_build_uses_split_rosters_for_rendered_outputs_and_auth_snapshot(
     bob_members = _list_tar_gz_members(bob_archive)
     trojan_only_members = _list_tar_gz_members(trojan_only_archive)
 
-    assert "sing-box/client-install.sh" in alice_members
-    assert "sing-box/client-uninstall.sh" in alice_members
-    assert "sing-box/setup.sh" in alice_members
     assert "sing-box/client-version" in alice_members
     assert "sing-box/rules/files.txt" in alice_members
     assert "sing-box/rules/" + "a" * 64 + ".srs" in alice_members
-    assert "sing-box/lib/ui.sh" in alice_members
-    assert "sing-box/README_LINUX.md" in alice_members
     assert "sing-box/trojan-client.json" in alice_members
     assert "sing-box/trojan-direct-client.json" in alice_members
     assert "sing-box/trojan-gfw-proxy-client.json" in alice_members
@@ -1619,7 +1388,7 @@ def test_download_binaries_reports_missing_release_asset(
         builder._download_binaries()
 
 
-def test_build_uses_tun_templates_and_only_writes_enabled_protocol_configs(
+def test_build_packs_mobile_profiles_only_for_enabled_protocols(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     settings = _build_settings(tmp_path)
@@ -1844,11 +1613,16 @@ def test_build_writes_release_info_with_upstream_version(
     )
 
 
-def _build_linux_release(settings: Settings, monkeypatch: pytest.MonkeyPatch):
-    """Run a full build against a single-platform fake upstream."""
+def _build_linux_release(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    extras: list[str] | None = None,
+):
+    """Exercise generic archive packing with a synthetic mixed-profile platform."""
     builder = ReleaseBuilder(settings)
     builder_module = __import__("sing_box_manager.release.builder", fromlist=["_"])
-    monkeypatch.setattr(builder_module, "PLATFORMS", [_linux_platform()])
+    monkeypatch.setattr(builder_module, "PLATFORMS", [_linux_platform(extras)])
     monkeypatch.setattr(builder_module, "PROTOCOLS", _protocols())
     monkeypatch.setattr(builder, "_extract_archives", lambda: 0)
     monkeypatch.setattr(
@@ -1871,7 +1645,10 @@ def test_rule_preparation_covers_every_desktop_template_and_route(
         calls.append(rules)
         # Five regional/filter sets plus dedicated Anthropic and broader AI.
         assert len(rules) == 7
-        assert {rule["tag"] for rule in rules.values()} >= {"AI-Anthropic", "AI-Geosite"}
+        assert {rule["tag"] for rule in rules.values()} >= {
+            "AI-Anthropic",
+            "AI-Geosite",
+        }
         assert destination == builder._staging_dir / "rules"
         assert binary == builder._upstream_payload_dir(_linux_platform()) / "sing-box"
         assert token is None
@@ -1998,22 +1775,18 @@ def test_rotating_a_password_reuses_the_shared_payload(
     assert config["outbounds"][0]["password"] == "alice-trojan-rotated-password"
 
 
-def test_editing_a_client_script_moves_the_shared_payload(
+def test_editing_a_packaged_extra_changes_the_shared_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Conversely, a script change must invalidate the shared payload."""
+    """A changed extra invalidates its prefix without editing repository source."""
     settings = _build_settings(tmp_path)
-    first = _build_linux_release(settings, monkeypatch)
+    extra = tmp_path / "fixture.txt"
+    extra.write_text("first payload\n")
+    first = _build_linux_release(settings, monkeypatch, extras=[str(extra)])
     first_prefix = next(iter(_release_manifest(first.release_dir).prefixes))
 
-    builder = ReleaseBuilder(settings)
-    script = builder._root_dir / "scripts" / "client-install.sh"
-    original = script.read_bytes()
-    try:
-        script.write_bytes(original + b"\n# a change\n")
-        second = _build_linux_release(settings, monkeypatch)
-    finally:
-        script.write_bytes(original)
+    extra.write_text("second payload\n")
+    second = _build_linux_release(settings, monkeypatch, extras=[str(extra)])
 
     second_prefix = next(iter(_release_manifest(second.release_dir).prefixes))
     assert second_prefix.prefix_id != first_prefix.prefix_id
@@ -2055,6 +1828,6 @@ def test_archive_modes_survive_a_hostile_umask(
     with tarfile.open(fileobj=BytesIO(archive), mode="r:gz") as opened:
         modes = {member.name: member.mode for member in opened.getmembers()}
 
-    assert modes["sing-box/client-install.sh"] == 0o755
+    assert modes["sing-box/sing-box"] == 0o755
     assert modes["sing-box/trojan-client.json"] == 0o644
     assert modes["sing-box/default-protocol"] == 0o644
