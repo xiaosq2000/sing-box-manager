@@ -150,9 +150,10 @@ Fish is outside this scope.
 Completion suggests commands, command-specific long flags such as `--ai`, and
 fixed values such as `on` and `off`. Choice-valued flags support both
 `--flag value` and `--flag=value`. Boolean flags do not suggest values.
-Zsh shows brief route descriptions. PowerShell uses descriptions as tooltips.
-Standard Bash completion inserts names only. The same route descriptions appear
-in `sbc route --help` and `sbc route --list`.
+Zsh shows brief route descriptions. PowerShell shows descriptions in tooltips or
+a Bash-like list, depending on its completion mode. Standard Bash completion inserts
+names only. The same route descriptions appear in `sbc route --help` and
+`sbc route --list`.
 
 Completion never performs an IP or AI check.
 It reads route and protocol names from the installed config, including values for
@@ -203,6 +204,15 @@ For persistent completion, add that line to the `$PROFILE` file for each
 PowerShell host and version you use. Windows PowerShell 5.1 and PowerShell 7
 can use different profile files. The installer does not edit these profiles or
 change execution policy. Completion supports both `sbc` and `sbc.exe`.
+
+PowerShell completion follows the PSReadLine Tab mode. `TabCompleteNext` cycles
+through names. `Complete` shows a Bash-like list with descriptions when several
+choices match. `MenuComplete` shows a menu with a description for the selected
+choice. To select the menu mode:
+
+```powershell
+Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+```
 
 This does not apply proxy variables to an existing PowerShell session. For that,
 use `sbc env | Invoke-Expression`, as described in the

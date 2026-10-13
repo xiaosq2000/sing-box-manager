@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -156,8 +157,35 @@ type browserWebRTCResult struct {
 	Error      string   `json:"error"`
 }
 
+// Only a timeout before the test page loads permits a fresh startup attempt.
+// An ICE error, a privacy failure, an early exit or failed cleanup never does.
+type browserStartupTimeout struct{ error }
+
+func retryBrowserStartup(attempt func() (browserWebRTCResult, error), log func(string, ...any)) (browserWebRTCResult, error) {
+	result, err := attempt()
+	if _, ok := err.(*browserStartupTimeout); !ok {
+		return result, err
+	}
+	log("Restarting the disposable browser once after a startup timeout:\n%v", err)
+	return attempt()
+}
+
 func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult {
 	t.Helper()
+	result, err := retryBrowserStartup(func() (browserWebRTCResult, error) {
+		return browserWebRTCAttempt(t, browser, stunURL, browserWebRTCCommand, time.Minute)
+	}, t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func browserWebRTCAttempt(t *testing.T, browser, stunURL string, newCommand func(string, string, string) *exec.Cmd, timeout time.Duration) (result browserWebRTCResult, err error) {
+	t.Helper()
+	// A root request or a late request from another attempt is not this probe.
+	pagePath := "/probe/" + rand.Text()
+	resultPath := pagePath + "/result"
 	page := fmt.Sprintf(`<!doctype html><meta charset="utf-8"><script>
 (async () => {
   const result = {started: false, complete: false, candidates: [], error: ""};
@@ -185,19 +213,19 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
     clearTimeout(timer);
     if (peer) peer.close();
   }
-  await fetch("/result", {method: "POST", body: JSON.stringify(result)});
+  await fetch(%s, {method: "POST", body: JSON.stringify(result)});
 })();
-</script>`, strconv.Quote(stunURL))
+</script>`, strconv.Quote(stunURL), strconv.Quote(resultPath))
 	results := make(chan browserWebRTCResult, 1)
 	var pageRequested atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/":
+		case r.Method == http.MethodGet && r.URL.Path == pagePath:
 			pageRequested.Store(true)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			fmt.Fprint(w, page)
-		case r.Method == http.MethodPost && r.URL.Path == "/result":
+		case r.Method == http.MethodPost && r.URL.Path == resultPath:
 			var result browserWebRTCResult
 			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&result); err != nil {
 				http.Error(w, "invalid probe result", http.StatusBadRequest)
@@ -213,11 +241,11 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 		}
 	}))
 	defer server.Close()
-	command := browserWebRTCCommand(browser, t.TempDir(), server.URL)
+	command := newCommand(browser, t.TempDir(), server.URL+pagePath)
 	var output browserOutput
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {
-		t.Fatal(err)
+		return result, err
 	}
 	done := make(chan struct{})
 	var exitErr error
@@ -226,35 +254,53 @@ func runBrowserWebRTC(t *testing.T, browser, stunURL string) browserWebRTCResult
 		close(done)
 	}()
 	defer func() {
-		select {
-		case <-done:
-			return
-		default:
+		// Stop this attempt before any retry.
+		if stopErr := stopAndWaitForBrowser(command, done); stopErr != nil {
+			err = fmt.Errorf("stop disposable browser process tree: %w (probe error: %v)", stopErr, err)
 		}
-		// Kill only this browser's process tree, never other browser instances.
-		if err := stopBrowserProcess(command); err != nil {
-			select {
-			case <-done:
-				return
-			default:
-				t.Errorf("stop disposable browser process tree: %v", err)
-			}
-		}
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			t.Error("disposable browser did not exit after termination")
+		// The page can arrive between the timeout and process termination.
+		// Do not retry a probe that started during that interval.
+		if _, startupTimeout := err.(*browserStartupTimeout); startupTimeout && pageRequested.Load() {
+			err = fmt.Errorf("%v (page requested during shutdown)", err)
 		}
 	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case result := <-results:
-		return result
+		return result, nil
 	case <-done:
-		t.Fatalf("Browser %s exited before the WebRTC result (page requested=%t): %v\n%s", browser, pageRequested.Load(), exitErr, output.String())
-	case <-time.After(60 * time.Second):
-		t.Fatalf("Browser %s did not report the local WebRTC result within 60 seconds (page requested=%t)\n%s", browser, pageRequested.Load(), output.String())
+		return result, fmt.Errorf("Browser %s exited before the WebRTC result (page requested=%t): %v\n%s", browser, pageRequested.Load(), exitErr, output.String())
+	case <-timer.C:
+		err = fmt.Errorf("Browser %s did not report the local WebRTC result within %s (page requested=%t)\n%s", browser, timeout, pageRequested.Load(), output.String())
+		if !pageRequested.Load() {
+			err = &browserStartupTimeout{err}
+		}
+		return result, err
 	}
-	return browserWebRTCResult{}
+}
+
+func stopAndWaitForBrowser(command *exec.Cmd, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	default:
+	}
+	// Kill only this browser's process tree, never other browser instances.
+	if err := stopBrowserProcess(command); err != nil {
+		select {
+		case <-done:
+			return nil
+		default:
+			return err
+		}
+	}
+	select {
+	case <-done:
+		return nil
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("disposable browser did not exit after termination")
+	}
 }
 
 // This fixture-only check needs neither Windows nor SBC_E2E=1. It checks the
