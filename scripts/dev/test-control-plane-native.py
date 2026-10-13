@@ -18,7 +18,8 @@ SOURCE = Path(__file__).resolve().parents[2]
 
 
 def command(value: str) -> None:
-    subprocess.run(["bash", "-eu", "-c", value], check=True)
+    # Match the root shell used by the real SSH transport, including redirection.
+    subprocess.run(["sudo", "bash", "-eu", "-c", value], check=True)
 
 
 def local_ssh(_hostname, value, _error, *, dry_run=False):

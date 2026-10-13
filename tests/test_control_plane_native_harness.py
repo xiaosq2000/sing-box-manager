@@ -27,6 +27,17 @@ def test_native_harness_refuses_non_ci_execution(harness, monkeypatch):
         harness.main()
 
 
+def test_native_transport_uses_root_shell_for_input_redirection(harness, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        harness.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs))
+    )
+    harness.command("cat < /private/fixture.sql")
+    assert calls == [
+        (["sudo", "bash", "-eu", "-c", "cat < /private/fixture.sql"], {"check": True})
+    ]
+
+
 def test_native_harness_keeps_all_host_commands_local(harness, monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("SBM_CP_NATIVE_E2E", "1")
