@@ -12,6 +12,7 @@ on:
       - "cmd/**"
       - "internal/**"
       - "go.mod"
+      - "go.sum"
       - "sing_box_manager/web/client/install.sh"
       - "sing_box_manager/web/client/install.ps1"
       - "scripts/dev/test-install-ps1.ps1"
@@ -23,6 +24,7 @@ on:
       - "cmd/**"
       - "internal/**"
       - "go.mod"
+      - "go.sum"
       - "sing_box_manager/web/client/install.sh"
       - "sing_box_manager/web/client/install.ps1"
       - "scripts/dev/test-install-ps1.ps1"
@@ -52,9 +54,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-          # sbc has no module dependencies, so there is no go.sum to key a
-          # cache on.
-          cache: false
+          cache: true
       - run: go vet ./...
       - run: go test ./...
       # The unit tests stand sing-box in with shell scripts, so Windows gets
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - name: Start a systemd user manager
         if: runner.os == 'Linux'
         run: |
@@ -109,6 +109,9 @@ jobs:
       - name: Test Windows settings with a disposable registry key
         if: runner.os == 'Windows'
         run: go test -count=1 ./internal/winsettings ./internal/desktop ./internal/powershell
+      - name: Test CLI help, validation and native PowerShell completion
+        if: runner.os == 'Windows'
+        run: go test -count=1 ./internal/cli -run 'Test(CommandHelp|CLIValidation|Completion)'
       - name: Test bootstrapper fixtures on Windows PowerShell 5.1
         if: runner.os == 'Windows'
         shell: powershell

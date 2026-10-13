@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-12.
+Checked on 2026-10-13.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -57,8 +57,10 @@ and the full Python and Go test suites. Inspect the resulting diff and keep
 unrelated formatting out of a focused change. For a Markdown edit, formatting just
 the edited paths with `pixi run prettier --write PATH...` is sufficient.
 
-`sbc`, in `cmd/sbc` and `internal/`, uses only the Go standard library. Its
-`internal/singbox` and `internal/api` tests run the fetched sing-box and skip without
+`sbc`, in `cmd/sbc` and `internal/`, uses Cobra and pflag for commands, help,
+validation, and completion. Other client code uses the Go standard library.
+`go.mod` and `go.sum` pin CLI dependencies. No Viper settings layer is used.
+Its `internal/singbox` and `internal/api` tests run the fetched sing-box and skip without
 it, and its install tests serve a signed release from a local test server. The
 `internal/desktop` and `internal/docker` tests run fake `gsettings`, `networksetup`
 and `sudo`, and the command tests replace both, so no test reads or changes the
@@ -149,6 +151,20 @@ checks that do not launch a browser or change host settings:
 
 ```sh
 pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput)$' -count=1
+```
+
+CLI help and argument-validation fixtures reject calls to installation lookup
+or stdin. Completion fixtures read only a scratch config and use no running proxy.
+Native completion tests build a temporary `sbc` and use isolated homes and profiles.
+Bash tests cover bare-shell fallback, split equals signs, cursor position, and
+interactive-only activation. The macOS job also tests `/bin/bash` for Bash 3.2.
+Zsh tests use its completion parser with a stand-in display function.
+PowerShell tests use native `CommandCompletion` on each available PowerShell
+version. They run in the Windows job under PowerShell 5.1 and 7 and skip locally
+when neither executable is available:
+
+```sh
+pixi run go test ./internal/cli -run 'Test(CommandHelp|CLIValidation|Completion)' -count=1 -v
 ```
 
 Windows restores the runner's registry settings even after a failure.

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -86,12 +85,7 @@ type timing struct {
 // runSpeed times a small page through the protocol in use with sing-box's
 // delay test, or with --download, measures how fast it downloads. --all tests
 // every protocol instead. Neither switches the protocol in use.
-func runSpeed(env Env, args []string) int {
-	options, ok := parseSpeedFlags(args)
-	if !ok {
-		fmt.Fprintf(env.Stderr, i18n.T("sbc: speed takes --all, and --download with an optional size from 1 to %d MB\n"), maxMegabytes)
-		return 2
-	}
+func runSpeed(env Env, options speedOptions) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -176,29 +170,6 @@ type speedOptions struct {
 	// megabytes, when above zero, asks for a download of that size instead
 	// of the latency test.
 	megabytes int
-}
-
-func parseSpeedFlags(args []string) (speedOptions, bool) {
-	var options speedOptions
-	for index := 0; index < len(args); index++ {
-		switch {
-		case args[index] == "--all" && !options.all:
-			options.all = true
-		case args[index] == "--download" && options.megabytes == 0:
-			options.megabytes = defaultMegabytes
-			if index+1 < len(args) && !strings.HasPrefix(args[index+1], "-") {
-				index++
-				size, err := strconv.Atoi(args[index])
-				if err != nil || size < 1 || size > maxMegabytes {
-					return speedOptions{}, false
-				}
-				options.megabytes = size
-			}
-		default:
-			return speedOptions{}, false
-		}
-	}
-	return options, true
 }
 
 const (

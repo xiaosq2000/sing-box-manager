@@ -34,20 +34,28 @@ harness = [
   "tests/test_powershell_compat.py",
   "tests/test_sing_box_114.py",
 ]
+sbc = [
+  "go.mod",
+  "go.sum",
+  "cmd/sbc/",
+  "internal/cli/",
+  "internal/shell/",
+  "internal/i18n/",
+]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 tun = ["scripts/lib/tun.sh"]
 
 [documents]
 "README.md" = [
   "@cli",
-  "go.mod",
+  "@sbc",
   "sing_box_manager/settings.py",
   "sing_box_manager/release/",
 ]
 
-"AGENTS.md" = ["@cli", "@harness"]
+"AGENTS.md" = ["@cli", "@harness", "@sbc"]
 
-"CONTRIBUTING.md" = ["@cli", "@harness", ".pre-commit-config.yaml"]
+"CONTRIBUTING.md" = ["@cli", "@harness", "@sbc", ".pre-commit-config.yaml"]
 
 "SECURITY.md" = ["@harness", ".sops.example.yaml"]
 
@@ -62,7 +70,7 @@ tun = ["scripts/lib/tun.sh"]
   "tests/test_m3_runtime.py",
   "tests/test_server_install.py",
   "tests/fetch_sing_box.py",
-  "go.mod",
+  "@sbc",
   "cmd/",
   "internal/",
 ]
@@ -109,6 +117,8 @@ tun = ["scripts/lib/tun.sh"]
   "scripts/setup.sh",
   "sing_box_manager/release/profiles.py",
 ]
+
+"docs/README_SBC.md" = ["@sbc"]
 
 "docs/README_WIN.md" = [
   "internal/cli/",

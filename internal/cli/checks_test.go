@@ -174,10 +174,21 @@ func TestSpeedDownloadTakesASizeAndSuggestsNoSwitchForASmallGain(t *testing.T) {
 
 func TestSpeedDownloadSaysWhatItNeeds(t *testing.T) {
 	h := newHarness(t)
-	for _, args := range [][]string{{"--download", "0"}, {"--download", "100"}, {"--download", "5", "6"}, {"--download", "-5"}, {"--all", "--all"}, {"--download", "--download"}, {"--upload"}} {
+	for _, entry := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--download", "0"}, "an optional size from 1 to 99 MB"},
+		{[]string{"--download", "100"}, "an optional size from 1 to 99 MB"},
+		{[]string{"--download", "5", "6"}, "an optional size from 1 to 99 MB"},
+		{[]string{"--download", "-5"}, "unknown flag"},
+		{[]string{"--all", "--all"}, "flag --all must not be repeated"},
+		{[]string{"--download", "--download"}, "flag --download must not be repeated"},
+		{[]string{"--upload"}, "unknown flag"},
+	} {
 		h.errOut.Reset()
-		if code := Run(h.env, append([]string{"speed"}, args...)); code != 2 || !strings.Contains(h.errOut.String(), "an optional size from 1 to 99 MB") {
-			t.Errorf("%q: code %d, %s", args, code, h.errOut)
+		if code := Run(h.env, append([]string{"speed"}, entry.args...)); code != 2 || !strings.Contains(h.errOut.String(), entry.want) {
+			t.Errorf("%q: code %d, %s", entry.args, code, h.errOut)
 		}
 	}
 

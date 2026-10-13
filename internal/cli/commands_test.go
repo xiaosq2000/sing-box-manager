@@ -501,18 +501,25 @@ func TestInstallAddsOneRCBlockThatRunsInit(t *testing.T) {
 }
 
 func TestInstallFlags(t *testing.T) {
-	options, err := parseInstallFlags([]string{"--shell", "zsh", "--no-rc", "--auth", "on", "--route", "gfw", "--protocol", "naive"})
-	if err != nil || options != (installOptions{shell: "zsh", noRC: true, auth: install.AuthOn, route: "gfw", protocol: "naive"}) {
-		t.Errorf("got %+v, %v", options, err)
+	h := newHarness(t)
+	exit := 0
+	root := newCommand(h.env, &exit)
+	cmd, _, _ := root.Find([]string{"install"})
+	if err := cmd.ParseFlags([]string{"--shell", "zsh", "--no-rc", "--auth", "on", "--route", "gfw", "--protocol", "naive"}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := parseInstallFlags([]string{"--auth", "maybe"}); err == nil {
-		t.Error("--auth maybe was accepted")
+	if err := cmd.ValidateArgs(cmd.Flags().Args()); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := parseInstallFlags([]string{"--shell", "fish"}); err == nil {
-		t.Error("fish was accepted")
+	for name, want := range map[string]string{"shell": "zsh", "auth": "on", "route": "gfw", "protocol": "naive", "no-rc": "true"} {
+		if got := cmd.Flags().Lookup(name).Value.String(); got != want {
+			t.Errorf("--%s: got %q, want %q", name, got, want)
+		}
 	}
-	if _, err := parseInstallFlags([]string{"https://vpn.example.com/sub/abcdefghijklmnopqrstuv"}); err == nil {
-		t.Error("a link as an argument was accepted; it belongs on standard input")
+	for _, args := range [][]string{{"--auth", "maybe"}, {"--shell", "fish"}, {"https://vpn.example.com/sub/abcdefghijklmnopqrstuv"}} {
+		if code := Run(h.env, append([]string{"install"}, args...)); code != 2 {
+			t.Errorf("invalid install arguments %v: code %d", args, code)
+		}
 	}
 }
 
