@@ -92,7 +92,7 @@ def main() -> None:
         "sudo",
         "env",
         *[item for name in proxy_names for item in ("-u", name)],
-        f"XDG_CACHE_HOME={Path.home() / '.cache'}",
+        "XDG_CACHE_HOME=/var/cache/sbm-control-plane-smoke",
         pixi,
         "install",
         "--locked",
