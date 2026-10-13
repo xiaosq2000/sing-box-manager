@@ -4,6 +4,16 @@
     "optimistic": false,
     "rules": [
       {
+        "clash_mode": "direct",
+        "server": "system"
+      },
+      {
+        "clash_mode": "ai-only",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "system"
+      },
+      {
         "clash_mode": "ai",
         "domain": ["vpn.example.com"],
         "domain_suffix": ["portal.example.net"],
@@ -19,9 +29,19 @@
         "server": "google"
       },
       {
+        "clash_mode": "china-direct",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
         "clash_mode": "china",
         "rule_set": ["GFWList"],
         "server": "google"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
       },
       {
         "clash_mode": "china",
@@ -29,7 +49,16 @@
         "server": "aliyun"
       },
       {
+        "clash_mode": "china-direct",
+        "server": "google"
+      },
+      {
         "clash_mode": "china",
+        "server": "google"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "rule_set": ["GFWList"],
         "server": "google"
       },
       {
@@ -38,8 +67,16 @@
         "server": "google"
       },
       {
+        "clash_mode": "gfw-proxy",
+        "server": "aliyun"
+      },
+      {
         "clash_mode": "gfw",
         "server": "aliyun"
+      },
+      {
+        "clash_mode": "ai-only",
+        "server": "system"
       },
       {
         "clash_mode": "ai",
@@ -76,7 +113,7 @@
       "store_dns": true
     },
     "clash_api": {
-      "default_mode": "china"
+      "default_mode": "china-direct"
     }
   },
   "http_clients": [
@@ -283,7 +320,19 @@
         "type": "logical"
       },
       {
+        "clash_mode": "ai-only",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
         "clash_mode": "ai",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "direct",
         "domain": ["vpn.example.com"],
         "domain_suffix": ["portal.example.net"],
         "outbound": "direct-system"
@@ -294,6 +343,20 @@
         "outbound": "direct"
       },
       {
+        "clash_mode": "direct",
+        "outbound": "direct-system",
+        "rule_set": ["AI-Anthropic", "AI-Geosite"]
+      },
+      {
+        "action": "reject",
+        "clash_mode": "direct",
+        "rule_set": ["AdGuard-DNS-Filter"]
+      },
+      {
+        "clash_mode": "direct",
+        "outbound": "direct-system"
+      },
+      {
         "outbound": "proxy",
         "rule_set": ["AI-Anthropic", "AI-Geosite"]
       },
@@ -302,9 +365,19 @@
         "rule_set": ["AdGuard-DNS-Filter"]
       },
       {
+        "clash_mode": "china-direct",
+        "outbound": "proxy",
+        "rule_set": ["GFWList"]
+      },
+      {
         "clash_mode": "china",
         "outbound": "proxy",
         "rule_set": ["GFWList"]
+      },
+      {
+        "clash_mode": "china-direct",
+        "outbound": "direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"]
       },
       {
         "clash_mode": "china",
@@ -312,13 +385,27 @@
         "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"]
       },
       {
-        "clash_mode": "china",
+        "clash_mode": "china-direct",
         "outbound": "direct",
         "rule_set": ["GeoIP-CN"]
       },
       {
         "clash_mode": "china",
+        "outbound": "direct",
+        "rule_set": ["GeoIP-CN"]
+      },
+      {
+        "clash_mode": "china-direct",
         "outbound": "proxy"
+      },
+      {
+        "clash_mode": "china",
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "outbound": "proxy",
+        "rule_set": ["GFWList"]
       },
       {
         "clash_mode": "gfw",
@@ -326,8 +413,16 @@
         "rule_set": ["GFWList"]
       },
       {
+        "clash_mode": "gfw-proxy",
+        "outbound": "direct"
+      },
+      {
         "clash_mode": "gfw",
         "outbound": "direct"
+      },
+      {
+        "clash_mode": "ai-only",
+        "outbound": "direct-system"
       },
       {
         "clash_mode": "ai",

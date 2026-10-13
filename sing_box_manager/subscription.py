@@ -24,7 +24,7 @@ from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
 from sing_box_manager.settings import RuntimeInventory, Settings, load_runtime_inventory
 
 ENVELOPE_VERSION = 1
-DEFAULT_ROUTE = "china"
+DEFAULT_ROUTE = "china-direct"
 PROTOCOLS = ("trojan", "hysteria2", "naive")
 # 128 bits, which base64url writes as 22 characters.
 TOKEN_BYTES = 16

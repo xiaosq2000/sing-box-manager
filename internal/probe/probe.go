@@ -5,9 +5,11 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -23,9 +25,10 @@ import (
 
 // Sites are the pages 'sbc ip' asks. Tests point them at a local server.
 type Sites struct {
-	// Gemini is Gemini's start page. The AI rule set covers it, so every
-	// route sends it through the proxy.
-	Gemini string
+	// AI checks use public endpoints without account credentials.
+	Gemini  string
+	ChatGPT string
+	Claude  string
 	// Abroad answers with the address a foreign site sees, and China with the
 	// address a Chinese site sees.
 	Abroad string
@@ -39,6 +42,8 @@ type Sites struct {
 // 99,999,999 bytes at a time.
 var DefaultSites = Sites{
 	Gemini:   "https://gemini.google.com/",
+	ChatGPT:  "https://chatgpt.com/cdn-cgi/trace",
+	Claude:   "https://claude.ai/",
 	Abroad:   "https://ipinfo.io/json",
 	China:    "http://cip.cc/",
 	Download: "https://speed.cloudflare.com/__down",
@@ -115,11 +120,61 @@ func GeminiRegion(client *http.Client, page string) (string, error) {
 	return string(match[1]), nil
 }
 
-// geminiAbsent holds the regions near sbc's users that Gemini does not serve.
-var geminiAbsent = map[string]bool{"CHN": true, "HKG": true, "MAC": true}
+// AIClient makes one fresh request per check. It has no cookie jar and never
+// follows redirects, which can change the destination's routing or sign-in state.
+func AIClient(port int, username, password string, timeout time.Duration) *http.Client {
+	client := Client(port, username, password, timeout)
+	client.Transport.(*http.Transport).DisableKeepAlives = true
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	return client
+}
 
-// GeminiServes reports whether Gemini serves region, as far as sbc knows.
-func GeminiServes(region string) bool { return !geminiAbsent[region] }
+// AI reports public-page reachability, not service availability or account
+// eligibility. Only Gemini's page and ChatGPT's edge trace can supply a region.
+func AI(client *http.Client, provider, page string) (string, error) {
+	request, err := http.NewRequest(http.MethodGet, page, nil)
+	if err != nil {
+		return "", err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", explain(err, client.Timeout)
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		return fmt.Sprintf(i18n.T("HTTP %d (redirect not followed), region unknown"), response.StatusCode), nil
+	}
+	if response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusUnauthorized {
+		return fmt.Sprintf(i18n.T("HTTP %d (denied or challenged), region unknown"), response.StatusCode), nil
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", i18n.Errorf("the site answered %s", response.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxPage))
+	if err != nil {
+		return "", explain(err, client.Timeout)
+	}
+	if bytes.Contains(body, []byte("cf-chl-")) || bytes.Contains(body, []byte("Just a moment...")) {
+		return i18n.T("challenge received, region unknown"), nil
+	}
+	switch provider {
+	case "gemini":
+		if match := geminiRegion.FindSubmatch(body); match != nil {
+			return fmt.Sprintf(i18n.T("page reachable, reported region %s"), match[1]), nil
+		}
+	case "chatgpt":
+		fields := map[string]string{}
+		for _, line := range strings.Split(string(body), "\n") {
+			if key, value, ok := strings.Cut(line, "="); ok {
+				fields[key] = strings.TrimSpace(value)
+			}
+		}
+		if net.ParseIP(fields["ip"]) != nil && regexp.MustCompile(`^[A-Z]{2}$`).MatchString(fields["loc"]) {
+			return fmt.Sprintf(i18n.T("edge country %s, IP %s (not service eligibility)"), fields["loc"], fields["ip"]), nil
+		}
+	}
+	return i18n.T("page reachable, region unknown (not service eligibility)"), nil
+}
 
 // Place is where a site places the visitor.
 type Place struct {

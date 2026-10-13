@@ -89,13 +89,13 @@ func TestModesSwitchAndRejectUnknownNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mode != "china" || strings.Join(modes, ",") != "china,gfw" {
+	if mode != "china-direct" || strings.Join(modes, ",") != "china-direct,gfw-proxy" {
 		t.Fatalf("mode %q of %v", mode, modes)
 	}
 	if err := client.SetMode("gfw"); err != nil {
 		t.Fatal(err)
 	}
-	if mode, _, _ := client.Modes(); mode != "gfw" {
+	if mode, _, _ := client.Modes(); mode != "gfw-proxy" {
 		t.Errorf("mode %q after switching", mode)
 	}
 	if err := client.SetMode("cn"); err == nil || !strings.Contains(err.Error(), `unknown route "cn"`) {

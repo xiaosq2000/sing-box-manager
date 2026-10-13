@@ -6,6 +6,7 @@ import copy
 import ipaddress
 from pathlib import Path
 
+from sing_box_manager.release.platforms import ROUTE_STRATEGIES, canonical_route
 from sing_box_manager.release.rule_sets import snapshot_filename
 from sing_box_manager.settings import (
     AuthSnapshot,
@@ -166,11 +167,11 @@ def apply_desktop_route_strategy(
 ) -> dict:
     """Apply one persistent desktop mixed-mode routing and DNS strategy.
 
-    `os_name` picks the system resolver the ai route sends direct traffic to,
-    which is the one part of a strategy that cannot be written the same way for
-    every platform. See `system_dns_server`.
+    `os_name` selects the system resolver for ai-only and direct. Its transport
+    depends on the platform. See `system_dns_server`.
     """
-    if strategy not in {"china", "gfw", "ai", "global"}:
+    strategy = canonical_route(strategy)
+    if strategy not in ROUTE_STRATEGIES:
         raise ValueError(f"Unsupported route strategy: {strategy}")
     if os_name not in SUPPORTED_CLIENT_OS:
         raise ValueError(f"Unsupported client OS: {os_name}")
@@ -199,27 +200,36 @@ def apply_desktop_route_strategy(
 
     ai_tags = list(AI_RULE_SET_URLS)
     ai_sets = ai_rule_sets(bundled=True)
-    direct_resolver = "system" if strategy == "ai" else "aliyun"
+    direct_resolver = "system" if strategy in {"ai-only", "direct"} else "aliyun"
     dns["servers"] = [
         {"detour": "proxy", "server": "8.8.8.8", "tag": "google", "type": "tls"},
         system_dns_server(os_name)
-        if strategy == "ai"
+        if strategy in {"ai-only", "direct"}
         else {"server": "223.5.5.5", "tag": "aliyun", "type": "udp"},
     ]
-    dns["rules"] = [{"rule_set": ai_tags, "server": "google"}]
-    route["rules"] = _desktop_common_rules([{"outbound": "proxy", "rule_set": ai_tags}])
+    dns["rules"] = (
+        [] if strategy == "direct" else [{"rule_set": ai_tags, "server": "google"}]
+    )
+    route["rules"] = _desktop_common_rules(
+        [
+            {
+                "outbound": "direct" if strategy == "direct" else "proxy",
+                "rule_set": ai_tags,
+            }
+        ]
+    )
     regional_sets = route.get("rule_set", [])
     route["rule_set"] = [_adguard_rule_set(route), *ai_sets]
-    if strategy in {"china", "gfw"}:
+    if strategy in {"china-direct", "gfw-proxy"}:
         tags = (
             {"GFWList", "GeoSite-CN", "GeoSite-Apple-CN", "GeoIP-CN"}
-            if strategy == "china"
+            if strategy == "china-direct"
             else {"GFWList"}
         )
         route["rule_set"].extend(rule for rule in regional_sets if rule["tag"] in tags)
         dns["rules"].append({"rule_set": ["GFWList"], "server": "google"})
         route["rules"].append({"outbound": "proxy", "rule_set": ["GFWList"]})
-    if strategy == "china":
+    if strategy == "china-direct":
         dns["rules"].append(
             {"rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"], "server": "aliyun"}
         )
@@ -229,8 +239,12 @@ def apply_desktop_route_strategy(
                 {"outbound": "direct", "rule_set": ["GeoIP-CN"]},
             ]
         )
-    dns["final"] = direct_resolver if strategy in {"ai", "gfw"} else "google"
-    route["final"] = "direct" if strategy in {"ai", "gfw"} else "proxy"
+    dns["final"] = (
+        direct_resolver if strategy in {"ai-only", "gfw-proxy", "direct"} else "google"
+    )
+    route["final"] = (
+        "direct" if strategy in {"ai-only", "gfw-proxy", "direct"} else "proxy"
+    )
     configured.setdefault("ntp", {})["detour"] = route["final"]
     _set_outbound_resolver(configured, "direct", direct_resolver)
 
@@ -248,7 +262,7 @@ def apply_desktop_route_strategy(
         if any(key in rule for key in ("domain", "domain_suffix"))
         and rule.get("server") in {"aliyun", "system"}
     ]
-    dns["rules"][0:0] = dns_exceptions
+    dns["rules"][0:0] = [] if strategy == "direct" else dns_exceptions
     return configured
 
 

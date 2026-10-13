@@ -72,11 +72,25 @@ def test_profile_builder_emits_the_correct_inbound(protocol: str, profile) -> No
     )
 
 
-@pytest.mark.parametrize("route", ["china", "gfw", "ai", "global"])
+@pytest.mark.parametrize(
+    "route", ["direct", "china-direct", "gfw-proxy", "ai-only", "global"]
+)
 def test_route_filenames(route: str) -> None:
     assert route_client_config_filename("trojan", route) == (
-        "trojan-client.json" if route == "china" else f"trojan-{route}-client.json"
+        "trojan-client.json"
+        if route == "china-direct"
+        else f"trojan-{route}-client.json"
     )
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    [("china", "china-direct"), ("gfw", "gfw-proxy"), ("ai", "ai-only")],
+)
+def test_legacy_route_filenames(alias: str, canonical: str) -> None:
+    assert route_client_config_filename(
+        "trojan", alias
+    ) == route_client_config_filename("trojan", canonical)
 
 
 def test_unknown_route_is_rejected() -> None:

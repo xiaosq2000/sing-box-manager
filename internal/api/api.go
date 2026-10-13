@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
+	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 )
 
 // ProxySelector is the selector that holds the protocols.
@@ -81,6 +82,11 @@ func (c *Client) callWith(client *http.Client, method, path string, body, out an
 
 // Modes returns the current route mode and every mode the config offers.
 func (c *Client) Modes() (string, []string, error) {
+	mode, modes, err := c.rawModes()
+	return routes.Canonical(mode), routes.Names(modes), err
+}
+
+func (c *Client) rawModes() (string, []string, error) {
 	var config struct {
 		Mode     string   `json:"mode"`
 		ModeList []string `json:"mode-list"`
@@ -92,14 +98,21 @@ func (c *Client) Modes() (string, []string, error) {
 // SetMode switches the route. sing-box ignores a mode it does not have, so
 // this checks the list first.
 func (c *Client) SetMode(mode string) error {
-	_, modes, err := c.Modes()
+	_, modes, err := c.rawModes()
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(modes, mode) {
-		return i18n.Errorf("unknown route %q; choose one of %s", mode, strings.Join(modes, ", "))
+	canonical := routes.Canonical(mode)
+	if slices.Contains(modes, canonical) {
+		return c.call(http.MethodPatch, "/configs", map[string]string{"mode": canonical}, nil)
 	}
-	return c.call(http.MethodPatch, "/configs", map[string]string{"mode": mode}, nil)
+	// An upgraded client can still switch an older installed config.
+	for _, candidate := range modes {
+		if routes.Canonical(candidate) == canonical {
+			return c.call(http.MethodPatch, "/configs", map[string]string{"mode": candidate}, nil)
+		}
+	}
+	return i18n.Errorf("unknown route %q; choose one of %s", mode, strings.Join(routes.Names(modes), ", "))
 }
 
 // Selected returns the selector's current choice and its options.

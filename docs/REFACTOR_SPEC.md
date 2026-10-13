@@ -99,9 +99,10 @@ plane stores hashed. Binaries for sing-box and `sbc`, rule-set snapshots and the
 signed manifest are served under the subscription path, so no public page identifies
 the host.
 
-Route strategies stay `china`, `gfw`, `ai` and `global`. Traffic on the `ai` route
-always leaves through one fixed node, because AI vendors reject sessions whose
-egress IP changes.
+Route strategies are `direct`, `ai-only`, `gfw-proxy`, `china-direct` and `global`.
+`ai`, `gfw` and `china` remain aliases for saved selections and existing commands.
+The default is `china-direct`. In M6, proxied AI traffic uses one fixed node to
+avoid automatic egress changes. This does not guarantee provider acceptance.
 
 ### Security properties
 
@@ -133,7 +134,7 @@ current location.
 | TLS                | Use an ECDSA or RSA certificate, not Ed25519, for Chrome QUIC parroting. Restart sing-box after renewal                                                                                                                                                                                                                                             | `docs/SECRET_HANDLING.md`, `provision.py`            |
 | Client configs     | Ship rule snapshots through `initial_path` so the first start works when rule downloads fail                                                                                                                                                                                                                                                        | `release/rule_sets.py`, `release/renderers.py`       |
 | Client configs     | `sing-box check` doesn't prove DNS works. Probe with `sing-box tools fetch` against a temporary cache directory                                                                                                                                                                                                                                     | `scripts/setup.sh` near line 3242                    |
-| `ai` route         | Direct DNS uses the systemd-resolved stub because the local transport needs CAP_NET_RAW. Use community Anthropic and AI sets for routing and DNS. Shared sign-in and captcha hosts depend on community coverage                                                                                                                                     | `release/renderers.py`, `scripts/client-install.sh`  |
+| `ai-only` route    | Direct DNS uses the systemd-resolved stub because the local transport needs CAP_NET_RAW. Use community Anthropic and AI sets for routing and DNS. Shared sign-in and captcha hosts depend on community coverage                                                                                                                                     | `release/renderers.py`, `scripts/client-install.sh`  |
 | Client runtime     | Mixed mode and TUN are never active together, or traffic loops. Check TCP and UDP when picking the mixed port. Run TUN with `-c`, not `-C`                                                                                                                                                                                                          | `scripts/client-install.sh`, `scripts/setup.sh`      |
 | System proxy       | Revert only settings that point at our port. A PAC setting belongs to someone else                                                                                                                                                                                                                                                                  | `scripts/lib/system-proxy.sh`, `system-proxy.ps1`    |
 | API stream         | `interval` is in nanoseconds. Each subscription replays live connections, so deduplicate by connection ID with byte checkpoints. UPDATE carries deltas and CLOSED carries final totals. Events without a user are DNS lookups and health checks. sing-box drops events while nobody subscribes                                                      | `connection_stats.py`, `connection_tracking.py`      |
@@ -208,8 +209,9 @@ Portal:
   Quota comes in the `subscription-userinfo` header. When the portal can't render a
   config for the client's sing-box version, it names the version needed.
 - The portal builds each user's desktop config in code. A `selector` holds the
-  protocols, and route and DNS rules match `clash_mode` values `china`, `gfw`, `ai`
-  and `global`. Every rendered config passes `sing-box check` in CI.
+  protocols, and route and DNS rules match `clash_mode` values `direct`, `ai-only`,
+  `gfw-proxy`, `china-direct` and `global`. Alias modes retain saved `ai`, `gfw` and
+  `china` selections. Every rendered config passes `sing-box check` in CI.
 - A token is an HMAC-SHA256 of the username and a reset counter, keyed by a new
   `web.subscription_secret`. The portal's SQLite database stores only the counters.
   After a password login, the portal shows the link and can issue a new one, which
@@ -287,12 +289,15 @@ Client:
   and leave sing-box running, so an agent that runs `sbc off` keeps its own
   connection. `start` and `stop` control the service. `update` refreshes the config
   now, and `link set` replaces the subscription URL.
-- `sbc ip` asks three sites through the local proxy, so the answers follow the
-  route. Gemini's start page names the region Google places the exit in, ipinfo.io
-  the address foreign sites see, and cip.cc the address Chinese sites see. The
-  Gemini page is not an API, so its format can change. `sbc` reads the region as the
-  three-letter code after `,2,1,200,` (checked on 2026-10-03), and each check
-  downloads about 150 KB.
+- `sbc ip` asks ipinfo.io and cip.cc through the active route. `--ai` adds
+  unauthenticated Gemini, ChatGPT and Claude checks through the proxy-only
+  diagnostic inlet. It skips `direct` unless `--allow-direct-ai` is supplied.
+  That override uses the active route and permits exposure of the direct IP.
+  Checks follow no redirects and use no account credentials or automatic retries.
+  Gemini's undocumented page supplies a region code. ChatGPT's edge trace can
+  supply an IP and country. Claude reports public-page reachability, denial,
+  challenge or redirect, not a region. None proves service or account eligibility.
+  See [the CLI guide](README_SBC.md#exit-ip-and-ai-checks).
 - `sbc speed` tests the protocol in use, and `sbc speed --all` tests every protocol
   without switching the one in use. It runs sing-box's delay test three times and
   reports the median. It suggests no switch, because the proxy mostly carries
@@ -516,7 +521,7 @@ matches the old counters within the accepted gap.
 - Move the control plane to its own host behind a CDN, on a domain unrelated to
   node IPs.
 - Add node groups. Subscriptions list every node in the user's groups, with an
-  auto-select group for normal traffic and a fixed node for the `ai` route.
+  auto-select group for normal traffic and a fixed node for proxied AI traffic.
 - Track each node's traffic against its provider allowance and reset day. KiwiVM
   becomes one optional provider adapter.
 - Decide on VLESS-Reality for nodes without a domain.

@@ -30,7 +30,7 @@
   "experimental": {
     "cache_file": {
       "enabled": true,
-      "path": "cache-trojan-ai.db",
+      "path": "cache-trojan-ai-only.db",
       "store_dns": true
     }
   },

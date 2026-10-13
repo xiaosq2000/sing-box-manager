@@ -57,9 +57,6 @@ func TestGeminiRegionReadsTheCodeGoogleWritesInThePage(t *testing.T) {
 	if err == nil || err.Error() != "the page names no region" {
 		t.Errorf("got %v", err)
 	}
-	if GeminiServes("HKG") || GeminiServes("MAC") || GeminiServes("CHN") || !GeminiServes("USA") {
-		t.Error("GeminiServes is wrong about a region")
-	}
 }
 
 func TestIPInfoReadsTheAddressCityAndCountry(t *testing.T) {

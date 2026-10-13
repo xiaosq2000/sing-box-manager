@@ -139,6 +139,11 @@ installed. They check positive controls, protection after proxy toggles, explici
 opt-out, repair after policy deletion, and cleanup after uninstall. Browser
 processes use disposable profiles. Startup flags suppress first-run UI, including
 Edge's `msEdgeFirstRunExperience`, without overriding WebRTC or proxy policies.
+A timeout before the browser requests the probe page permits one restart with a
+fresh profile and loopback page. Only the attempt's unique probe URL counts as a
+page request. The first process must stop before the restart.
+A page request during shutdown prevents the restart. Early exits, cleanup failures,
+ICE failures and privacy assertion failures do not permit retries.
 Timeouts report whether the browser requested the probe page and include captured
 browser output. Log capture is synchronized because a timeout can read it while
 the browser is still running. Unix process groups and Windows taskkill stop
@@ -146,21 +151,28 @@ only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
 helper's root ownership and setuid mode before launching Edge. Browser sandboxing
 stays enabled. The macOS lifecycle verifies cache refresh after managed policy
 changes, including off and uninstall. Unit tests stub that service operation.
-The responder, startup arguments and concurrent log capture have fixture-only
-checks that do not launch a browser or change host settings:
+The responder, startup arguments, concurrent log capture and startup retry have
+fixture-only checks. Subprocess stand-ins check timeout classification and cleanup.
+These checks do not launch a browser or change host settings:
 
 ```sh
-pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput)$' -count=1
+pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput|BrowserStartup(Retry|Timeout))$' -count=1
 ```
 
 CLI help and argument-validation fixtures reject calls to installation lookup
-or stdin. Completion fixtures read only a scratch config and use no running proxy.
+or stdin. AI check fixtures cover explicit opt-in, direct-mode skips, direct
+permission, proxy-only inlet validation, HTTP denials, challenges, redirects,
+unknown regions, and absence of account credentials or automatic retries.
+Route alias fixtures cover old and new installed configs. Provider checks use
+loopback stand-ins only, never live provider requests. Completion fixtures read only a scratch config and use no running proxy.
 Native completion tests build a temporary `sbc` and use isolated homes and profiles.
 Bash tests cover bare-shell fallback, split equals signs, cursor position, and
 interactive-only activation. The macOS job also tests `/bin/bash` for Bash 3.2.
 Zsh tests use its completion parser with a stand-in display function.
 PowerShell tests use native `CommandCompletion` on each available PowerShell
-version. They run in the Windows job under PowerShell 5.1 and 7 and skip locally
+version. They explicitly test `TabCompleteNext`, `Complete` and `MenuComplete`,
+including multi-choice descriptions, tooltips and equals-form flag values.
+They run in the Windows job under PowerShell 5.1 and 7 and skip locally
 when neither executable is available:
 
 ```sh
@@ -254,9 +266,11 @@ so initial files also need a startup check.
 The tests in `tests/test_sing_box_114.py` use generated certificates and loopback
 DNS, HTTP, and proxy servers. They check every rendered client profile on every
 platform it is rendered for, since the desktop configs differ by platform in the
-system resolver the `ai` route names, plus desktop startup with failed rule
-updates, and DNS persistence and expiry. Routing fixtures cover all four desktop
-strategies, direct exceptions with the proxy unavailable, and mobile FakeIP bypass.
+system resolver that `ai-only` and `direct` use, plus desktop startup with failed rule
+updates, and DNS persistence and expiry. Routing fixtures cover all five desktop
+strategies and the three legacy alias modes, direct exceptions with the proxy
+unavailable, and mobile FakeIP bypass. `direct` tests verify system DNS and direct
+AI connections with the remote proxy both available and unavailable.
 Dedicated Anthropic fixtures test proxy routing and DNS ahead of AdGuard and
 China-direct matches. Desktop fixtures also test failed updates and no direct
 fallback when the proxy is unavailable. Mobile fixtures test AI priority under

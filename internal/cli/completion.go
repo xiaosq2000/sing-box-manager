@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xiaosq2000/sing-box-manager/internal/api"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
+	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 )
 
 func fixedChoices(values ...string) cobra.CompletionFunc {
@@ -32,7 +33,15 @@ func configChoices(env Env, kind string) cobra.CompletionFunc {
 		if len(args) != 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		return fixedChoices(installedChoices(env, kind)...)(cmd, args, prefix)
+		matches, directive := fixedChoices(installedChoices(env, kind)...)(cmd, args, prefix)
+		if kind == "route" {
+			for index, name := range matches {
+				if description := routes.Description(name); description != "" {
+					matches[index] = name + "\t" + description
+				}
+			}
+		}
+		return matches, directive
 	}
 }
 
@@ -127,6 +136,9 @@ func installedChoices(env Env, kind string) []string {
 		}
 		return false
 	})
+	if kind == "route" {
+		return routes.Names(values)
+	}
 	slices.Sort(values)
 	return slices.Compact(values)
 }

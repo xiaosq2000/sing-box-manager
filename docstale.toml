@@ -41,6 +41,10 @@ sbc = [
   "internal/cli/",
   "internal/shell/",
   "internal/i18n/",
+  "internal/routes/",
+  "internal/api/",
+  "internal/probe/",
+  "internal/singbox/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 tun = ["scripts/lib/tun.sh"]
@@ -66,6 +70,7 @@ tun = ["scripts/lib/tun.sh"]
   "tests/test_traffic_*.py",
   "tests/test_connection*.py",
   "tests/test_desktop_config.py",
+  "tests/test_route_rename.py",
   "tests/test_m3_profiles.py",
   "tests/test_m3_runtime.py",
   "tests/test_server_install.py",
@@ -118,10 +123,16 @@ tun = ["scripts/lib/tun.sh"]
   "sing_box_manager/release/profiles.py",
 ]
 
-"docs/README_SBC.md" = ["@sbc"]
+"docs/README_SBC.md" = [
+  "@sbc",
+  "sing_box_manager/desktop_config.py",
+  "sing_box_manager/release/platforms.py",
+  "sing_box_manager/release/renderers.py",
+]
 
 "docs/README_WIN.md" = [
   "internal/cli/",
+  "internal/routes/",
   "internal/desktop/",
   "internal/winsettings/",
   "internal/browserprivacy/",

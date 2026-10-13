@@ -83,10 +83,10 @@ func TestCompletionInstalledChoicesAreOfflineAndPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range []struct{ args, want []string }{
-		{[]string{"route", ""}, []string{"ai", "china", "gfw", "global"}},
-		{[]string{"route", "g"}, []string{"gfw", "global"}},
+		{[]string{"route", ""}, []string{"ai-only", "china-direct", "gfw-proxy", "global"}},
+		{[]string{"route", "g"}, []string{"gfw-proxy", "global"}},
 		{[]string{"protocol", ""}, []string{"hysteria2", "naive", "trojan"}},
-		{[]string{"install", "--route", "a"}, []string{"ai"}},
+		{[]string{"install", "--route", "a"}, []string{"ai-only"}},
 		{[]string{"install", "--protocol", "n"}, []string{"naive"}},
 		{[]string{"route", "china", ""}, nil},
 	} {
@@ -257,6 +257,7 @@ compopt() { :; }
 [[ $(complete -p sbc) != *'-o default'* ]] || exit 1
 COMP_WORDS=(sbc pro); COMP_CWORD=1; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc route c); COMP_CWORD=2; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
+COMP_WORDS=(sbc ip --a); COMP_CWORD=2; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc install --shell z); COMP_CWORD=3; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc install --shell = z); COMP_CWORD=4; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc install --route = g); COMP_CWORD=4; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
@@ -265,7 +266,7 @@ COMP_WORDS=(sbc install --shell z ignored); COMP_CWORD=3; __start_sbc; printf '%
 				command = exec.Command(path, "--noprofile", "--norc", "-c", script)
 				command.Env = env
 				output, err := command.CombinedOutput()
-				if err != nil || string(output) != "protocol\nchina\nzsh\nzsh\ngfw\nglobal\nzsh\n" {
+				if err != nil || string(output) != "protocol\nchina-direct\n--ai\n--allow-direct-ai\nzsh\nzsh\ngfw-proxy\nglobal\nzsh\n" {
 					t.Fatalf("Bash completion: %v\n%s", err, output)
 				}
 			} else {
@@ -279,7 +280,7 @@ words=(sbc route c); CURRENT=3; _sbc
 				command = exec.Command(path, "-f", "-c", script)
 				command.Env = env
 				output, err := command.CombinedOutput()
-				if err != nil || !strings.Contains(string(output), "china") {
+				if err != nil || !strings.Contains(string(output), "china-direct") || !strings.Contains(string(output), "Direct recognized China destinations") {
 					t.Fatalf("Zsh completion: %v\n%s", err, output)
 				}
 			}
@@ -330,22 +331,41 @@ func TestCompletionNativePowerShell(t *testing.T) {
 	_, env := completionBinary(t)
 	for _, name := range shells {
 		t.Run(filepath.Base(name), func(t *testing.T) {
-			script := `$ErrorActionPreference = 'Stop'
+			for _, mode := range []string{"TabCompleteNext", "Complete", "MenuComplete"} {
+				t.Run(mode, func(t *testing.T) {
+					script := `$ErrorActionPreference = 'Stop'
+Set-PSReadLineKeyHandler -Key Tab -Function __MODE__
 sbc completion powershell | Out-String | Invoke-Expression
-foreach ($line in @('sbc pro', 'sbc route c', 'sbc install --shell z', 'sbc.exe protocol n')) {
+foreach ($line in @('sbc pro', 'sbc route c', 'sbc route g', 'sbc ip --a', 'sbc install --shell z', 'sbc install --shell=z', 'sbc.exe protocol n')) {
     $result = [System.Management.Automation.CommandCompletion]::CompleteInput($line, $line.Length, $null)
-    $result.CompletionMatches | ForEach-Object { $_.CompletionText.Trim() }
+    if ($line -eq 'sbc route c' -and $result.CompletionMatches[0].ToolTip -notmatch 'Direct recognized China destinations') { throw 'Route tooltip missing' }
+    if ($line -eq 'sbc ip --a' -and $result.CompletionMatches[0].ToolTip -notmatch 'Also probe Gemini, ChatGPT, and Claude') { throw 'Flag tooltip missing' }
+    $result.CompletionMatches | ForEach-Object {
+        $text = $_.CompletionText.Trim()
+        if ('__MODE__' -eq 'Complete' -and $result.CompletionMatches.Count -gt 1) {
+            # Cobra's Bash-like mode puts descriptions in the display text.
+            # Verify that format before extracting names for the shared check.
+            $pattern = '^(?<name>\S+)\s+\(' + [regex]::Escape($_.ToolTip.Trim()) + '\)$'
+            if ($text -notmatch $pattern) { throw "Completion description missing: $text" }
+            $Matches['name']
+        } else {
+            $text
+        }
+    }
 }
 `
-			if runtime.GOOS != "windows" {
-				script = strings.ReplaceAll(script, "sbc.exe", "sbc")
-			}
-			command := exec.Command(name, "-NoProfile", "-NonInteractive", "-Command", script)
-			command.Env = slices.DeleteFunc(slices.Clone(env), func(value string) bool { return strings.HasPrefix(strings.ToUpper(value), "PSMODULEPATH=") })
-			output, err := command.CombinedOutput()
-			got := strings.ReplaceAll(string(output), "\r\n", "\n")
-			if err != nil || got != "protocol\nchina\nzsh\nnaive\n" {
-				t.Fatalf("PowerShell completion: %v\n%s", err, output)
+					script = strings.ReplaceAll(script, "__MODE__", mode)
+					if runtime.GOOS != "windows" {
+						script = strings.ReplaceAll(script, "sbc.exe", "sbc")
+					}
+					command := exec.Command(name, "-NoProfile", "-NonInteractive", "-Command", script)
+					command.Env = slices.DeleteFunc(slices.Clone(env), func(value string) bool { return strings.HasPrefix(strings.ToUpper(value), "PSMODULEPATH=") })
+					output, err := command.CombinedOutput()
+					got := strings.ReplaceAll(string(output), "\r\n", "\n")
+					if err != nil || got != "protocol\nchina-direct\ngfw-proxy\nglobal\n--ai\n--allow-direct-ai\nzsh\n--shell=zsh\nnaive\n" {
+						t.Fatalf("PowerShell completion: %v\n%s", err, output)
+					}
+				})
 			}
 		})
 	}

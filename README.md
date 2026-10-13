@@ -89,14 +89,18 @@ custom Linux server `sing-box` binary from the upstream source tag with
 `with_v2ray_api`, while client download archives continue using the official upstream
 release assets.
 
-Desktop mixed mode offers `china` (the default), `gfw`, `ai`, and `global` routes.
-`china` proxies unknown destinations; `gfw` proxies GFWList and AI destinations
-and sends other traffic directly. Every client profile keeps the exact
+Desktop mixed mode offers `china-direct` (the default), `gfw-proxy`, `ai-only`,
+`global`, and `direct` routes. `china-direct` proxies unknown destinations.
+`gfw-proxy` proxies GFWList and AI destinations and sends other traffic directly.
+`direct` sends all allowed application traffic and its DNS directly, including AI.
+The old names `china`, `gfw`, and `ai` remain aliases. See the
+[CLI guide](docs/README_SBC.md#route-strategies) for route descriptions and diagnostics. Every client profile keeps the exact
 `deployment.host` and optional `deployment.direct_domain_suffixes` direct, with
 matching direct DNS rules. Suffixes cover the apex and subdomains.
 
-Generated desktop and Android profiles proxy community-listed Anthropic and AI
-destinations before mode overrides and China-direct rules. The dedicated Anthropic
+Desktop proxy strategies and Android profiles proxy community-listed Anthropic
+and AI destinations before China-direct rules. Desktop `direct` sends them directly.
+Android retains AI priority over its mode overrides. The dedicated Anthropic
 set and broader AI set replace local domain maintenance. See
 [community AI rules](docs/RELEASE_AND_PORTAL.md#community-ai-rules) for sources and
 coverage limits.

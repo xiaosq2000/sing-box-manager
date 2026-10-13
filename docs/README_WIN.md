@@ -61,7 +61,7 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc webrtc off`            | Remove owned policies, reset Firefox WebRTC preferences, stop automatic setup   |
 | `sbc env`                   | Print PowerShell commands to apply proxy settings to the current session        |
 | `sbc env off`               | Print PowerShell commands to clear proxy settings from the current session      |
-| `sbc route <strategy>`      | Switch route strategy (`china`, `gfw`, `ai`, `global`) without restarting       |
+| `sbc route <strategy>`      | Switch route strategy without restarting; `--list` shows names and meanings     |
 | `sbc protocol <name>`       | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting    |
 | `sbc port <number>`         | Move local proxy listen port and update associated settings                     |
 | `sbc status`                | Show proxy state, active protocol and route, and monthly traffic usage          |
@@ -106,7 +106,14 @@ PowerShell host and version you use. The installer does not edit profiles or
 change execution policy. Completion works in Windows PowerShell 5.1 and
 PowerShell 7, for both `sbc` and `sbc.exe`.
 Route and protocol suggestions come from the local config, without a server
-request or running proxy. See the [cross-platform CLI guide](README_SBC.md).
+request or running proxy. Completion includes command-specific flags and route
+descriptions as tooltips. See the [cross-platform CLI guide](README_SBC.md)
+for `direct`, `ai-only`, `gfw-proxy`, `china-direct`, and `global`.
+
+Plain `sbc ip` contacts no AI provider. `sbc ip --ai` adds unauthenticated Gemini,
+ChatGPT, and Claude checks through a proxy-only diagnostic inlet. Direct AI
+requests require `--ai --allow-direct-ai`. See
+[IP and AI checks](README_SBC.md#exit-ip-and-ai-checks) for scope and risks.
 
 ## Architecture and runtime
 

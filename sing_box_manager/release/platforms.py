@@ -19,7 +19,13 @@ PROTOCOLS = [
     Protocol(name="naive"),
 ]
 
-ROUTE_STRATEGIES = ("china", "gfw", "ai", "global")
+ROUTE_STRATEGIES = ("direct", "ai-only", "gfw-proxy", "china-direct", "global")
+ROUTE_ALIASES = {"ai": "ai-only", "gfw": "gfw-proxy", "china": "china-direct"}
+
+
+def canonical_route(strategy: str) -> str:
+    """Accept legacy names without changing their routing behavior."""
+    return ROUTE_ALIASES.get(strategy, strategy)
 
 
 @dataclass(frozen=True)
@@ -55,9 +61,10 @@ def client_config_filename(protocol: str, profile: ClientProfile) -> str:
 
 def route_client_config_filename(protocol: str, strategy: str) -> str:
     """Return the archive filename for a desktop mixed routing strategy."""
+    strategy = canonical_route(strategy)
     if strategy not in ROUTE_STRATEGIES:
         raise ValueError(f"Unsupported route strategy: {strategy}")
-    if strategy == "china":
+    if strategy == "china-direct":
         return f"{protocol}-client.json"
     return f"{protocol}-{strategy}-client.json"
 
