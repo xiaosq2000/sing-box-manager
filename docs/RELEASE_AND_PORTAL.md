@@ -584,10 +584,9 @@ offered build, while `required` prints a warning in every new shell until the us
 runs `proxy upgrade`. Neither policy blocks commands or network access, and neither
 notice prints `client_upgrade.message`; `proxy check update` reports it.
 
-For optional flags, environment variables, and client-side usage, see
-[`docs/README_LINUX.md`](./README_LINUX.md),
-[`docs/README_MACOS.md`](./README_MACOS.md), or
-[`docs/README_WIN.md`](./README_WIN.md).
+For installer flags, client commands, and shell integration, see
+[the client guide](README_SBC.md). For Windows requirements and service details,
+see [the Windows guide](README_WIN.md).
 
 ## Subscription Links
 
@@ -637,10 +636,13 @@ downloads `sbc` for the machine, and runs `sbc install`, which succeeds only onc
 page loads through the new proxy. `-p NAME` picks the protocol. Like `sbc`, it
 speaks Simplified Chinese under a `zh_CN` or `zh_SG` locale, or with `SBC_LANG=zh`.
 
-On a machine with the bash client, the same script moves it to `sbc` without a gap in
-the proxy, whether `proxy upgrade` or the one-liner runs it:
+The repository maintains `sbc`, not the legacy Bash client. The hosted installer
+still migrates an installed Bash client through its own uninstaller and desktop
+library. `proxy upgrade` and the one-liner use this path:
 
-1. A machine with TUN mode set up keeps the bash client, and the script stops.
+1. A legacy TUN unit, transaction marker, or unsafe status blocks installation
+   before downloads or file changes, even when user-scoped client files are missing.
+   Use the installed client's cleanup tools before installing `sbc`.
 2. It trades the saved machine token for the link through `POST /api/sub`, and asks
    for the link only when that fails.
 3. It installs `sbc` on a spare port with the bash client's route and protocol. If no

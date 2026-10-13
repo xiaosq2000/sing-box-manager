@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sing_box_manager.config_loader import (
+from sing_box_manager.settings import (
     DeploymentConfig,
     Hysteria2Inventory,
     Hysteria2User,
@@ -234,10 +234,11 @@ def test_ai_strategy_uses_bundled_community_sets_for_dns_and_route() -> None:
         ("windows", {"tag": "system", "type": "local"}),
     ],
 )
-def test_ai_route_asks_the_host_resolver_without_a_privileged_bind(
-    os_name: str, server: dict
+@pytest.mark.parametrize("strategy", ["ai-only", "direct"])
+def test_system_dns_routes_use_the_host_resolver_without_a_privileged_bind(
+    os_name: str, server: dict, strategy: str
 ) -> None:
-    """The ai route is the only one that resolves direct traffic locally.
+    """The ai-only and direct routes resolve direct traffic through the host resolver.
 
     sing-box's `local` transport queries the link's upstream servers itself and
     binds the query socket to that link, which Linux refused without
@@ -247,7 +248,7 @@ def test_ai_route_asks_the_host_resolver_without_a_privileged_bind(
     capability and still answers with the host's own view of DNS.
     """
     template = client_base_config("trojan")
-    rendered = apply_desktop_route_strategy(template, "ai", os_name=os_name)
+    rendered = apply_desktop_route_strategy(template, strategy, os_name=os_name)
 
     servers = rendered["dns"]["servers"]
     assert _find_server(servers, "system") == server
@@ -264,7 +265,7 @@ def test_ai_route_asks_the_host_resolver_without_a_privileged_bind(
 def test_other_routes_carry_the_same_resolvers_on_every_os(
     strategy: str, os_name: str
 ) -> None:
-    """Only the ai route reads the host's resolver, so only it varies by OS."""
+    """These routes use Aliyun for direct DNS on every operating system."""
     template = client_base_config("trojan")
     rendered = apply_desktop_route_strategy(template, strategy, os_name=os_name)
 
@@ -815,7 +816,9 @@ class TestSharedRendererBehavior:
 
 
 @pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-@pytest.mark.parametrize("profile", ["china", "gfw", "ai", "global", "-tun"])
+@pytest.mark.parametrize(
+    "profile", ["china-direct", "gfw-proxy", "ai-only", "global", "direct", "-tun"]
+)
 def test_direct_exceptions_survive_every_profile(protocol: str, profile: str) -> None:
     from tests.test_sing_box_114 import render_client
 
@@ -854,12 +857,17 @@ def test_direct_exceptions_survive_every_profile(protocol: str, profile: str) ->
         if rule.get("action") == "hijack-dns"
         or (rule.get("action") == "reject" and rule.get("type") == "logical")
     )
-    resolver = "system" if profile == "ai" else "aliyun"
-    assert config["dns"]["rules"][0] == {
-        "domain": ["portal.example.net"],
-        "domain_suffix": ["example.com"],
-        "server": resolver,
-    }
+    resolver = "system" if profile in {"ai-only", "direct"} else "aliyun"
+    if profile == "direct":
+        # All direct-mode DNS already uses the system resolver.
+        assert config["dns"]["rules"] == []
+        assert config["dns"]["final"] == resolver
+    else:
+        assert config["dns"]["rules"][0] == {
+            "domain": ["portal.example.net"],
+            "domain_suffix": ["example.com"],
+            "server": resolver,
+        }
     assert next(out for out in config["outbounds"] if out["tag"] == "direct")[
         "domain_resolver"
     ] == {"server": resolver}
@@ -868,7 +876,9 @@ def test_direct_exceptions_survive_every_profile(protocol: str, profile: str) ->
 @pytest.mark.parametrize(
     "host,cidr", [("192.0.2.8", "192.0.2.8/32"), ("2001:db8::8", "2001:db8::8/128")]
 )
-@pytest.mark.parametrize("strategy", ["china", "gfw", "ai", "global"])
+@pytest.mark.parametrize(
+    "strategy", ["china-direct", "gfw-proxy", "ai-only", "global", "direct"]
+)
 def test_ip_host_is_an_exact_direct_exception(
     host: str, cidr: str, strategy: str
 ) -> None:

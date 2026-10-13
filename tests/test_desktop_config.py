@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from sing_box_manager.config_loader import (
+from sing_box_manager.settings import (
     DeploymentConfig,
     Hysteria2Inventory,
     Hysteria2User,

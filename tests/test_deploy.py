@@ -205,7 +205,7 @@ def _prepare_release_artifacts(
 
 
 def _runtime_inventory():
-    from sing_box_manager.config_loader import RuntimeInventory
+    from sing_box_manager.settings import RuntimeInventory
 
     return RuntimeInventory.model_validate(
         {

@@ -122,12 +122,9 @@ or check out config state with git.
 - [`docs/SECRET_HANDLING.md`](docs/SECRET_HANDLING.md): inventory creation, credentials, and TLS handling
 - [`docs/VPS_DEPLOYMENT.md`](docs/VPS_DEPLOYMENT.md): primary end-to-end VPS deployment guide
 - [`docs/RELEASE_AND_PORTAL.md`](docs/RELEASE_AND_PORTAL.md): build releases, run the portal, and download client packages
-- [`docs/README_SBC.md`](docs/README_SBC.md): cross-platform client commands, help, and shell completion
-- [`docs/README_LINUX.md`](docs/README_LINUX.md): the bash client on Linux, which releases no longer pack
-- [`docs/README_MACOS.md`](docs/README_MACOS.md): the bash client on macOS, which releases no longer pack
+- [`docs/README_SBC.md`](docs/README_SBC.md): client installation, legacy migration, commands, help, and shell completion
 - [`docs/WEBRTC.md`](docs/WEBRTC.md): cross-platform `sbc webrtc` behavior and browser cleanup
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
-- [`docs/TUN_MODE.md`](docs/TUN_MODE.md): Linux TUN design, ownership, and verification limits
 - [`docs/REMOTE_DEPLOYMENT.md`](docs/REMOTE_DEPLOYMENT.md): sync the active release artifacts to a remote host and install them
 - [`docs/REFACTOR_SPEC.md`](docs/REFACTOR_SPEC.md): target architecture and refactoring milestones
 

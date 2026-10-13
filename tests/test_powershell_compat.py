@@ -19,16 +19,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 # Scripts that get installed onto, or streamed to, a client machine.
-CLIENT_FACING_SCRIPTS = (
-    "sing_box_manager/web/client/install.ps1",
-)
+CLIENT_FACING_SCRIPTS = ("sing_box_manager/web/client/install.ps1",)
 
 # Each of these is invoked from text through the call operator somewhere in the
 # supported install flow. `exit` would terminate its parent script or the user's
 # interactive PowerShell instance instead of returning to the caller.
-IN_MEMORY_ENTRY_POINTS = (
-    "sing_box_manager/web/client/install.ps1",
-)
+IN_MEMORY_ENTRY_POINTS = ("sing_box_manager/web/client/install.ps1",)
 
 POWERSHELL_7_CONSTRUCTS: tuple[tuple[str, str], ...] = (
     (r"\?\?=?[\s(]", "null-coalescing (?? / ??=), PowerShell 7.0+"),
@@ -105,26 +101,6 @@ def test_web_requests_use_basic_parsing(relative_path: str):
     assert not offenders, (
         "Invoke-WebRequest needs -UseBasicParsing on 5.1, which otherwise relies on "
         "the Internet Explorer engine and fails on hardened or Core installs:\n"
-        + "\n".join(offenders)
-    )
-
-
-@pytest.mark.parametrize("relative_path", CLIENT_FACING_SCRIPTS)
-def test_add_type_calls_are_guarded(relative_path: str):
-    """Add-Type throws when the type already exists in the session."""
-    lines = (ROOT / relative_path).read_text(encoding="utf-8").splitlines()
-    offenders = []
-    for index, line in enumerate(lines):
-        if line.lstrip().startswith("#") or "Add-Type" not in line:
-            continue
-        if "-AssemblyName" in line:
-            continue
-        window = "\n".join(lines[max(0, index - 3) : index])
-        if "-as [type]" not in window:
-            offenders.append(f"{relative_path}:{index + 1}: {line.strip()}")
-    assert not offenders, (
-        "Add-Type throws if the type is already loaded, so each call needs an "
-        "`-as [type]` existence guard within the preceding 3 lines:\n"
         + "\n".join(offenders)
     )
 

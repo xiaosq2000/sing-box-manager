@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from sing_box_manager.config_loader import RuntimeInventory
+from sing_box_manager.settings import RuntimeInventory
 from sing_box_manager.deploy import DeploymentError
 from sing_box_manager.provision import (
     REMOTE_INVENTORY_FILENAME,

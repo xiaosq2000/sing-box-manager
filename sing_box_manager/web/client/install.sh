@@ -11,8 +11,8 @@
 # On a machine with the bash client, this moves it to sbc without a gap in the
 # proxy. It trades the client's saved token for the link, starts sbc on a spare
 # port, and removes the bash client only after a page loads through sbc. sbc
-# then takes over the old port, route and protocol. A machine with TUN mode set
-# up keeps the bash client until sbc supports TUN.
+# then takes over the old port, route and protocol. Legacy Linux TUN state
+# blocks installation until the installed client's tools remove that state.
 #
 # Messages are in Simplified Chinese by the rule sbc follows: SBC_LANG=zh, or a
 # locale of zh_CN or zh_SG in the first of LC_ALL, LC_MESSAGES and LANG that is
@@ -72,7 +72,7 @@ t() {
 		"sbc runs on Linux and macOS") printf '%s' "sbc 只能在 Linux 和 macOS 上运行" && return ;;
 		"sbc runs on amd64 and arm64") printf '%s' "sbc 只能在 amd64 和 arm64 上运行" && return ;;
 		"that is not a subscription link") printf '%s' "这不是订阅链接" && return ;;
-		"this machine set up TUN mode with the bash client. Keep using the bash client until sbc supports TUN.") printf '%s' "这台机器用 bash 客户端设置了 TUN 模式。在 sbc 支持 TUN 之前，请继续使用 bash 客户端。" && return ;;
+		"legacy Linux TUN state is present. Use the installed client's cleanup tools before installing sbc. No files were changed.") printf '%s' "检测到旧版 Linux TUN 状态。请先使用已安装客户端的清理工具，再安装 sbc。未改动任何文件。" && return ;;
 		"the bash client is here, but its uninstaller is missing from %s. Remove the bash client by hand, then run this again.") printf '%s' "这台机器装有 bash 客户端，但 %s 中缺少它的卸载程序。请手动删除 bash 客户端，然后重新运行。" && return ;;
 		"The bash client's saved token did not get the subscription link. Paste the link from the portal's files page.") printf '%s' "未能用 bash 客户端保存的令牌取得订阅链接。请从门户的文件页面复制链接并粘贴。" && return ;;
 		"sbc did not work here, so it is removed again. The bash client keeps running as before.") printf '%s' "sbc 在这台机器上无法工作，已将其删除。bash 客户端照常运行。" && return ;;
@@ -126,10 +126,12 @@ preference() {
 # own uninstaller looks for.
 tun_set_up() {
 	root=${SBM_TUN_ROOT:-}
-	if [ -f "$root/etc/systemd/system/sing-box-manager-tun.service" ] ||
-		[ -f "$root/var/lib/sing-box-manager-tun.transaction" ]; then
-		return 0
-	fi
+	for marker in "$root/etc/systemd/system/sing-box-manager-tun.service" \
+		"$root/var/lib/sing-box-manager-tun.transaction"; do
+		if [ -e "$marker" ] || [ -L "$marker" ]; then
+			return 0
+		fi
+	done
 	case "$(first_line "$root/var/lib/sing-box-manager-tun.status")" in
 	"" | safe-off) return 1 ;;
 	esac
@@ -428,11 +430,11 @@ main() {
 	old_config=${XDG_CONFIG_HOME:-$HOME/.config}/sing-box
 	old_data=${XDG_DATA_HOME:-$HOME/.local/share}/sing-box
 	old_state=${XDG_STATE_HOME:-$HOME/.local/state}/sing-box
+	if tun_set_up; then
+		fail "legacy Linux TUN state is present. Use the installed client's cleanup tools before installing sbc. No files were changed."
+	fi
 	moving=""
 	if [ -f "$old_config/selected-protocol" ] || [ -f "$old_data/setup.sh" ]; then
-		if tun_set_up; then
-			fail "this machine set up TUN mode with the bash client. Keep using the bash client until sbc supports TUN."
-		fi
 		if [ ! -f "$old_data/client-uninstall.sh" ]; then
 			fail 'the bash client is here, but its uninstaller is missing from %s. Remove the bash client by hand, then run this again.' "$old_data"
 		fi

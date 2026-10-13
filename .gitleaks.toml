@@ -26,7 +26,10 @@ targetRules = ["generic-api-key"]
 [[allowlists]]
 condition = "AND"
 description = "Literal synthetic protocol credentials in fixture tests"
-paths = ['''(^|/)tests/test_(config_loader|renderers|traffic_stats)\.py$''']
+# config_loader covers reachable history. Current tests use inventory.
+paths = [
+  '''(^|/)tests/test_(config_loader|inventory|renderers|traffic_stats)\.py$''',
+]
 regexTarget = "secret"
 regexes = [
   '''^(hy2-obfs-secret|bob-hysteria2-secret|carol-hysteria2-secret)(\\n)?$''',

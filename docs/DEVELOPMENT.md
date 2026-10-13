@@ -34,18 +34,17 @@ and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 Choose checks for the files and behavior being changed. The commands below are
 available tools, not a sequence required for every edit.
 
-| Change              | Useful checks                                                                                                                         |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                 |
-| Doc reviews         | `pixi run docstale check`                                                                                                             |
-| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                                  |
-| Unix client scripts | `pixi run test tests/test_shell_compat.py tests/test_client_install.py tests/test_setup_proxy_command.py`, plus `pixi run lint-shell` |
-| Linux TUN           | `pixi run test tests/test_setup_tun_command.py tests/test_shell_compat.py`                                                            |
-| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                                |
-| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py`      |
-| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                          |
-| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                       |
-| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                  |
+| Change              | Useful checks                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                            |
+| Doc reviews         | `pixi run docstale check`                                                                                                        |
+| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                             |
+| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                              |
+| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                           |
+| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py` |
+| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                     |
+| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                  |
+| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                             |
 
 Use `pixi run test tests/test_routes.py -k download` as the pattern for running a
 specific file or case. `pixi run test` runs the full Python suite when shared
@@ -189,9 +188,13 @@ workflow runs it on Linux, macOS and Windows runners:
 SBC_E2E=1 go test -tags e2e -count=1 -v ./internal/e2e
 ```
 
-`tests/test_install_sh.py` runs `install.sh` with fake `curl` and `sbc`. Its
-migration test installs the bash client into a scratch home and runs that client's
-own `proxy upgrade` in bash and zsh.
+`tests/test_install_sh.py` runs `install.sh` with fake `curl` and `sbc`. Migration
+fixtures reproduce an installed client's files, uninstaller, and desktop ownership
+interface. `tests/fixtures/legacy-unix/setup.sh` preserves the upgrade caller's
+local state and post-install source step. Bash and Zsh checks ensure the one-use
+replacement clears that state and prevents legacy restoration. TUN refusal tests
+cover both installed legacy clients and missing user-scoped files. No test installs
+the retired Bash client or changes the developer's services.
 
 `scripts/dev/test-install-ps1.ps1` tests the Windows bootstrapper with an isolated
 `LOCALAPPDATA`, fake downloads and a fake `sbc`. It covers fresh installs,
@@ -207,11 +210,11 @@ a message the code no longer has. Go tests see English whatever the machine's
 locale, unless a test asks for Chinese. `install.sh` keeps its translations in its
 `t` function, and `tests/test_install_sh.py` checks them the same way.
 
-The shell compatibility tests check the bash 3.2 and Windows PowerShell 5.1
-constraints. They do not prove native service or networking behavior. The native
-smoke script for the legacy bash client is `scripts/dev/macos-smoke.sh`.
-TUN kernel integration still requires a disposable Linux VM, as described in
-[TUN_MODE.md](TUN_MODE.md#143-compatibility-and-integration-tests).
+The shell compatibility tests check Bash 3.2 for the shared server scripts and
+Windows PowerShell 5.1 for the hosted Windows installer. The Unix installer uses
+POSIX sh. These checks do not prove native service or networking behavior.
+The `sbc` workflow exercises supported client services on disposable runners.
+Linux TUN is not implemented in `sbc`; its acceptance checks belong to deferred M1b.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
@@ -275,8 +278,8 @@ Dedicated Anthropic fixtures test proxy routing and DNS ahead of AdGuard and
 China-direct matches. Desktop fixtures also test failed updates and no direct
 fallback when the proxy is unavailable. Mobile fixtures test AI priority under
 Direct, Global, and Rule modes for every protocol.
-TUN DNS and routing fixtures use a loopback mixed inlet; they do not exercise
-tunnel interface capture. Supply the custom Linux server binary built with
+Mobile TUN DNS and routing fixtures use a loopback mixed inlet. They do not
+exercise tunnel interface capture or provide Linux TUN support. Supply the custom Linux server binary built with
 `with_v2ray_api` to include all the single multi-inbound traffic-statistics config:
 
 ```sh
@@ -316,8 +319,8 @@ that copy and tests legacy-unit migration, reinstall, protocol selection, valida
 failure, startup rollback and retention of recovery files when rollback fails; it
 does not install or stop anything on the host. The runtime tests need permission to bind loopback
 sockets. They do not establish native Windows Task Scheduler, macOS launchd, or
-Linux TUN kernel compatibility; use the native smoke checks and disposable VM
-described above for those behaviors.
+Linux TUN kernel compatibility. Native `sbc` lifecycle checks run on disposable
+CI runners. Future Linux TUN checks require a disposable Linux VM.
 
 ## Generated protobuf stubs
 

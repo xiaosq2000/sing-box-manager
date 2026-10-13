@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from sing_box_manager import config_loader, runtime_env
-from sing_box_manager.config_loader import (
+from sing_box_manager import runtime_env, settings
+from sing_box_manager.settings import (
     DeploymentConfig,
     Hysteria2Inventory,
     Hysteria2User,
@@ -163,7 +163,7 @@ class TestLoadRuntimeInventory:
                 ),
             )
 
-        monkeypatch.setattr("sing_box_manager.config_loader.subprocess.run", fake_run)
+        monkeypatch.setattr(settings.subprocess, "run", fake_run)
 
         inventory = load_runtime_inventory(inventory_file)
 
@@ -234,7 +234,7 @@ class TestLoadRuntimeInventory:
                 ),
             )
 
-        monkeypatch.setattr("sing_box_manager.config_loader.subprocess.run", fake_run)
+        monkeypatch.setattr(settings.subprocess, "run", fake_run)
 
         inventory = load_runtime_inventory(inventory_file)
 
@@ -601,7 +601,7 @@ class TestAuthSnapshot:
         def fake_replace(src: str, dst: str) -> None:
             raise RuntimeError("replace failed")
 
-        monkeypatch.setattr(config_loader.os, "replace", fake_replace)
+        monkeypatch.setattr(settings.os, "replace", fake_replace)
 
         with pytest.raises(RuntimeError, match="replace failed"):
             write_auth_snapshot(snapshot_file, inventory.web_portal.users)
@@ -625,9 +625,7 @@ def _deployment(**overrides):
 def _hysteria2_inventory(**overrides):
     params = {
         "obfs_password": "hy2-obfs-secret",
-        "users": [
-            Hysteria2User(username="bob", password="bob-secret", enabled=True)
-        ],
+        "users": [Hysteria2User(username="bob", password="bob-secret", enabled=True)],
     }
     params.update(overrides)
     return Hysteria2Inventory(**params)

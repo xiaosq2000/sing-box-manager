@@ -29,14 +29,10 @@ def isolate_local_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.fixture(autouse=True)
-def isolate_managed_tun_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point every managed TUN path at a scratch root, for every test.
+def isolate_legacy_tun_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the hosted installer's legacy TUN checks inside a scratch root.
 
-    The shell scripts read `/var/lib/sing-box-manager-tun.status` and friends to
-    decide whether a machine-wide tunnel exists. Without this the suite would
-    read the developer's own machine, so a real `proxy tun on` -- even a failed
-    one -- would change what unrelated installer tests do. Tests that care set
-    their own value on top; this only guarantees it is never the real root.
+    Tests must not read the developer's services or legacy TUN markers.
     """
     monkeypatch.setenv("SBM_TUN_ROOT", str(tmp_path / "managed-tun-root"))
 

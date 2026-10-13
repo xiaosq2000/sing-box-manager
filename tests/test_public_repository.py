@@ -100,7 +100,7 @@ def test_document_fingerprint_exception_is_exact_and_path_scoped() -> None:
     for path in (
         "docstale.lock.backup",
         "nested/docstale.lock",
-        "tests/test_config_loader.py",
+        "tests/test_inventory.py",
     ):
         assert not re.fullmatch(path_pattern, path)
     assert re.fullmatch(value_pattern, "fb3cd53af6289e44")
