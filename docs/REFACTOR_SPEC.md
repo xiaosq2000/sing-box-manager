@@ -30,10 +30,10 @@ complexity comes from machinery built around premises that the target design dro
 | Accounts are free and invite-only first; paid plans come later                                    | Decided                                    |
 | sing-box is the only proxy core on nodes and clients                                              | Decided                                    |
 | Security fixes come first, then the client CLI                                                    | Decided                                    |
-| The control plane uses Django and Postgres                                                        | Proposed                                   |
+| The control plane uses Django and Postgres                                                        | Decided                                    |
 | The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                    |
 | The node agent is written in Go                                                                   | Proposed                                   |
-| Each user gets one subscription URL that carries a secret token; each device gets its own from M7 | Decided                                    |
+| Each enrolled installation gets its own subscription token and proxy credentials from M4b         | Decided                                    |
 | A client runs one config per user, with routes as Clash modes and protocols in a selector         | Decided                                    |
 | Configs are built in code and pass `sing-box check` before release                                | Proposed                                   |
 | Nodes run the official sing-box build                                                             | Proposed                                   |
@@ -68,19 +68,24 @@ node agent + sing-box on each VPS  ◀── proxy traffic from clients
 
 ### Control plane data
 
-| Table           | Holds                                                                      |
-| --------------- | -------------------------------------------------------------------------- |
-| `users`         | Name, email, status, admin flag, inviter                                   |
-| `invites`       | Code, creator, uses left, expiry                                           |
-| `credentials`   | User, protocol and secret; the counter that derives the subscription token |
-| `plans`         | Traffic quota, period, node groups, device limit, and a price from M8      |
-| `subscriptions` | User, plan, start, expiry, reset day                                       |
-| `nodes`         | Name, region, host, protocols and ports, group, capacity, agent token hash |
-| `traffic_daily` | User, node, day, upload bytes, download bytes                              |
-| `node_reports`  | Node and sequence number, so a repeated report changes nothing             |
+| Table           | Holds                                                                          |
+| --------------- | ------------------------------------------------------------------------------ |
+| `users`         | Name, email, status, admin flag, inviter                                       |
+| `invites`       | Code, creator, uses left, expiry                                               |
+| `devices`       | User, installation name, revocation state, subscription reset counter          |
+| `user_policies` | User, allowance, accounting period, expiry, node groups, enrolled-device limit |
+| `credentials`   | Device, protocol and secret                                                    |
+| `plans`         | Traffic quota, period, node groups, device limit, and a price from M8          |
+| `subscriptions` | User, plan, start, expiry, reset day                                           |
+| `nodes`         | Name, region, host, protocols and ports, group, capacity, agent token hash     |
+| `traffic_daily` | User, node, day, upload bytes, download bytes                                  |
+| `node_reports`  | Node and sequence number, so a repeated report changes nothing                 |
 
-A new user gets one secret that serves every protocol. Imported users keep their
-current per-protocol passwords until they reset.
+Each enrolled installation gets distinct proxy credentials. One secret may serve
+its allowed protocols. Enrollment consumes a device slot in one transaction.
+The limit counts enrolled installations, not physical devices. A copied profile
+uses the same identity. Migration must explicitly map legacy shared subscriptions
+and preserve valid links without restoring revoked ones.
 
 ### Interfaces
 
@@ -119,8 +124,8 @@ avoid automatic egress changes. This does not guarantee provider acceptance.
   their state directories.
 - From M7, per-destination traffic is not recorded for users who aren't admins.
 - Public pages don't name the software or list node hosts.
-- From M5, SOPS holds only infrastructure secrets, such as the database password,
-  the CDN token and the node enrollment secret.
+- After the M4b ownership cutover, SOPS holds infrastructure secrets, not proxy-user records.
+  The foundation uses local database peer authentication without a database password.
 
 ## Knowledge to keep
 
@@ -147,18 +152,18 @@ current location.
 
 ## Milestones
 
-| Milestone | Name                                       | Status   |
-| --------- | ------------------------------------------ | -------- |
-| M0        | Security fixes                             | Done     |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done     |
-| M1b       | Linux TUN in the client CLI                | Deferred |
-| M2        | Client CLI for Windows                     | Done     |
-| M3        | Configs in code, one server process        | Done     |
-| M4        | Control plane and subscriptions            | Planned  |
-| M5        | Node agent and traffic                     | Planned  |
-| M6        | Multiple nodes                             | Planned  |
-| M7        | Invites, plans and quota enforcement       | Planned  |
-| M8        | Paid plans                                 | Planned  |
+| Milestone | Name                                       | Status      |
+| --------- | ------------------------------------------ | ----------- |
+| M0        | Security fixes                             | Done        |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done        |
+| M1b       | Linux TUN in the client CLI                | Deferred    |
+| M2        | Client CLI for Windows                     | Done        |
+| M3        | Configs in code, one server process        | Done        |
+| M4b       | Control plane, devices and subscriptions   | In progress |
+| M5        | Node agent, traffic and budget enforcement | Planned     |
+| M6        | Multiple nodes                             | Planned     |
+| M7        | Invitation self-service and reusable plans | Planned     |
+| M8        | Paid plans                                 | Planned     |
 
 ### M0: Security fixes
 
@@ -231,7 +236,7 @@ Portal:
   machine, and deploy leaves it out of the server's config. The portal serves the
   files and the manifest under the subscription path.
 - `sbm release` stops packing Linux, macOS and Windows archives. Android
-  archives stay until M4.
+  archives stay until the M4b migration.
 
 Client:
 
@@ -250,7 +255,7 @@ Client:
   systemd is missing, `sbc run` runs it in the foreground.
 - `sbc` patches the listen port, inbound auth, extra listeners, the Clash API and the
   speed test into the portal's config. The API listens on `127.0.0.1` with a random
-  port and secret, and `proxy route` and `proxy protocol` call it. sing-box clears its DNS cache when
+  port and secret, and `sbc route` and `sbc protocol` call it. sing-box clears its DNS cache when
   the mode changes, and its cache file keeps the mode and the selector choice across
   restarts. This was checked in the sing-box 1.14.2 source.
 - A timer refreshes the config every 6 hours after a random delay and sends the
@@ -477,32 +482,52 @@ The separately authorized live migration is complete: the VPS runs one
 and both traffic collectors are healthy. An existing subscription refreshed
 successfully, and every protocol available to that client passed connection tests.
 
-### M4: Control plane and subscriptions
+### M4b: Control plane, devices and subscriptions
 
-- Add a Django project with Postgres on the current VPS behind nginx. The SOPS
-  inventory stays the source of truth for users. `sbm deploy` imports it into the
-  control plane, with the subscription counters, so links keep working.
-- The control plane takes over `/sub/<token>` from the portal, renders with the M3
-  code, and serves the mirrored binaries and the signed manifest.
-- The user page at `/sub/<token>/` shows the subscription link, a QR code for the
-  mobile apps and install commands. Admins use the Django admin.
-- Android uses a remote profile instead of the zip.
-- Usage stays on the old portal until M5.
+Build from current main. Reuse the config builders, signed-download contract, and
+hosted installers. Keep the service working between these incremental PRs:
 
-Removes per-user archives, the release store, manifest, packing and `sbm gc`, the
-download routes, and the hosted installer templates.
+1. **Deployable foundation.** Implemented in the repository, not deployed live.
+   Opt-in Django/PostgreSQL runs beside the existing portal. Private admin access
+   uses an SSH tunnel. Deploy provisions the database, applies migrations, collects
+   root-owned static files, and checks readiness. Repeat operations retain data.
+   Django accounts are operators only. No proxy users or credentials are imported.
+   See [the foundation guide](CONTROL_PLANE.md).
+2. **Import and migration contracts.** Import users, credentials, and subscription
+   counters idempotently. Keep inventory authoritative during this stage. Define
+   the mapping from shared profiles to enrolled installations. Test valid links,
+   revoked links, config parity, and protected download behavior.
+3. **Subscription serving.** Django takes over subscriptions and mirrored signed
+   downloads using the existing renderers. Preserve ETags, version negotiation,
+   authentication, and download path checks. Add the subscription page, mobile QR
+   code, and remote Android profiles. Keep usage on the old portal until M5.
+4. **Device management and ownership cutover.** Add account-authenticated enrollment,
+   revocation, transactional slot checks, and per-user policies. Postgres becomes
+   authoritative for users, devices, and policies. Later deploys cannot overwrite
+   database-managed records from inventory. SOPS retains infrastructure secrets.
 
-Done when every current user runs from a subscription URL.
+Before cutover, define how credential changes reach the current node without the
+M5 agent. A subscription token alone must not authorize device or policy management.
+Model budgets in M4b; M5 adds collection and automatic suspension.
 
-### M5: Node agent and traffic
+After all installations migrate, remove per-user archives, the archive store and
+its manifest, archive packing, `sbm gc`, and replaced download routes/templates.
+Keep the signed binary/rule-set manifest and working hosted installers.
+
+Done when every current installation has a device subscription, enrollment limits
+and revocation work, and the database owns user/device policy.
+
+### M5: Node agent, traffic and budget enforcement
 
 - Add `cmd/sbm-node` to the Go module. The agent fetches its config, runs
   `sing-box check`, writes the config and reloads sing-box. It reports per-user
   traffic from the API stream with sequence numbers and keeps reports on disk while
   the control plane is unreachable.
-- The database becomes the source of truth for users. SOPS keeps only
-  infrastructure secrets.
-- Traffic lands in `traffic_daily`. The user page, `proxy status` and the
+- Read users, devices, and policies from the database after the M4b ownership cutover.
+  Suspend over-budget or expired users across their devices. Nodes must stop existing
+  sessions as well as reject new ones. Reevaluate access after a reset or allowance change.
+  Measure enforcement delay and interruption before rollout.
+- Traffic lands in `traffic_daily`. The user page, `sbc status` and the
   `subscription-userinfo` header read it. Migrate history from the SQLite database.
 - Before dropping the V2Ray counters, compare them with the stream. The live
   database's `__unattributed__` rows measure the gap between the two.
@@ -515,8 +540,11 @@ templates, CSS and fonts, portal passwords, machine tokens and `POST /api/sub`, 
 server install and uninstall scripts with `scripts/lib/ui.sh`, and most of
 `deploy.py` and `provision.py`.
 
-Done when the VPS runs only sing-box, the agent and the control plane, and usage
-matches the old counters within the accepted gap.
+Done when the VPS runs sing-box, the agent, and the control plane without the old
+portal or collectors. Usage must match the old counters within an accepted gap.
+Fixture checks must cover report replay, outages, suspension of existing sessions,
+and resumption after reset. Define report intervals and the long-outage policy
+before rollout.
 
 ### M6: Multiple nodes
 
@@ -533,11 +561,12 @@ matches the old counters within the accepted gap.
 Done when a second VPS serves users and a blocked node can be replaced without
 touching clients.
 
-### M7: Invites, plans and quota enforcement
+### M7: Invitation self-service and reusable plans
 
 - Registration by invite code, with email verification, login and password reset.
-- Free plans with a traffic quota, period, node groups and device limit.
-- A user over quota or past expiry drops out of node configs at the next reload.
+- Add reusable free plans when shared per-user policies justify them.
+- Expose device enrollment, revocation, and quota information to authenticated users.
+  Use the device limits from M4b and enforcement from M5.
 - Stop recording per-destination traffic for users who aren't admins.
 - Reject SMTP port 25 and BitTorrent on nodes. Add rate limits and captcha to
   registration.

@@ -18,6 +18,12 @@ It assumes:
 - `20000:50000/udp`: Hysteria2 port-hopping range (only if enabled — see below)
 - `9443/tcp`: Naive
 - `47070/tcp`: local FastAPI service bound to `127.0.0.1`
+- `47071/tcp`: optional private Django admin, bound to `127.0.0.1`; no public nginx route
+
+The [control-plane foundation](CONTROL_PLANE.md) is opt-in. It adds OS-managed
+PostgreSQL and a separate hardened Django service on fresh or existing hosts.
+Current proxy users, credentials, and subscription routes remain unchanged.
+Do not open the Django or database ports in ufw.
 
 ## Hysteria2 Port Hopping (optional)
 
@@ -171,7 +177,7 @@ than `off` asks every bash client to run `proxy upgrade`, which moves it to `sbc
 Edit the runtime inventory with `sops` on your **local machine**. See
 [`docs/SECRET_HANDLING.md`](./SECRET_HANDLING.md) for the encrypted-secret
 workflow. Bootstrap and subsequent deploys decrypt and ship a plaintext copy to the
-server; the plaintext remote file remains mode `0600`.
+server. The remote file is owned by `root:sbm` with mode `0640`.
 
 `deployment.host` is the canonical hostname for the Nginx `server_name`, FastAPI
 trusted hosts, and CA-signed sing-box `tls.server_name`.

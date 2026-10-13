@@ -10,6 +10,10 @@ The primary deployment target is a single VPS that runs:
 - the authenticated download portal behind `nginx`
 - `certbot-nginx` for CA-signed certificates
 
+An opt-in Django/PostgreSQL foundation runs beside the portal. Its private admin
+manages Django operators only. Inventory still owns proxy users and credentials.
+See [the control-plane guide](docs/CONTROL_PLANE.md) for enablement and recovery.
+
 ## Public source and private operations
 
 The public GitHub repository is `xiaosq2000/sing-box-manager`; the Go module
@@ -126,6 +130,7 @@ or check out config state with git.
 - [`docs/WEBRTC.md`](docs/WEBRTC.md): cross-platform `sbc webrtc` behavior and browser cleanup
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
 - [`docs/REMOTE_DEPLOYMENT.md`](docs/REMOTE_DEPLOYMENT.md): sync the active release artifacts to a remote host and install them
+- [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md): opt-in Django/PostgreSQL foundation, private admin, and recovery
 - [`docs/REFACTOR_SPEC.md`](docs/REFACTOR_SPEC.md): target architecture and refactoring milestones
 
 ## Common Commands

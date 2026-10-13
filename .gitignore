@@ -12,6 +12,7 @@
 *.sqlite3
 *.sqlite3-*
 *.db
+*.dump
 
 .cache
 **/__pycache__

@@ -8,7 +8,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import uvicorn
 
@@ -84,8 +84,18 @@ class StatsStreamCommand:
     """
 
 
+@dataclass
+class ControlPlaneCommand:
+    """Manage the private Django service. This does not change proxy users."""
+
+    action: Literal[
+        "serve", "migrate", "check", "create-admin", "collect-static", "health"
+    ] = "check"
+
+
 Command = (
-    Annotated[ServeCommand, tyro.conf.subcommand(name="serve")]
+    Annotated[ControlPlaneCommand, tyro.conf.subcommand(name="control-plane")]
+    | Annotated[ServeCommand, tyro.conf.subcommand(name="serve")]
     | Annotated[ReleaseCommand, tyro.conf.subcommand(name="release")]
     | Annotated[DeployCommand, tyro.conf.subcommand(name="deploy")]
     | Annotated[GcCommand, tyro.conf.subcommand(name="gc")]
@@ -263,6 +273,19 @@ def _run_stats_stream(_: StatsStreamCommand, settings: Settings) -> None:
 
 
 def _dispatch(command: Command, settings: Settings) -> None:
+    if isinstance(command, ControlPlaneCommand):
+        from sing_box_manager.control_plane.runner import run
+
+        try:
+            run(command.action, settings)
+        except Exception as exc:
+            print(
+                "Control-plane operation failed. Check the configuration and local database.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1) from exc
+        return
+
     if isinstance(command, ServeCommand):
         _run_serve(command, settings)
         return

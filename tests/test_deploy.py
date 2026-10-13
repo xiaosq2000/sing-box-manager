@@ -270,12 +270,14 @@ def _deploy(
     options: DeployOptions = DeployOptions(),
     protocols: list[str] | None = None,
     traffic_stats_enabled: bool = False,
+    control_plane_enabled: bool = False,
     **artifact_kwargs: bool,
 ) -> _Recorder:
     config_path = tmp_path / "config" / "inventory" / "runtime.yaml"
     settings = _settings(
         config_path=config_path, traffic_stats_enabled=traffic_stats_enabled
     )
+    settings.control_plane.enabled = control_plane_enabled
     _prepare_release_artifacts(tmp_path, settings, **artifact_kwargs)
     _prepare_code_tree(tmp_path)
     recorder = recorder or _Recorder()
@@ -1178,3 +1180,31 @@ def test_deploy_ships_the_files_the_portal_reads_at_runtime() -> None:
     for module in (desktop_config, profiles, renderers):
         relative = Path(module.__file__).relative_to(root).as_posix()
         assert any(relative.startswith(f"{tree}/") for tree in CODE_TREE_PATHS)
+
+
+def test_control_plane_checks_precede_success_metadata(tmp_path, monkeypatch):
+    from sing_box_manager.control_plane import deployment
+    monkeypatch.setattr(deployment, "_require_ubuntu_debian", lambda _: None)
+    recorder = _deploy(tmp_path, monkeypatch, control_plane_enabled=True)
+    assert recorder.index_of("--action migrate") < recorder.index_of("--action health")
+    assert recorder.index_of("--action health") < recorder.index_of("deployment-info.json")
+    assert recorder.index_of("systemctl restart sing-box-manager-web.service") < recorder.index_of("--action health")
+
+
+def test_control_plane_failure_cannot_publish_success_metadata(tmp_path, monkeypatch):
+    from sing_box_manager.control_plane import deployment
+    recorder = _Recorder()
+    def fail(*args, **kwargs):
+        raise DeploymentError("control-plane health failed")
+    monkeypatch.setattr(deployment, "deploy", fail)
+    with pytest.raises(DeploymentError, match="control-plane health failed"):
+        _deploy(tmp_path, monkeypatch, recorder=recorder, control_plane_enabled=True)
+    assert not any("deployment-info.json" in part for command in recorder.commands for part in command)
+
+
+def test_skip_code_leaves_control_plane_unchanged(tmp_path, monkeypatch):
+    from sing_box_manager.control_plane import deployment
+    def unexpected(*args, **kwargs):
+        raise AssertionError("skip-code must not change the control plane")
+    monkeypatch.setattr(deployment, "deploy", unexpected)
+    _deploy(tmp_path, monkeypatch, options=DeployOptions(skip_code=True), control_plane_enabled=True)
