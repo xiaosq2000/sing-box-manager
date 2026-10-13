@@ -1,6 +1,6 @@
 # WebRTC protection in sbc
 
-Checked on 2026-10-06.
+Checked on 2026-10-13.
 
 These commands have the same meaning on Linux, macOS and Windows.
 `on` enables leak protection. It does not enable or disable the WebRTC API.
@@ -40,6 +40,8 @@ The Chromium policies restrict direct UDP. They do not route every application
 through the proxy. Protection stays configured while the proxy is off and can
 restrict calls. Extensions, administrator policies and browser packaging can affect
 which settings the browser applies. Check the browser's policy page after restart.
+Switching to `sbc route direct` does not remove browser protection or the
+sing-box STUN and QUIC restrictions.
 
 Linux uses mandatory JSON policies in the installed browser's system policy
 directory. These affect every account on the machine. Snap and Flatpak Chromium

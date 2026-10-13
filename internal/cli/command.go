@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
+	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
 )
 
@@ -153,7 +154,20 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	docker.ValidArgsFunction = fixedChoices("on", "off")
 
 	add("status", i18n.T("Show service, proxy, route, protocol, shells, and traffic"), "proxy", argumentRange(0, 0), func([]string) int { return runStatus(env) })
-	add("ip", i18n.T("Show the exit location seen by Gemini, foreign sites, and Chinese sites"), "proxy", argumentRange(0, 0), func([]string) int { return runIP(env) })
+	var ip ipOptions
+	ipCmd := add("ip", i18n.T("Show exit IPs, with optional unauthenticated AI provider checks"), "proxy", argumentRange(0, 0), func([]string) int { return runIP(env, ip) })
+	ipCmd.Flags().BoolVar(&ip.ai, "ai", false, i18n.T("Also probe Gemini, ChatGPT, and Claude"))
+	ipCmd.Flags().BoolVar(&ip.allowDirectAI, "allow-direct-ai", false, i18n.T("Permit AI probes to expose your direct network IP (requires --ai)"))
+	ipCmd.Args = func(cmd *cobra.Command, args []string) error {
+		if err := argumentRange(0, 0)(cmd, args); err != nil {
+			return err
+		}
+		if ip.allowDirectAI && !ip.ai {
+			return i18n.New("ip: --allow-direct-ai requires --ai")
+		}
+		return nil
+	}
+	ipCmd.Long = i18n.T("General IP checks follow the active route. --ai uses the proxy-only diagnostic inlet and skips the direct route. --allow-direct-ai uses the active route instead. Provider checks use no account credentials and do not prove account eligibility. Redirects are not followed.")
 	var speed speedOptions
 	speedCmd := add("speed", i18n.T("Test page latency, or download throughput with --download [MB]"), "proxy", argumentRange(0, 0), func([]string) int { return runSpeed(env, speed) })
 	speedCmd.Flags().BoolVar(&speed.all, "all", false, i18n.T("Test every protocol without switching the one in use"))
@@ -170,13 +184,29 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		return nil
 	}
 	speedCmd.RegisterFlagCompletionFunc("download", fixedChoices())
+	var listRoutes bool
 	for _, what := range []string{"route", "protocol"} {
 		description := i18n.T("Show or switch the route without restarting sing-box")
 		if what == "protocol" {
 			description = i18n.T("Show or switch the protocol without restarting sing-box")
 		}
-		cmd := add(what+" [name]", description, "proxy", argumentRange(0, 1), func(args []string) int { return runSwitch(env, args, what) })
+		cmd := add(what+" [name]", description, "proxy", argumentRange(0, 1), func(args []string) int {
+			if what == "route" && listRoutes {
+				return runRouteList(env)
+			}
+			return runSwitch(env, args, what)
+		})
 		cmd.ValidArgsFunction = configChoices(env, what)
+		if what == "route" {
+			cmd.Flags().BoolVar(&listRoutes, "list", false, i18n.T("List available route strategies and their meanings"))
+			cmd.Long = routes.Help()
+			cmd.Args = func(cmd *cobra.Command, args []string) error {
+				if listRoutes && len(args) != 0 {
+					return i18n.New("route: --list does not take a route name")
+				}
+				return argumentRange(0, 1)(cmd, args)
+			}
+		}
 	}
 	add("port [number]", i18n.T("Show or change the local proxy port"), "proxy", argumentRange(0, 1), func(args []string) int { return runPort(env, args) })
 	add("update", i18n.T("Refresh the subscription config now"), "proxy", argumentRange(0, 0), func([]string) int { return runUpdate(env) })

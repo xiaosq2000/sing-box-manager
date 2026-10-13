@@ -155,7 +155,7 @@ def test_envelope_carries_the_users_config_and_defaults(
     assert response.headers["referrer-policy"] == "no-referrer"
     envelope = response.json()
     assert envelope["version"] == 1
-    assert envelope["default_route"] == "china"
+    assert envelope["default_route"] == "china-direct"
     # hysteria2 is the configured default, but alice does not hold it.
     assert envelope["default_protocol"] == "trojan"
     assert envelope["nodes"] == [

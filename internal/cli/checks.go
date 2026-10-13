@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -14,10 +15,14 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 )
 
-// runIP shows where sites place this machine when it goes through the proxy:
-// the region Gemini sees, and the addresses foreign and Chinese sites see. The
-// route decides which of them get the server's address.
-func runIP(env Env) int {
+type ipOptions struct {
+	ai            bool
+	allowDirectAI bool
+}
+
+// runIP checks general exit IPs through the active route. AI checks are opt-in
+// and use a validated proxy-only inlet unless direct access is permitted.
+func runIP(env Env, options ipOptions) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -35,13 +40,6 @@ func runIP(env Env) int {
 		line string
 		ask  func() (string, error)
 	}{
-		{i18n.T("gemini:   %s\n"), func() (string, error) {
-			region, err := probe.GeminiRegion(web, env.Sites.Gemini)
-			if err == nil && !probe.GeminiServes(region) {
-				region = fmt.Sprintf(i18n.T("%s (Gemini does not serve this region)"), region)
-			}
-			return region, err
-		}},
 		{i18n.T("abroad:   %s\n"), func() (string, error) {
 			place, err := probe.IPInfo(web, env.Sites.Abroad)
 			return place.String(), err
@@ -51,6 +49,43 @@ func runIP(env Env) int {
 			return place.String(), err
 		}},
 	}
+	fmt.Fprintf(env.Stdout, i18n.T("route:    %s\n"), route)
+	if options.ai {
+		port := local.ListenPort
+		skipped := ""
+		if options.allowDirectAI {
+			fmt.Fprintln(env.Stdout, i18n.T("AI checks follow the active route. Direct network IP exposure is permitted."))
+		} else if route == "direct" {
+			skipped = i18n.T("skipped: direct route (use --ai --allow-direct-ai to permit exposure)")
+		} else {
+			config, err := os.ReadFile(layout.ConfigFile())
+			var safe bool
+			if err == nil {
+				port, safe = singbox.ProxyOnlyProbePort(config)
+			}
+			if !safe {
+				skipped = i18n.T("skipped: proxy-only inlet unavailable (run sbc update)")
+			} else {
+				fmt.Fprintln(env.Stdout, i18n.T("AI checks use the remote proxy, not the active route's destination rules."))
+			}
+		}
+		aiWeb := probe.AIClient(port, local.Username, local.Password, 10*time.Second)
+		for _, entry := range []struct{ provider, page, line string }{
+			{"gemini", env.Sites.Gemini, i18n.T("gemini:   %s\n")},
+			{"chatgpt", env.Sites.ChatGPT, i18n.T("chatgpt:  %s\n")},
+			{"claude", env.Sites.Claude, i18n.T("claude:   %s\n")},
+		} {
+			checks = append(checks, struct {
+				line string
+				ask  func() (string, error)
+			}{entry.line, func() (string, error) {
+				if skipped != "" {
+					return skipped, nil
+				}
+				return probe.AI(aiWeb, entry.provider, entry.page)
+			}})
+		}
+	}
 	answers := make([]string, len(checks))
 	errs := make([]error, len(checks))
 	var wait sync.WaitGroup
@@ -58,7 +93,6 @@ func runIP(env Env) int {
 		wait.Go(func() { answers[index], errs[index] = check.ask() })
 	}
 	wait.Wait()
-	fmt.Fprintf(env.Stdout, i18n.T("route:    %s\n"), route)
 	code := 0
 	for index, check := range checks {
 		answer := answers[index]

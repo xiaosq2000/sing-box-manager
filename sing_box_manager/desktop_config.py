@@ -15,7 +15,11 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass
 
-from sing_box_manager.release.platforms import ROUTE_STRATEGIES
+from sing_box_manager.release.platforms import (
+    ROUTE_ALIASES,
+    ROUTE_STRATEGIES,
+    canonical_route,
+)
 from sing_box_manager.release.renderers import (
     ADGUARD_RULE_SET_TAG,
     ADGUARD_RULE_SET_URL,
@@ -35,8 +39,8 @@ from sing_box_manager.settings import (
 
 PROXY_TAG = "proxy"
 DIRECT_TAG = "direct"
-# The ai route sends direct traffic through the host's resolver instead of a
-# public one. An outbound's resolver is fixed, so that route gets its own.
+# ai-only and direct use the host's resolver for direct traffic. The other
+# strategies use Aliyun. Each direct outbound has a fixed resolver.
 DIRECT_SYSTEM_TAG = "direct-system"
 MIXED_INBOUND_TAG = "mixed"
 CACHE_FILE = "cache.db"
@@ -85,6 +89,7 @@ def build_desktop_config(
     """Return the sing-box config for one user's desktop client on `os_name`."""
     if os_name not in SUPPORTED_CLIENT_OS:
         raise ValueError(f"Unsupported client OS: {os_name}")
+    default_route = canonical_route(default_route)
     if default_route not in ROUTE_STRATEGIES:
         raise ValueError(f"Unsupported route strategy: {default_route}")
     outbounds = _protocol_outbounds(deployment, protocols)
@@ -235,7 +240,9 @@ def _direct_exception_matchers(deployment: DeploymentConfig) -> dict:
 
 
 def _in_mode(mode: str, rules: list[dict]) -> list[dict]:
-    return [{"clash_mode": mode, **rule} for rule in rules]
+    aliases = [alias for alias, canonical in ROUTE_ALIASES.items() if canonical == mode]
+    # sing-box requires one string per clash_mode, not an array.
+    return [{"clash_mode": name, **rule} for rule in rules for name in (mode, *aliases)]
 
 
 def _dns(exceptions: dict, os_name: str) -> dict:
@@ -245,15 +252,16 @@ def _dns(exceptions: dict, os_name: str) -> dict:
     rules = []
     if domain_exceptions:
         rules = [
-            {"clash_mode": "ai", **domain_exceptions, "server": "system"},
+            *_in_mode("ai-only", [{**domain_exceptions, "server": "system"}]),
             {**domain_exceptions, "server": "aliyun"},
         ]
     # Each mode ends with a rule that matches every query, in place of the
     # `final` a single-route config would set.
+    rules = [{"clash_mode": "direct", "server": "system"}, *rules]
     rules += [
         {"rule_set": AI_TAGS, "server": "google"},
         *_in_mode(
-            "china",
+            "china-direct",
             [
                 {"rule_set": [GFWLIST_TAG], "server": "google"},
                 {"rule_set": CHINA_DOMAIN_TAGS, "server": "aliyun"},
@@ -261,10 +269,10 @@ def _dns(exceptions: dict, os_name: str) -> dict:
             ],
         ),
         *_in_mode(
-            "gfw",
+            "gfw-proxy",
             [{"rule_set": [GFWLIST_TAG], "server": "google"}, {"server": "aliyun"}],
         ),
-        *_in_mode("ai", [{"server": "system"}]),
+        *_in_mode("ai-only", [{"server": "system"}]),
         *_in_mode("global", [{"server": "google"}]),
     ]
     return {
@@ -299,14 +307,22 @@ def _route(exceptions: dict) -> dict:
             ],
             "action": "reject",
         },
-        {"clash_mode": "ai", **exceptions, "outbound": DIRECT_SYSTEM_TAG},
+        *_in_mode("ai-only", [{**exceptions, "outbound": DIRECT_SYSTEM_TAG}]),
+        {"clash_mode": "direct", **exceptions, "outbound": DIRECT_SYSTEM_TAG},
         {**exceptions, "outbound": DIRECT_TAG},
         # Ahead of the AdGuard reject: the filter blocks feature-flag and
         # telemetry hosts that AI vendors depend on.
+        {"clash_mode": "direct", "rule_set": AI_TAGS, "outbound": DIRECT_SYSTEM_TAG},
+        {
+            "clash_mode": "direct",
+            "rule_set": [ADGUARD_RULE_SET_TAG],
+            "action": "reject",
+        },
+        {"clash_mode": "direct", "outbound": DIRECT_SYSTEM_TAG},
         {"rule_set": AI_TAGS, "outbound": PROXY_TAG},
         {"rule_set": [ADGUARD_RULE_SET_TAG], "action": "reject"},
         *_in_mode(
-            "china",
+            "china-direct",
             [
                 {"rule_set": [GFWLIST_TAG], "outbound": PROXY_TAG},
                 {"rule_set": CHINA_DOMAIN_TAGS, "outbound": DIRECT_TAG},
@@ -315,13 +331,13 @@ def _route(exceptions: dict) -> dict:
             ],
         ),
         *_in_mode(
-            "gfw",
+            "gfw-proxy",
             [
                 {"rule_set": [GFWLIST_TAG], "outbound": PROXY_TAG},
                 {"outbound": DIRECT_TAG},
             ],
         ),
-        *_in_mode("ai", [{"outbound": DIRECT_SYSTEM_TAG}]),
+        *_in_mode("ai-only", [{"outbound": DIRECT_SYSTEM_TAG}]),
         *_in_mode("global", [{"outbound": PROXY_TAG}]),
     ]
     return {

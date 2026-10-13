@@ -19,6 +19,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
+	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
@@ -340,6 +341,13 @@ func runStatus(env Env) int {
 	return 0
 }
 
+func runRouteList(env Env) int {
+	for _, name := range installedChoices(env, "route") {
+		fmt.Fprintf(env.Stdout, "%-13s %s\n", name, routes.Description(name))
+	}
+	return 0
+}
+
 func runSwitch(env Env, args []string, what string) int {
 	layout, err := env.Layout()
 	if err != nil {
@@ -371,7 +379,7 @@ func runSwitch(env Env, args []string, what string) int {
 		return fail(env, err)
 	}
 	if what == "route" {
-		fmt.Fprintf(env.Stdout, i18n.T("Route: %s\n"), args[0])
+		fmt.Fprintf(env.Stdout, i18n.T("Route: %s\n"), routes.Canonical(args[0]))
 	} else {
 		fmt.Fprintf(env.Stdout, i18n.T("Protocol: %s\n"), args[0])
 	}

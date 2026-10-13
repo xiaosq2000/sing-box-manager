@@ -1,5 +1,7 @@
 # Secret Handling and Runtime Inventory
 
+Checked on 2026-10-13.
+
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
 
@@ -118,8 +120,14 @@ are incompatible. Check the certificate used by the target server before its
 upgrade. See the [Hysteria2 outbound documentation](https://sing-box.sagernet.org/configuration/outbound/hysteria2/).
 
 Desktop DNS cache files contain queried domains and answers. They stay in the
-client's private state directory and are separate for each protocol and route.
+client's private state directory. `sbc` uses one `cache.db` for its route modes and
+protocol selector. Single-route mixed profiles use separate cache files.
 Release packages contain public rule snapshots, never a client's DNS cache.
+
+AI diagnostics use no browser cookies, API keys, or account credentials.
+`sbc ip --ai --allow-direct-ai` permits requests through the active route and can
+expose the local network's public IP. Do not use this check to claim that an
+account is eligible or protected from provider enforcement.
 
 Usernames may appear in one section, two sections, or all protocol sections. The sections are
 related by username, but they are stored independently.

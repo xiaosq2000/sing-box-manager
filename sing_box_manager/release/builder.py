@@ -1237,7 +1237,7 @@ class ReleaseBuilder:
                     protocols,
                     os_name=os_name,
                     default_protocol=self._settings.default_protocol,
-                    default_route="china",
+                    default_route="china-direct",
                 )
                 self._check_config(config, f"{user.username}/{os_name}/sbc")
 

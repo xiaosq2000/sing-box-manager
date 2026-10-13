@@ -269,7 +269,7 @@ func (h *harness) useDocker(t *testing.T) (*docker.Daemon, *[]string) {
 func TestRouteAndProtocolShowAndSwitch(t *testing.T) {
 	h := newHarness(t)
 
-	if code := Run(h.env, []string{"route"}); code != 0 || h.out.String() != "china (choices: ai, china, gfw, global)\n" {
+	if code := Run(h.env, []string{"route"}); code != 0 || h.out.String() != "china-direct (choices: ai-only, china-direct, gfw-proxy, global)\n" {
 		t.Fatalf("route: code %d, %q", code, h.out.String())
 	}
 	if code := Run(h.env, []string{"route", "gfw"}); code != 0 || h.api.mode != "gfw" {
@@ -289,7 +289,7 @@ func TestStatusShowsServiceRouteProtocolAndPort(t *testing.T) {
 
 	Run(h.env, []string{"status"})
 
-	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\nroute:    china\nprotocol: trojan\n"
+	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\nroute:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out.String())
 	}
@@ -532,7 +532,7 @@ func TestInstallCheckAppliesTheChoicesAndLoadsAPage(t *testing.T) {
 	if h.api.mode != "gfw" || h.api.protocol != "naive" {
 		t.Errorf("mode %q, protocol %q", h.api.mode, h.api.protocol)
 	}
-	if !strings.Contains(h.out.String(), "Route gfw, protocol naive: a page loads through the proxy in 87 ms.") {
+	if !strings.Contains(h.out.String(), "Route gfw-proxy, protocol naive: a page loads through the proxy in 87 ms.") {
 		t.Errorf("stdout %q", h.out)
 	}
 }

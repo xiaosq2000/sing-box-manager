@@ -154,7 +154,11 @@ pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserC
 ```
 
 CLI help and argument-validation fixtures reject calls to installation lookup
-or stdin. Completion fixtures read only a scratch config and use no running proxy.
+or stdin. AI check fixtures cover explicit opt-in, direct-mode skips, direct
+permission, proxy-only inlet validation, HTTP denials, challenges, redirects,
+unknown regions, and absence of account credentials or automatic retries.
+Route alias fixtures cover old and new installed configs. Provider checks use
+loopback stand-ins only, never live provider requests. Completion fixtures read only a scratch config and use no running proxy.
 Native completion tests build a temporary `sbc` and use isolated homes and profiles.
 Bash tests cover bare-shell fallback, split equals signs, cursor position, and
 interactive-only activation. The macOS job also tests `/bin/bash` for Bash 3.2.
@@ -254,9 +258,11 @@ so initial files also need a startup check.
 The tests in `tests/test_sing_box_114.py` use generated certificates and loopback
 DNS, HTTP, and proxy servers. They check every rendered client profile on every
 platform it is rendered for, since the desktop configs differ by platform in the
-system resolver the `ai` route names, plus desktop startup with failed rule
-updates, and DNS persistence and expiry. Routing fixtures cover all four desktop
-strategies, direct exceptions with the proxy unavailable, and mobile FakeIP bypass.
+system resolver that `ai-only` and `direct` use, plus desktop startup with failed rule
+updates, and DNS persistence and expiry. Routing fixtures cover all five desktop
+strategies and the three legacy alias modes, direct exceptions with the proxy
+unavailable, and mobile FakeIP bypass. `direct` tests verify system DNS and direct
+AI connections with the remote proxy both available and unavailable.
 Dedicated Anthropic fixtures test proxy routing and DNS ahead of AdGuard and
 China-direct matches. Desktop fixtures also test failed updates and no direct
 fallback when the proxy is unavailable. Mobile fixtures test AI priority under

@@ -104,7 +104,7 @@ func testLifecycle(t *testing.T, engine string) {
 			"a page loads through the proxy")
 	}
 	expect(t, run(t, nil, sbc, "version"), "sbc e2e")
-	expect(t, run(t, nil, sbc, "status"), "service:  running", "route:    china", "protocol: socks", "traffic:")
+	expect(t, run(t, nil, sbc, "status"), "service:  running", "route:    china-direct", "protocol: socks", "traffic:")
 	proxy := proxyURL(t, run(t, nil, sbc, "env"))
 	expectPage(t, proxy, site.URL)
 	if runtime.GOOS == "windows" {
@@ -117,7 +117,7 @@ func testLifecycle(t *testing.T, engine string) {
 	// Route and protocol switch through sing-box's API, without a restart.
 	run(t, nil, sbc, "route", "gfw")
 	run(t, nil, sbc, "protocol", "http")
-	expect(t, run(t, nil, sbc, "status"), "route:    gfw", "protocol: http")
+	expect(t, run(t, nil, sbc, "status"), "route:    gfw-proxy", "protocol: http")
 	if now := singBoxPID(t, layout.SingBox()); now != pid {
 		t.Errorf("switching restarted sing-box: pid %s became %s", pid, now)
 	}
@@ -141,7 +141,7 @@ func testLifecycle(t *testing.T, engine string) {
 		t.Error("the config that cannot start stayed in place")
 	}
 	expectPage(t, proxy, site.URL)
-	expect(t, run(t, nil, sbc, "status"), "service:  running", "route:    gfw", "protocol: http")
+	expect(t, run(t, nil, sbc, "status"), "service:  running", "route:    gfw-proxy", "protocol: http")
 	portal.setConfig(clientConfig(upstream, 0))
 
 	// Uninstall removes the service, the process and every file. On Windows

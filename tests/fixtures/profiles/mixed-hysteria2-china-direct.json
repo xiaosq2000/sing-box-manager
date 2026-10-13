@@ -1,6 +1,6 @@
 {
   "dns": {
-    "final": "aliyun",
+    "final": "google",
     "optimistic": false,
     "rules": [
       {
@@ -15,6 +15,10 @@
       {
         "rule_set": ["GFWList"],
         "server": "google"
+      },
+      {
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
       }
     ],
     "servers": [
@@ -34,7 +38,7 @@
   "experimental": {
     "cache_file": {
       "enabled": true,
-      "path": "cache-naive-gfw.db",
+      "path": "cache-hysteria2-china-direct.db",
       "store_dns": true
     }
   },
@@ -58,7 +62,7 @@
     "timestamp": true
   },
   "ntp": {
-    "detour": "direct",
+    "detour": "proxy",
     "enabled": true,
     "interval": "30m",
     "server": "time.apple.com",
@@ -69,16 +73,19 @@
       "domain_resolver": {
         "server": "google"
       },
+      "obfs": {
+        "password": "change-me-obfs",
+        "type": "salamander"
+      },
       "password": "change-me",
       "server": "8.8.8.8",
-      "server_port": 9443,
+      "server_port": 58080,
       "tag": "proxy",
       "tls": {
         "enabled": true,
         "server_name": "vpn.example.com"
       },
-      "type": "naive",
-      "username": "alice"
+      "type": "hysteria2"
     },
     {
       "domain_resolver": {
@@ -90,7 +97,7 @@
   ],
   "route": {
     "default_http_client": "rule-downloads",
-    "final": "direct",
+    "final": "proxy",
     "rule_set": [
       {
         "format": "binary",
@@ -127,6 +134,33 @@
         "type": "remote",
         "update_interval": "1d",
         "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/gfwlist.txt.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/56a3c0517911ad27c0c3665c7215f87a907d71e33b450344534a24d1312f42f5.srs",
+        "tag": "GeoSite-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/accelerated-domains.china.conf.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/e14b39f826a08b567fd0856766a01641f76975953d634f310aa21ac7f041e527.srs",
+        "tag": "GeoSite-Apple-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/apple.china.conf.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/b46fbd1a365ed9c81e82ee4ef119ebe2e1464a33876f8e2c8300dc45a9e350fd.srs",
+        "tag": "GeoIP-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs"
       }
     ],
     "rules": [
@@ -191,6 +225,14 @@
       {
         "outbound": "proxy",
         "rule_set": ["GFWList"]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["GeoIP-CN"]
       }
     ]
   }

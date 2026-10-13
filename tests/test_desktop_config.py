@@ -28,7 +28,7 @@ from sing_box_manager.desktop_config import (
     build_desktop_config,
 )
 from sing_box_manager.release import renderers
-from sing_box_manager.release.platforms import ROUTE_STRATEGIES
+from sing_box_manager.release.platforms import ROUTE_ALIASES, ROUTE_STRATEGIES
 from tests.test_sing_box_114 import binary as binary
 from tests.test_sing_box_114 import deployment as deployment
 from tests.test_sing_box_114 import (
@@ -105,7 +105,9 @@ def _mode_view(rules: list[dict], mode: str, target: str) -> tuple[list[dict], s
     taken: list[dict] = []
     for rule in rules:
         gate = rule.get("clash_mode")
-        if gate is not None and gate != mode:
+        if gate is not None and mode not in (
+            gate if isinstance(gate, list) else [gate]
+        ):
             continue
         rule = {key: value for key, value in rule.items() if key != "clash_mode"}
         conditions = {key: value for key, value in rule.items() if key != target}
@@ -218,7 +220,7 @@ def test_selector_holds_the_enabled_protocols_in_order() -> None:
     assert selector["outbounds"] == ["trojan", "hysteria2"]
     assert selector["default"] == "hysteria2"
     assert "naive" not in _by_tag(config["outbounds"])
-    assert config["experimental"]["clash_api"] == {"default_mode": "gfw"}
+    assert config["experimental"]["clash_api"] == {"default_mode": "gfw-proxy"}
 
 
 def test_ai_mode_sends_direct_traffic_through_the_system_resolver() -> None:
@@ -231,7 +233,7 @@ def test_ai_mode_sends_direct_traffic_through_the_system_resolver() -> None:
     )
     resolvers = _resolvers(config)
     assert resolvers == {DIRECT_TAG: "aliyun", DIRECT_SYSTEM_TAG: "system"}
-    _, final = _mode_view(config["route"]["rules"], "ai", "outbound")
+    _, final = _mode_view(config["route"]["rules"], "ai-only", "outbound")
     assert resolvers[final] == "system"
 
 
@@ -247,7 +249,7 @@ def test_an_ip_host_is_a_direct_ip_exception_without_a_dns_rule() -> None:
         default_route="china",
     )
     exceptions = [rule for rule in config["route"]["rules"] if "ip_cidr" in rule]
-    assert [rule["ip_cidr"] for rule in exceptions] == [["203.0.113.10/32"]] * 2
+    assert [rule["ip_cidr"] for rule in exceptions] == [["203.0.113.10/32"]] * 4
     assert not any(
         "domain" in rule or "domain_suffix" in rule for rule in config["dns"]["rules"]
     )
@@ -393,7 +395,7 @@ def test_each_mode_routes_like_its_single_route_config(
         api_port, secret = _enable_api(config)
         use_routing_fixtures(config, tmp_path, binary, fixtures)
         with _running(binary, tmp_path, config):
-            for mode in ROUTE_STRATEGIES:
+            for mode in (*ROUTE_STRATEGIES, *ROUTE_ALIASES):
                 _api(api_port, secret, "PATCH", "/configs", {"mode": mode})
                 assert _api(api_port, secret, "GET", "/configs")["mode"] == mode
                 fixtures.reset_counters()

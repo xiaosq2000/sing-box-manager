@@ -57,17 +57,17 @@ func TestIPShowsTheRouteAndWhereEachKindOfSitePlacesTheMachine(t *testing.T) {
 
 	code := Run(h.env, []string{"ip"})
 
-	want := "route:    china\ngemini:   USA\nabroad:   Los Angeles, US, 203.0.113.7\nchina:    中国 上海 上海 电信, 198.51.100.20\n"
+	want := "route:    china-direct\nabroad:   Los Angeles, US, 203.0.113.7\nchina:    中国 上海 上海 电信, 198.51.100.20\n"
 	if code != 0 || h.out.String() != want {
 		t.Fatalf("code %d, got\n%s%s", code, h.out, h.errOut)
 	}
 	password := "Basic " + base64.StdEncoding.EncodeToString([]byte("sbc:s3cret"))
-	if len(*seen) != 3 || (*seen)[0] != password || (*seen)[1] != password || (*seen)[2] != password {
+	if len(*seen) != 2 || (*seen)[0] != password || (*seen)[1] != password {
 		t.Errorf("the proxy saw %q", *seen)
 	}
 }
 
-func TestIPReportsASiteThatFailsAndARegionGeminiDoesNotServe(t *testing.T) {
+func TestIPReportsASiteThatFailsWithoutContactingAI(t *testing.T) {
 	h := newHarness(t)
 	h.useSites(t, map[string]string{
 		"gemini.test": `,2,1,200,"HKG"`,
@@ -76,8 +76,7 @@ func TestIPReportsASiteThatFailsAndARegionGeminiDoesNotServe(t *testing.T) {
 
 	code := Run(h.env, []string{"ip"})
 
-	want := "route:    china\n" +
-		"gemini:   HKG (Gemini does not serve this region)\n" +
+	want := "route:    china-direct\n" +
 		"abroad:   failed: the site answered 502 Bad Gateway\n" +
 		"china:    198.51.100.20\n"
 	if code != 1 || h.out.String() != want {
@@ -270,7 +269,7 @@ func TestStatusShowsTheTrafficCountOfTheLastRefresh(t *testing.T) {
 
 	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\n" +
 		"traffic:  700.00 MiB up, 15.30 GiB down this billing cycle, as of 2026-10-03 14:05\n" +
-		"route:    china\nprotocol: trojan\n"
+		"route:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out)
 	}

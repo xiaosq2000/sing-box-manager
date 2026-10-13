@@ -1,16 +1,24 @@
 {
   "dns": {
-    "final": "system",
+    "final": "google",
     "optimistic": false,
     "rules": [
       {
         "domain": ["vpn.example.com"],
         "domain_suffix": ["portal.example.net"],
-        "server": "system"
+        "server": "aliyun"
       },
       {
         "rule_set": ["AI-Anthropic", "AI-Geosite"],
         "server": "google"
+      },
+      {
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
       }
     ],
     "servers": [
@@ -21,8 +29,8 @@
         "type": "tls"
       },
       {
-        "server": "127.0.0.53",
-        "tag": "system",
+        "server": "223.5.5.5",
+        "tag": "aliyun",
         "type": "udp"
       }
     ]
@@ -30,7 +38,7 @@
   "experimental": {
     "cache_file": {
       "enabled": true,
-      "path": "cache-naive-ai.db",
+      "path": "cache-naive-china-direct.db",
       "store_dns": true
     }
   },
@@ -54,7 +62,7 @@
     "timestamp": true
   },
   "ntp": {
-    "detour": "direct",
+    "detour": "proxy",
     "enabled": true,
     "interval": "30m",
     "server": "time.apple.com",
@@ -78,7 +86,7 @@
     },
     {
       "domain_resolver": {
-        "server": "system"
+        "server": "aliyun"
       },
       "tag": "direct",
       "type": "direct"
@@ -86,7 +94,7 @@
   ],
   "route": {
     "default_http_client": "rule-downloads",
-    "final": "direct",
+    "final": "proxy",
     "rule_set": [
       {
         "format": "binary",
@@ -114,6 +122,42 @@
         "type": "remote",
         "update_interval": "1d",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/6f37c053125cea788f3d9bd82b9ac3610653cce3db66bbd32324ff51d7098737.srs",
+        "tag": "GFWList",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/gfwlist.txt.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/56a3c0517911ad27c0c3665c7215f87a907d71e33b450344534a24d1312f42f5.srs",
+        "tag": "GeoSite-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/accelerated-domains.china.conf.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/e14b39f826a08b567fd0856766a01641f76975953d634f310aa21ac7f041e527.srs",
+        "tag": "GeoSite-Apple-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/apple.china.conf.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/b46fbd1a365ed9c81e82ee4ef119ebe2e1464a33876f8e2c8300dc45a9e350fd.srs",
+        "tag": "GeoIP-CN",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs"
       }
     ],
     "rules": [
@@ -174,6 +218,18 @@
       {
         "clash_mode": "Global",
         "outbound": "proxy"
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": ["GFWList"]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": ["GeoIP-CN"]
       }
     ]
   }

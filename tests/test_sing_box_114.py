@@ -129,7 +129,9 @@ def render_client(protocol: str, profile: str, deployment: DeploymentConfig) -> 
 
 
 @pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-@pytest.mark.parametrize("profile", ["china", "gfw", "ai", "global", "-tun"])
+@pytest.mark.parametrize(
+    "profile", ["direct", "china-direct", "gfw-proxy", "ai-only", "global", "-tun"]
+)
 # Every platform's desktop configs are rendered separately, and the ai route's
 # system resolver differs between them, so all three have to pass validation.
 @pytest.mark.parametrize("os_name", ["linux", "darwin", "windows"])
@@ -448,13 +450,31 @@ def assert_desktop_routing(
         fixtures.dns,
         fixtures.google_dns,
     )
+    from sing_box_manager.release.platforms import canonical_route
+
+    strategy = canonical_route(strategy)
     dns_port = fixtures.dns_port
+    if strategy == "direct":
+        for host in (
+            "api.openai.com",
+            "unknown.fixture.invalid",
+            *ANTHROPIC_FIXTURE_HOSTS,
+        ):
+            assert _query_dns(dns_port, host) == "127.0.0.1"
+            assert b"direct" in _connect(port, host, direct.server_address[1])
+        assert google_dns.queries == 0
+        assert not proxy.targets
+        assert not _connect(port, "blocked.fixture.invalid", direct.server_address[1])
+        assert b"direct" in _connect(
+            port, "filtered.fixture.invalid", direct.server_address[1]
+        )
+        return
     assert _query_dns(dns_port, "dns.portal.fixture.invalid") == "127.0.0.1"
     assert dns.queries == 1 and google_dns.queries == 0
     if proxy_available:
         assert _query_dns(dns_port, "filtered.fixture.invalid") == "127.0.0.1"
         assert google_dns.queries == 1
-        if strategy in {"china", "gfw"}:
+        if strategy in {"china-direct", "gfw-proxy"}:
             assert _query_dns(dns_port, "proxy.fixture.invalid") == "127.0.0.1"
             assert google_dns.queries == 2
     for host in (
@@ -478,9 +498,9 @@ def assert_desktop_routing(
         "portal.fixture.invalid.evil",
         "sub.vpn.example.com",
     ):
-        expected = b"direct" if strategy in {"ai", "gfw"} else b"proxied"
+        expected = b"direct" if strategy in {"ai-only", "gfw-proxy"} else b"proxied"
         assert expected in _connect(port, host, direct.server_address[1])
-    proxied = "api.openai.com" if strategy == "ai" else "proxy.fixture.invalid"
+    proxied = "api.openai.com" if strategy == "ai-only" else "proxy.fixture.invalid"
     assert b"proxied" in _connect(port, proxied, direct.server_address[1])
     assert proxied in proxy.targets
     assert not _connect(port, "blocked.fixture.invalid", direct.server_address[1])
@@ -546,7 +566,9 @@ def test_mobile_anthropic_routing_and_dns_override_china_and_modes(
 
 
 @pytest.mark.parametrize("proxy_available", [True, False])
-@pytest.mark.parametrize("strategy", ["china", "gfw", "ai", "global"])
+@pytest.mark.parametrize(
+    "strategy", ["direct", "china-direct", "gfw-proxy", "ai-only", "global"]
+)
 def test_cold_start_uses_bundled_rules_when_updates_fail(
     tmp_path: Path,
     binary: Path,

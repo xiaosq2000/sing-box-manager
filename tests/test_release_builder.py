@@ -730,16 +730,19 @@ def test_build_uses_split_rosters_for_rendered_outputs_and_auth_snapshot(
     assert "sing-box/lib/ui.sh" in alice_members
     assert "sing-box/README_LINUX.md" in alice_members
     assert "sing-box/trojan-client.json" in alice_members
-    assert "sing-box/trojan-gfw-client.json" in alice_members
-    assert "sing-box/trojan-ai-client.json" in alice_members
+    assert "sing-box/trojan-direct-client.json" in alice_members
+    assert "sing-box/trojan-gfw-proxy-client.json" in alice_members
+    assert "sing-box/trojan-ai-only-client.json" in alice_members
     assert "sing-box/trojan-global-client.json" in alice_members
     assert "sing-box/hysteria2-client.json" in alice_members
-    assert "sing-box/hysteria2-gfw-client.json" in alice_members
-    assert "sing-box/hysteria2-ai-client.json" in alice_members
+    assert "sing-box/hysteria2-direct-client.json" in alice_members
+    assert "sing-box/hysteria2-gfw-proxy-client.json" in alice_members
+    assert "sing-box/hysteria2-ai-only-client.json" in alice_members
     assert "sing-box/hysteria2-global-client.json" in alice_members
     assert "sing-box/naive-client.json" in alice_members
-    assert "sing-box/naive-gfw-client.json" in alice_members
-    assert "sing-box/naive-ai-client.json" in alice_members
+    assert "sing-box/naive-direct-client.json" in alice_members
+    assert "sing-box/naive-gfw-proxy-client.json" in alice_members
+    assert "sing-box/naive-ai-only-client.json" in alice_members
     assert "sing-box/naive-global-client.json" in alice_members
     client_version = _read_tar_gz_text(alice_archive, "sing-box/client-version")
     release_info = read_release_info(builder._resolve_path(settings.release_info_path))
@@ -766,8 +769,9 @@ def test_build_uses_split_rosters_for_rendered_outputs_and_auth_snapshot(
     assert "certificate_path" not in trojan_client["outbounds"][0]["tls"]
 
     for route_filename in (
-        "trojan-gfw-client.json",
-        "trojan-ai-client.json",
+        "trojan-direct-client.json",
+        "trojan-gfw-proxy-client.json",
+        "trojan-ai-only-client.json",
         "trojan-global-client.json",
     ):
         variant = _read_tar_gz_json(alice_archive, f"sing-box/{route_filename}")
@@ -778,7 +782,7 @@ def test_build_uses_split_rosters_for_rendered_outputs_and_auth_snapshot(
     # The ai route resolves direct traffic through the host's own resolver, and
     # a Linux package has to name systemd-resolved's stub: sing-box's `local`
     # transport binds its query socket to the link, which needs CAP_NET_RAW.
-    trojan_ai = _read_tar_gz_json(alice_archive, "sing-box/trojan-ai-client.json")
+    trojan_ai = _read_tar_gz_json(alice_archive, "sing-box/trojan-ai-only-client.json")
     assert {"server": "127.0.0.53", "tag": "system", "type": "udp"} in trojan_ai["dns"][
         "servers"
     ]
