@@ -379,6 +379,17 @@ def _derive_remote_config(settings: Settings, inventory: RuntimeInventory) -> st
                 inventory.deployment.host,
             ],
         },
+        "control_plane": {
+            **settings.control_plane.model_dump(mode="json", exclude_none=True),
+            **(
+                {
+                    "secret_key": settings.control_plane.secret_key
+                    or secrets.token_hex(32)
+                }
+                if settings.control_plane.enabled
+                else {}
+            ),
+        },
         "traffic_stats": _remote_traffic_stats(settings.traffic_stats),
         "client_upgrade": {
             "policy": settings.client_upgrade.policy,
@@ -398,6 +409,8 @@ def _derive_remote_config(settings: Settings, inventory: RuntimeInventory) -> st
         exclude_none=True,
     )
     config.update(inventory_data)
+    if settings.control_plane.enabled:
+        config["config_root"] = str(settings.config_root)
     return yaml.dump(config, default_flow_style=False, sort_keys=False)
 
 

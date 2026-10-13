@@ -259,6 +259,10 @@ before shutdown may need another lookup after restart.
 
 ## Start the Portal
 
+The optional [Django/PostgreSQL foundation](CONTROL_PLANE.md) runs separately.
+Its admin manages Django operators only. Release artifacts, portal login, client
+subscriptions, and traffic accounting keep their current behavior.
+
 Run the web service only after `config/generated/auth-users.json` and
 `config/generated/release-info.json` exist, typically after a successful release build.
 

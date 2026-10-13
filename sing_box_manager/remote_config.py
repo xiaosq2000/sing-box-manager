@@ -21,10 +21,13 @@ def _load_mapping(path: Path) -> dict[str, object]:
 # Deploy generates these on the server when the inventory has none, and
 # replacing one would sign users out or revoke their subscription links.
 PRESERVED_WEB_SECRETS = ("session_secret", "subscription_secret")
+PRESERVED_SECRETS = [("web", name) for name in PRESERVED_WEB_SECRETS] + [
+    ("control_plane", "secret_key"),
+]
 
 
-def _web_secret(config: dict[str, object], name: str) -> str | None:
-    web = config.get("web")
+def _secret(config: dict[str, object], section: str, name: str) -> str | None:
+    web = config.get(section)
     if not isinstance(web, dict):
         return None
 
@@ -51,13 +54,15 @@ def publish_runtime_config(
     reference_path = owner_reference_path
     if target_path.is_file():
         current = _load_mapping(target_path)
-        for name in PRESERVED_WEB_SECRETS:
-            existing_secret = _web_secret(current, name)
+        for section, name in PRESERVED_SECRETS:
+            existing_secret = _secret(current, section, name)
             if existing_secret is None:
                 continue
-            incoming_web = incoming.get("web")
+            incoming_web = incoming.get(section)
+            if section == "control_plane" and incoming_web is None:
+                incoming_web = incoming[section] = {"enabled": False}
             if not isinstance(incoming_web, dict):
-                raise ValueError("Runtime config web setting must be a mapping")
+                raise ValueError(f"Runtime config {section} setting must be a mapping")
             cast("dict[str, object]", incoming_web)[name] = existing_secret
         reference_path = target_path
 

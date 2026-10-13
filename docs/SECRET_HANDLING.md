@@ -166,6 +166,14 @@ If you forget the plaintext portal password, you cannot recover it from
   `web.subscription_secret` keys subscription links, so anyone who holds it can
   compute every user's link. Deploy generates either one on the server when the
   inventory leaves it unset, and keeps the server's value afterwards
+- `control_plane.secret_key` signs the private Django service's sessions. Deploy
+  generates it when the service is enabled and keeps the server's value on later
+  deployments, including disable/re-enable. Keep it in protected infrastructure
+  configuration. PostgreSQL stores separate Django operator password hashes and
+  sessions; current portal and proxy credentials remain inventory-managed.
+  Local database access uses Unix-socket peer authentication as `sbm`, not a
+  database password. Keep database files and backup dumps outside public source.
+  See [control-plane recovery](CONTROL_PLANE.md#back-up-and-test-recovery).
 - `client_signing_key` is the base64 ed25519 private key that signs the manifest of
   `sbc` downloads. It is a top-level setting rather than inventory, so deploy never
   copies it to the server. `sbc` carries the matching public keys in `internal/trust/trust.go`, so replacing

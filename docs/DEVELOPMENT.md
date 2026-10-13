@@ -34,17 +34,18 @@ and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 Choose checks for the files and behavior being changed. The commands below are
 available tools, not a sequence required for every edit.
 
-| Change              | Useful checks                                                                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                            |
-| Doc reviews         | `pixi run docstale check`                                                                                                        |
-| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                             |
-| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                              |
-| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                           |
-| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py` |
-| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                     |
-| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                  |
-| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                             |
+| Change              | Useful checks                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                              |
+| Doc reviews         | `pixi run docstale check`                                                                                                                                                          |
+| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                                                                               |
+| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                                                                                |
+| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                                                                             |
+| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py`                                                   |
+| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                                                                       |
+| Django/PostgreSQL   | `pixi run -e control-plane-test test tests/test_control_plane.py tests/test_control_plane_integration.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py` |
+| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                                                                    |
+| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                                                               |
 
 Use `pixi run test tests/test_routes.py -k download` as the pattern for running a
 specific file or case. `pixi run test` runs the full Python suite when shared
@@ -220,6 +221,32 @@ Tests use temporary fixtures and mocked external operations for release and depl
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
 deploy contacts the VPS. Neither is needed to validate an ordinary docs or code
 edit. Even `deploy --dry-run` can connect over SSH and needs local release artifacts.
+
+## Control-plane checks
+
+The opt-in foundation lives in `sing_box_manager/control_plane/`. Production uses
+OS-managed PostgreSQL and the default Pixi environment. The `control-plane-test`
+environment adds PostgreSQL 17 tools and shares the runtime dependency resolution.
+It does not install or start a system database service.
+
+```sh
+pixi run -e control-plane-test test tests/test_control_plane.py tests/test_control_plane_integration.py
+```
+
+Tests start a temporary cluster with no TCP listener, a private socket directory,
+and synthetic operator records. Child environments exclude operator credentials.
+They cover Django migrations, admin permissions, CSRF, host checks, static files,
+repeat provisioning, restricted database privileges, and backup/restore.
+The default test environment skips these integration checks without PostgreSQL
+tools. CI sets `SBM_REQUIRE_POSTGRES=1`, so missing tools fail its dedicated job.
+Deployment fixtures cover enablement on existing hosts, failure before success
+metadata, dry runs, disablement without data removal, and `--skip-code`.
+The dedicated CI job also checks native PostgreSQL peer authentication and the
+hardened systemd service. `scripts/dev/test-control-plane-native.py` runs only on
+an explicitly enabled disposable GitHub runner. It verifies repeat deployment,
+read-only assets, and disablement without data loss. Its local unit test mocks all
+host commands. Do not run the native script on an operator machine or VPS.
+See [the operator guide](CONTROL_PLANE.md).
 
 ## Traffic accounting checks
 

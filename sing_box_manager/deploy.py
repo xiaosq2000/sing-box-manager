@@ -192,6 +192,7 @@ def deploy_release(
         normalized_remote_root,
         settings,
         release_dir_name=release_dir.name,
+        manage_control_plane=not options.skip_code,
     )
 
     # One connection for the whole run. Each remote step used to pay for
@@ -303,7 +304,7 @@ def deploy_release(
         _install_nginx_log_redaction(normalized_hostname, options)
 
         _restart_web_service(remote, options)
-        _verify_traffic_stats_collector(remote, settings, options)
+        _verify_services(remote, settings, options)
         _publish_deployment_info(remote, options, release_info)
 
         print(
@@ -319,7 +320,12 @@ def _build_remote(
     settings: Settings,
     *,
     release_dir_name: str,
+    manage_control_plane: bool = True,
 ) -> _Remote:
+    if manage_control_plane and settings.control_plane.enabled:
+        from sing_box_manager.control_plane.deployment import validate_deployment
+
+        validate_deployment(remote_root, settings)
     releases_root = _resolve_remote_project_path(remote_root, settings.releases_root)
     auth_snapshot = _resolve_remote_project_path(
         remote_root, settings.auth_snapshot_path
@@ -779,6 +785,19 @@ def _install_managed_units(
         remote_root=remote_root,
         settings=settings,
         dry_run=options.dry_run,
+    )
+
+
+def _verify_services(
+    remote: _Remote, settings: Settings, options: DeployOptions
+) -> None:
+    _verify_traffic_stats_collector(remote, settings, options)
+    if options.skip_code:
+        return
+    from sing_box_manager.control_plane.deployment import deploy as deploy_control_plane
+
+    deploy_control_plane(
+        remote.hostname, remote.root, settings, dry_run=options.dry_run
     )
 
 

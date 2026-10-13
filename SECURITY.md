@@ -1,5 +1,7 @@
 # Security policy
 
+Checked on 2026-10-13.
+
 ## Report vulnerabilities privately
 
 Use GitHub's **Security → Report a vulnerability** for this repository when private
@@ -34,8 +36,9 @@ changing production keys.
 The public repository contains source, examples, and synthetic fixtures. Real
 inventory, including encrypted inventory, belongs outside public source control.
 Generated releases can contain protocol credentials and TLS private keys. User
-traffic databases contain sensitive domain and destination information. Neither
-belongs in public GitHub assets or CI artifacts.
+traffic databases contain sensitive domain and destination information. PostgreSQL files
+and backup dumps also contain private state. None belongs in public GitHub assets
+or CI artifacts.
 
 CI uses disposable GitHub-hosted runners, read-only repository permissions, and
 no production credentials. Do not run untrusted public pull requests on persistent

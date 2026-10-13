@@ -39,6 +39,7 @@ SPEC.loader.exec_module(policy)
         "certificate.p12",
         "certificate.pfx",
         "state.db",
+        "control-plane.dump",
         ".pixi/envs/default/bin/python",
         ".cache/output.json",
         ".worktrees/private/README.md",
@@ -128,6 +129,7 @@ def test_public_index_contains_no_operational_files() -> None:
         "data/traffic-stats.sqlite3",
         "private.pem",
         "state.db",
+        "control-plane.dump",
     ],
 )
 def test_operational_files_are_gitignored(path: str) -> None:

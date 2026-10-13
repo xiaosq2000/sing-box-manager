@@ -333,6 +333,39 @@ class WebSettings(StrictModel):
         return [_text(value, "web.allowed_hosts") for value in values]
 
 
+class ControlPlaneSettings(StrictModel):
+    """Private, opt-in Django service with a local PostgreSQL database."""
+
+    enabled: bool = Field(default=False, strict=True)
+    port: int = Field(default=47071, ge=1024, le=65535, strict=True)
+    secret_key: str | None = Field(default=None, min_length=50, repr=False)
+    database_name: str = "sbm_control_plane"
+    database_socket_dir: Path = Path("/var/run/postgresql")
+    database_port: int = Field(default=5432, ge=1, le=65535, strict=True)
+
+    @field_validator("database_name")
+    @classmethod
+    def validate_database_name(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", value):
+            raise ValueError(
+                "control_plane.database_name must be a PostgreSQL identifier"
+            )
+        if value in {"postgres", "template0", "template1"}:
+            raise ValueError(
+                "control_plane.database_name must name a dedicated database"
+            )
+        return value
+
+    @field_validator("database_socket_dir")
+    @classmethod
+    def validate_socket_dir(cls, value: Path) -> Path:
+        if not value.is_absolute() or any(char.isspace() for char in str(value)):
+            raise ValueError(
+                "control_plane.database_socket_dir must be an absolute path without whitespace"
+            )
+        return value
+
+
 class ClientUpgradeSettings(StrictModel):
     policy: str = "suggested"
     message: str = ""
@@ -478,6 +511,7 @@ class Settings(StrictModel):
     sing_box_version: str = "1.14.2"
     default_protocol: str = "trojan"
     web: WebSettings = Field(default_factory=WebSettings)
+    control_plane: ControlPlaneSettings = Field(default_factory=ControlPlaneSettings)
     client_upgrade: ClientUpgradeSettings = Field(default_factory=ClientUpgradeSettings)
     traffic_stats: TrafficStatsSettings = Field(default_factory=TrafficStatsSettings)
     vps_info: VpsInfoSettings = Field(default_factory=VpsInfoSettings)
@@ -513,6 +547,27 @@ class Settings(StrictModel):
                 "default_protocol must be one of: trojan, hysteria2, naive"
             )
         return value.strip()
+
+    @model_validator(mode="after")
+    def validate_control_plane_port(self) -> Self:
+        if not self.control_plane.enabled:
+            return self
+        ports = {self.web.port, self.control_plane.database_port}
+        if self.traffic_stats.enabled:
+            ports.update(
+                split_listen_address(address)[1]
+                for address in (
+                    self.traffic_stats.api_listen,
+                    self.traffic_stats.connection_api_listen,
+                )
+            )
+        if self.deployment_data is not None:
+            ports.update(
+                (self.deployment_data.trojan_port, self.deployment_data.naive_port)
+            )
+        if self.control_plane.port in ports:
+            raise ValueError("control_plane.port must differ from configured TCP ports")
+        return self
 
     @model_validator(mode="after")
     def validate_inventory(self) -> Self:

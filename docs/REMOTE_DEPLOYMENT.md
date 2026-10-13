@@ -115,6 +115,9 @@ appear on stderr.
    a few seconds later. A long-running unit that crashes on startup is restarted
    forever by systemd without ever failing a deploy, so the domain breakdown would
    otherwise stop filling while everything else looked healthy
+1. when code sync is enabled, deploys the opt-in Django/PostgreSQL foundation and
+   checks readiness, or disables its service when configured off. Database data
+   remains intact. See [the control-plane guide](CONTROL_PLANE.md)
 1. only after those health checks, atomically publishes
    `config/generated/deployment-info.json` with the release identity and current UTC
    timestamp
@@ -170,8 +173,12 @@ alone across restarts. That keeps the remote root disposable: it can be wiped an
 reprovisioned without losing usage history. Set `traffic_stats.database_path` to a
 relative path only if you want the database back inside the deploy root.
 
-`config/generated/` is written, but one named file at a time and never with
-`--delete`.
+PostgreSQL stores the optional control plane's database in its OS-managed data
+directory, outside the deploy root. Deploy never synchronizes or removes it.
+`--skip-code` leaves the control plane unchanged.
+
+`config/generated/` holds the optional root-owned Django static files. Metadata
+files are published individually. This directory is never a `--delete` target.
 
 `config/inventory/runtime.yaml` is intentionally synchronized because it is derived
 from the encrypted local source of truth. Deploy transfers it to a temporary mode

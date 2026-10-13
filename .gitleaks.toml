@@ -38,6 +38,14 @@ targetRules = ["generic-api-key"]
 
 [[allowlists]]
 condition = "AND"
+description = "Synthetic Django operator password in isolated PostgreSQL fixtures"
+paths = ['''(^|/)tests/test_control_plane_integration\.py$''']
+regexTarget = "secret"
+regexes = ['''^synthetic-fixture-pass-123$''']
+targetRules = ["generic-api-key"]
+
+[[allowlists]]
+condition = "AND"
 description = "Synthetic API key used to test error-message redaction"
 paths = ['''(^|/)tests/test_kiwivm\.py$''']
 regexTarget = "secret"

@@ -9,7 +9,16 @@ import subprocess
 from pathlib import PurePosixPath
 
 PUBLIC_INVENTORY = "config/inventory/example.yaml"
-PRIVATE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".db", ".sqlite", ".sqlite3")
+PRIVATE_SUFFIXES = (
+    ".pem",
+    ".key",
+    ".p12",
+    ".pfx",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+    ".dump",
+)
 PRIVATE_DIRECTORIES = {
     ".cache",
     ".pixi",
