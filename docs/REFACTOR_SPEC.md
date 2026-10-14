@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-13.
+Checked on 2026-10-14.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -487,7 +487,7 @@ successfully, and every protocol available to that client passed connection test
 Build from current main. Reuse the config builders, signed-download contract, and
 hosted installers. Keep the service working between these incremental PRs:
 
-1. **Deployable foundation.** Implemented in the repository, not deployed live.
+1. **Deployable foundation.** Implemented and deployed on the single VPS.
    Opt-in Django/PostgreSQL runs beside the existing portal. Private admin access
    uses an SSH tunnel. Deploy provisions the database, applies migrations, collects
    root-owned static files, and checks readiness. Repeat operations retain data.
