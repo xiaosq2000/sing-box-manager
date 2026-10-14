@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-13.
+Checked on 2026-10-14.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -173,6 +173,10 @@ If you forget the plaintext portal password, you cannot recover it from
   sessions; current portal and proxy credentials remain inventory-managed.
   Local database access uses Unix-socket peer authentication as `sbm`, not a
   database password. Keep database files and backup dumps outside public source.
+  The [fixture-only importer](CONTROL_PLANE_IMPORT.md) stores synthetic access
+  copies in separate tables. Its protocol credentials remain usable plaintext.
+  Snapshot files contain credentials. Reports omit them, but still require private
+  permissions. Production capture/import is unsupported.
   See [control-plane recovery](CONTROL_PLANE.md#back-up-and-test-recovery).
 - `client_signing_key` is the base64 ed25519 private key that signs the manifest of
   `sbc` downloads. It is a top-level setting rather than inventory, so deploy never

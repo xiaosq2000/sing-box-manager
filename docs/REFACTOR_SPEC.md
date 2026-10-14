@@ -491,12 +491,15 @@ hosted installers. Keep the service working between these incremental PRs:
    Opt-in Django/PostgreSQL runs beside the existing portal. Private admin access
    uses an SSH tunnel. Deploy provisions the database, applies migrations, collects
    root-owned static files, and checks readiness. Repeat operations retain data.
-   Django accounts are operators only. No proxy users or credentials are imported.
+   Django accounts are operators only. This deployment imports no proxy users
+   or credentials.
    See [the foundation guide](CONTROL_PLANE.md).
 2. **Import and migration contracts.** Import users, credentials, and subscription
    counters idempotently. Keep inventory authoritative during this stage. Define
    the mapping from shared profiles to enrolled installations. Test valid links,
    revoked links, config parity, and protected download behavior.
+   The fixture-only importer is implemented and tested locally, not deployed.
+   Production capture and import remain unsupported.
 3. **Subscription serving.** Django takes over subscriptions and mirrored signed
    downloads using the existing renderers. Preserve ETags, version negotiation,
    authentication, and download path checks. Add the subscription page, mobile QR
@@ -516,6 +519,236 @@ Keep the signed binary/rule-set manifest and working hosted installers.
 
 Done when every current installation has a device subscription, enrollment limits
 and revocation work, and the database owns user/device policy.
+
+#### M4b-2: safe-copy contract
+
+Status: fixture-only importer implemented and tested locally, not deployed.
+The legacy-access mapping, preview/apply workflow, and command interface are approved.
+Production capture and import are unsupported. Their procedure still needs design
+and separate approval. See [the fixture importer guide](CONTROL_PLANE_IMPORT.md).
+
+The prototype checks synthetic evidence only. The production capture and handover
+checks below are requirements, not implemented source-state verification.
+
+First copy existing access records into PostgreSQL. Check the copy before using it.
+Inventory and the existing portal remain authoritative throughout this stage.
+The copy must not serve clients, configure sing-box, or grant live access.
+
+Build from current main. Reuse the Django foundation, config builders, token
+derivation, and signed-download checks. Do not resume the older control-plane draft.
+
+**Import records**
+
+| Record          | Purpose                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| Import source   | Stable namespace, authoritative source binding, accepted capture sequence, and imported-state revision |
+| Proxy subject   | Stable ID and an exact, case-sensitive inventory username within that namespace                        |
+| Imported access | Portal verifier and flags, protocol credentials and flags, and membership presence                     |
+| Legacy access   | Original token username, reset counter, secret identity, and source evidence; no enrolled device       |
+| Import run      | Bundle digest, source sequence, reviewed database revision, result counts, and retry receipt           |
+
+Django operators remain separate. A portal admin flag must not grant Django staff
+or superuser permissions. Do not infer a person's identity, email, or devices from
+an inventory username. Only the importer may change copied records before cutover.
+Admin views may show redacted metadata, not usable credentials or verifiers.
+
+**One snapshot, one capture cutoff**
+
+An immutable snapshot bundle must bind these inputs:
+
+- Format version, source namespace, authoritative source identity, and capture cutoff.
+- A source-issued capture sequence. This orders captures, not database applications.
+- All portal and protocol access records, including disabled records.
+- Evidence that those records match the portal's loaded authentication and runtime
+  inventory, and the deployed proxy configuration at the cutoff.
+- A consistent SQLite counter backup, its schema/state evidence, and all counter rows.
+- The deployed subscription-secret identity and the frozen rendering-context identity.
+
+Keep the namespace independent of filenames and hostnames. Renaming a file or
+moving a host must not create a new identity or bypass retained counter history.
+Reject a second namespace for the same authoritative source.
+
+A consistent SQLite backup alone does not bind the other inputs. A live capture
+procedure must coordinate deployments, inventory edits, portal reloads, and resets.
+It must establish which state the portal loaded, not merely hash files on disk.
+An authoritative capture sequence must come from that coordinated procedure.
+Timestamps, importer arrival order, or relabeling an old backup are not sufficient.
+Checksums detect changes, not authenticity or freshness. Define trusted provenance
+verification before accepting production bundles. Format validation alone is insufficient.
+The first import also needs this evidence. An empty database proves no freshness.
+
+The subscription secret remains in protected infrastructure configuration.
+Check its deployed identity rather than assuming the local inventory has the same
+value. Deployment can preserve a server-generated secret. Keep shared protocol
+settings, version pins, defaults, and client-manifest identity in the frozen context.
+Bind that context to the bundle without importing infrastructure secrets into rows.
+
+A comparison proves parity only at the capture cutoff. The old portal can change
+later. Before M4b-3 serving, require refreshed evidence and a coordinated handover
+that includes every intervening reset and access change.
+
+**Counters and identity lifecycle**
+
+- Match the namespace and exact validated username. Preserve IDs across accepted
+  updates. Do not add case folding or infer renames from credentials.
+- Mark missing subjects and removed access memberships absent/inactive in the copy.
+  Retain subject IDs and counter history. Disabled membership and absent membership
+  are distinct states. Do not generate credentials or silently reactivate records.
+- The source has no immutable person IDs. Require source-owner continuity evidence
+  for username bindings. Do not claim to detect undeclared reassignment from names
+  or changed credentials. Missing continuity evidence blocks ambiguous bindings.
+- The first implementation must reject declared rename/reassignment mappings and
+  known retired-name reappearance. Define explicit continuity approval before
+  supporting these cases. A new unseen username creates a new proxy subject,
+  not proof that an existing person changed their name.
+- Keep the legacy token username separate from the subject ID. Future identity
+  mappings must not silently change token inputs or transfer access to another person.
+- Keep counter-only tombstones for usernames absent from inventory. They retain
+  revocation history but create no proxy subject or access entitlement.
+- Never lower a stored counter. Validate unique usernames and nonnegative integer
+  counters. A missing row in a validated complete table can mean zero only when
+  no retained counter contradicts it. Do not use the permissive portal reader as
+  the import validator.
+- A missing file or table needs explicit, verified initial-zero evidence. Missing,
+  unreadable, incomplete, or corrupt expected state blocks import. A restore or
+  new source label must not erase an existing counter boundary.
+
+Keep old shared access separate from enrolled installations. Preserve credentials
+and counters without inventing device identities. Legacy access consumes no device
+slots. Strict device limits require its retirement. Set that policy before cutover.
+
+**Approved preview/apply workflow**
+
+The workflow and command interface are implemented for synthetic fixtures only.
+Every `sbm` operation must select its config explicitly.
+
+1. **Preview** validates an immutable bundle against one consistent database view.
+   It writes no imported records or source revision. Produce a protected report
+   with additions, changes, removals, conflicts, and comparison results.
+2. Bind the report to the bundle digest, namespace, source sequence, rendering
+   context, destination database identity, and expected imported-state revision.
+   Review that exact report.
+   A report is not itself operator authorization to apply.
+3. **Apply** requires the reviewed bundle and report. Read and validate the exact
+   bytes used for application. A changed bundle or context requires a new preview.
+4. Under a per-source lock, recheck the expected imported-state revision and source
+   sequence. Reject an invalidated preview or an older capture, even when counters
+   are equal. Equal sequences with different bundle digests are conflicts.
+5. Validate the full change, then commit records, source head, revision, and receipt
+   in one transaction. Any failure leaves all imported state unchanged.
+6. An exact retry after a lost response returns the committed receipt without
+   applying again. A superseded receipt does not authorize replay of its snapshot.
+   Reapplying the latest identical bundle is a no-op. That successful no-op stores
+   a report-bound receipt without advancing the imported revision.
+   A newer verified capture may advance the source head even when its access fields
+   are unchanged.
+
+For example, capture A enables a user. Newer capture B disables that user without
+changing the counter. After B, applying A must fail rather than restore enabled access.
+The revision covers imported state for this source, not operator logins or sessions.
+
+Use synthetic bundles in development. Store production bundles and reports outside
+public source, with private directories (`0700`) and files (`0600`). PostgreSQL does
+not automatically encrypt usable credentials. Reports, logs, errors, and admin
+pages must not disclose credentials, verifiers, tokens, or full subscription URLs.
+General logs may contain counts and generic error codes, not source records.
+
+**Approved command interface**
+
+Fixture-only commands. `CONFIG`, `SNAPSHOT`, and `REPORT` are private file-path
+placeholders. Quote paths that contain spaces. Do not use production inputs.
+The fixture target marker defaults to disabled and has no CLI enable option.
+
+```sh
+pixi run sbm --config CONFIG control-plane-import \
+  --action preview --snapshot SNAPSHOT --report REPORT
+
+pixi run sbm --config CONFIG control-plane-import \
+  --action apply --snapshot SNAPSHOT --approved-report REPORT
+```
+
+- `--action` and `--snapshot` are required. There is no default action.
+- Preview requires `--report` as an output path and forbids `--approved-report`.
+  Apply requires `--approved-report` as an input path and forbids `--report`.
+  Reject invalid combinations before opening the database.
+- `--config`, or exported `SBM_CONFIG`, selects the local destination database and
+  protected rendering inputs. Access records come only from `--snapshot`, not
+  from that config's user lists or a generated authentication snapshot.
+- Bind the report to the configured and connected destination database, not just
+  a snapshot-supplied label. Another database or changed rendering inputs requires
+  another preview. Read snapshot/report inputs as protected regular files.
+- Publish preview reports atomically, with private permissions and no overwrite.
+  A rejected preview may write redacted conflict details, but Apply accepts only
+  a successful, matching reviewed report. Apply stores its receipt in the database.
+- Help needs no config and performs no file or database operations. Neither action
+  runs migrations, captures live state, contacts a host, or restarts a service.
+  Provide no force, stale-check bypass, or automatic-approval option.
+- Exit `0` means a successful preview, committed apply, or confirmed no-op. Exit `2`
+  means invalid arguments, validation failure, stale inputs, or a binding conflict.
+  Exit `1` means an operational failure. Errors, including config-load errors,
+  must be redacted. An uncertain commit requires an exact retry to resolve it.
+
+**Preserve each access case**
+
+For valid requests with subscriptions configured, retain the current distinctions:
+
+| Operation                   | Current requirement                                                          |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| Portal login                | Enabled portal account and valid portal credentials                          |
+| Config retrieval            | Current token for an enabled portal account, plus an enabled protocol        |
+| Link display/exchange/reset | Authenticated enabled portal account, plus an enabled protocol               |
+| Signed client download      | Current token for an enabled portal account; no protocol membership required |
+| Direct proxy access         | Enabled credential in that protocol; no portal account required              |
+
+A portal-only user gets no config or displayed link, but an already-known current
+token can still fetch manifest-listed files. A protocol-only user keeps direct
+proxy access but gains no portal account. Import must not tighten or expand these
+rules. A subscription token alone must not authorize link or device management.
+
+**Acceptance checks for the implementation**
+
+- Validated bundle evidence rejects mixed source revisions, relabeled backups,
+  secret/context/target-database mismatches, and missing or malformed counter state.
+- Identical retries preserve IDs and counts. Different-capture races, invalidated
+  previews, equal-counter flag changes, and lost responses cannot replay old state.
+- A validation or commit failure changes no imported records, source head, or receipt.
+- Case-sensitive identities, removals, disabled memberships, counter-only tombstones,
+  missing continuity evidence, and rejected rename/reuse/reappearance cases follow
+  the lifecycle rules.
+- Every copied field round-trips, including disabled credentials, portal verifiers,
+  portal admin flags, enabled flags, and membership presence. Removed memberships
+  remain inactive. Compare the complete expected change with database-loaded rows,
+  including retained payloads and existing IDs. Post-copy corruption must roll back.
+  Reject PostgreSQL-unrepresentable access strings before a ready preview.
+  Operators and enrolled-device counts stay unchanged.
+- Render the comparison side from database-loaded user data only. Use the same
+  frozen infrastructure context for both sides. Deliberately mutate database fields
+  and require field or render checks to fail. Do not compare inventory with itself.
+- At the cutoff, valid tokens work and revoked tokens fail. Check every access case
+  above, configs/envelopes, ETags, version negotiation, signed manifests/downloads,
+  and authentication/path rejection. Use fixture usage inputs, not live traffic data.
+- Redaction checks cover stdout, stderr, validation errors, reports, and admin views.
+  The existing portal, proxy configuration, and Django operators remain unchanged.
+
+**First implementation and remaining gates**
+
+The local implementation adds isolated import records, strict fixture validation,
+the approved command interface, transactional preview/apply logic, and comparisons
+from database-loaded records. Tests use synthetic snapshots and disposable
+PostgreSQL only. Snapshot assertions are not production provenance.
+The prototype does not inspect real SQLite backups or deployed manifest files.
+There is no live capture command.
+
+Before any live import, settle and validate the capture procedure: source ordering,
+writer coordination, loaded-state evidence, and initial-zero evidence. No automatic
+live capture or import belongs in the first PR. Serving also needs a coordinated
+handover, not just a successful copy. Rename/reuse support needs its own contract.
+
+No subscription-route replacement, mobile page, device enrollment, credential
+rotation, ownership cutover, traffic migration, node agent, payments, or multiple
+nodes belongs here. Remove no legacy artifacts, services, releases, or worktrees.
+Release and deploy must not run an import automatically. Commit/PR shipping, a live
+import, and any deployment or ownership cutover require separate authorization.
 
 ### M5: Node agent, traffic and budget enforcement
 

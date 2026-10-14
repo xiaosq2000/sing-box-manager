@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-13.
+Checked on 2026-10-14.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -13,6 +13,8 @@ The primary deployment target is a single VPS that runs:
 An opt-in Django/PostgreSQL foundation runs beside the portal. Its private admin
 manages Django operators only. Inventory still owns proxy users and credentials.
 See [the control-plane guide](docs/CONTROL_PLANE.md) for enablement and recovery.
+The separate [fixture-only importer](docs/CONTROL_PLANE_IMPORT.md) tests access
+copying in disposable databases. Production capture and import are unsupported.
 
 ## Public source and private operations
 

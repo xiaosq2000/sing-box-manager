@@ -6,6 +6,10 @@ The opt-in Django 5.2 service runs beside the FastAPI portal. PostgreSQL stores
 Django operator accounts and sessions. It does not own proxy users, credentials,
 subscriptions, or traffic. The encrypted inventory remains authoritative for them.
 
+A separate [fixture-only importer](CONTROL_PLANE_IMPORT.md) tests access copying
+in disposable databases. Its target marker defaults to disabled. It has no public
+routes or import admin pages. Release and deploy never run an import.
+
 No node agent is installed. Current clients keep their existing subscription URLs.
 
 ## Layout

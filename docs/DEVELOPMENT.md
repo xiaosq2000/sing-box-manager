@@ -251,6 +251,25 @@ read-only assets, and disablement without data loss. Its local unit test mocks a
 host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
 
+The [fixture-only importer](CONTROL_PLANE_IMPORT.md) has separate unit and
+PostgreSQL checks:
+
+```sh
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_import.py tests/test_control_plane_import_integration.py
+```
+
+Only these disposable fixture databases enable the import target marker.
+The tests cover strict private inputs, redacted/sealed reports, transactional
+preview/apply, rollback, races, stale captures, retries, counter/identity history,
+and parity from database-loaded records. Post-copy fault tests require rollback
+for altered absent payloads, deleted retained rows, and replaced subject IDs.
+No-op checks cover durable receipts, receipt failures, concurrent retries, and
+supersession without replay. Credential checks reject NUL and unpaired surrogates,
+while valid Unicode round-trips through PostgreSQL.
+A synthetic HTTP harness checks copied access rules, revoked tokens, ETags,
+versions, and signed downloads.
+These tests do not read runtime inventory, inspect real backups, or change services.
+
 ## Traffic accounting checks
 
 Traffic values and calendar rules live in `traffic_models.py`, SQLite transactions
