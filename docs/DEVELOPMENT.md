@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-13.
+Checked on 2026-10-14.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -237,6 +237,9 @@ Tests start a temporary cluster with no TCP listener, a private socket directory
 and synthetic operator records. Child environments exclude operator credentials.
 They cover Django migrations, admin permissions, CSRF, host checks, static files,
 repeat provisioning, restricted database privileges, and backup/restore.
+HTTP login checks send a browser-style `Origin` header and check the `same-origin`
+referrer policy. They reject null and cross-site origins, plus missing or incorrect
+CSRF tokens.
 The default test environment skips these integration checks without PostgreSQL
 tools. CI sets `SBM_REQUIRE_POSTGRES=1`, so missing tools fail its dedicated job.
 Deployment fixtures cover enablement on existing hosts, failure before success

@@ -343,6 +343,9 @@ def test_real_http_service_and_collected_admin_assets(postgres, tmp_path):
                 assert response.status == 200
                 page = response.read().decode()
                 assert "Service administration" in page
+                # Browser form POSTs need a same-origin Origin header. With
+                # no-referrer, browsers can send Origin: null, which must fail.
+                assert response.headers["Referrer-Policy"] == "same-origin"
             asset = re.search(
                 r'href="(/static/admin/css/base[^\"]+\.css)"', page
             ).group(1)
@@ -353,17 +356,48 @@ def test_real_http_service_and_collected_admin_assets(postgres, tmp_path):
             csrf = next(
                 cookie.value for cookie in cookies if cookie.name == "sbm_control_csrf"
             )
-            form = urllib.parse.urlencode(
+            form_fields = {
+                "username": "http_operator",
+                "password": "synthetic-fixture-pass-123",
+                "csrfmiddlewaretoken": csrf,
+                "next": "/admin/",
+            }
+            form = urllib.parse.urlencode(form_fields).encode()
+            origin = f"http://127.0.0.1:{port}"
+            login_url = origin + "/admin/login/"
+            for rejected_origin in (
+                "null",
+                "http://attacker.example.com",
+                f"http://127.0.0.1:{port + 1}",
+                f"http://localhost:{port}",
+            ):
+                request = urllib.request.Request(
+                    login_url, data=form, headers={"Origin": rejected_origin}
+                )
+                with pytest.raises(urllib.error.HTTPError) as error:
+                    opener.open(request)
+                assert error.value.code == 403
+            invalid_token = csrf[:-1] + ("a" if csrf[-1] != "a" else "b")
+            for invalid_fields in (
                 {
-                    "username": "http_operator",
-                    "password": "synthetic-fixture-pass-123",
-                    "csrfmiddlewaretoken": csrf,
-                    "next": "/admin/",
-                }
-            ).encode()
-            with opener.open(
-                f"http://127.0.0.1:{port}/admin/login/", data=form
-            ) as response:
+                    key: value
+                    for key, value in form_fields.items()
+                    if key != "csrfmiddlewaretoken"
+                },
+                {**form_fields, "csrfmiddlewaretoken": invalid_token},
+            ):
+                request = urllib.request.Request(
+                    login_url,
+                    data=urllib.parse.urlencode(invalid_fields).encode(),
+                    headers={"Origin": origin},
+                )
+                with pytest.raises(urllib.error.HTTPError) as error:
+                    opener.open(request)
+                assert error.value.code == 403
+            request = urllib.request.Request(
+                login_url, data=form, headers={"Origin": origin}
+            )
+            with opener.open(request) as response:
                 assert response.geturl().endswith("/admin/")
                 assert "Site administration" in response.read().decode()
             request = urllib.request.Request(

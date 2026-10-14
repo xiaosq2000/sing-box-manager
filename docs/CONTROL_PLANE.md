@@ -1,6 +1,6 @@
 # Control-plane foundation
 
-Checked on 2026-10-13.
+Checked on 2026-10-14.
 
 The opt-in Django 5.2 service runs beside the FastAPI portal. PostgreSQL stores
 Django operator accounts and sessions. It does not own proxy users, credentials,
@@ -28,6 +28,10 @@ Django has no public nginx route. Do not open ports 47071 or 5432 in the firewal
 
 The service uses HTTP on loopback. SSH encrypts remote access. Do not publish this
 HTTP service or reuse its cookie settings for a public site.
+
+Django uses `Referrer-Policy: same-origin`. The `no-referrer` policy can make browsers
+send `Origin: null` with form submissions. Django rejects that origin. Keep CSRF
+checks enabled. Do not add `null` to trusted origins.
 
 ## Enable and deploy
 
@@ -92,6 +96,9 @@ ssh -N -L 127.0.0.1:47071:127.0.0.1:47071 vpn-host
 ```
 
 Open `http://127.0.0.1:47071/admin/`. Use a different local port if 47071 is occupied.
+After a CSRF 403, open a fresh login page at the exact tunnel URL.
+Keep the hostname and port unchanged during login.
+
 Admin changes affect Django operators only. They do not grant or revoke proxy access.
 A Django superuser has application permissions, not PostgreSQL superuser rights.
 The custom Django user model is the starting point for the later ownership cutover.
