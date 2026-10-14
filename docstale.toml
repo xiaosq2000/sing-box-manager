@@ -56,7 +56,19 @@ control-plane = [
   "tests/test_control_plane*.py",
 ]
 
+proxy-import = [
+  "sing_box_manager/subscription.py",
+  "sing_box_manager/desktop_config.py",
+  "sing_box_manager/web/subscriptions.py",
+  "sing_box_manager/web/routes.py",
+  "sing_box_manager/release/client_downloads.py",
+  "tests/test_subscription.py",
+  "tests/test_client_downloads.py",
+]
+
 [documents]
+"docs/CONTROL_PLANE_IMPORT.md" = ["@control-plane", "@proxy-import"]
+
 "docs/CONTROL_PLANE.md" = [
   "@control-plane",
   ".github/workflows/ci.yml",
@@ -160,6 +172,7 @@ control-plane = [
 "docs/REFACTOR_SPEC.md" = [
   "@unix-installer",
   "@control-plane",
+  "@proxy-import",
   "scripts/lib/ui.sh",
   "sing_box_manager/release/",
   "sing_box_manager/settings.py",

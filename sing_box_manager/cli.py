@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -93,7 +96,34 @@ class ControlPlaneCommand:
     ] = "check"
 
 
-Command = (
+@dataclass
+class ControlPlaneImportCommand:
+    """Preview or apply a synthetic access snapshot in an enabled fixture database."""
+
+    action: Literal["preview", "apply"]
+    snapshot: Path
+    report: Path | None = None
+    """New private output file. Required for preview only."""
+    approved_report: Path | None = None
+    """Reviewed private input file. Required for apply only."""
+
+    def report_path(self) -> Path:
+        if (
+            self.action == "preview"
+            and self.report is not None
+            and self.approved_report is None
+        ):
+            return self.report
+        if (
+            self.action == "apply"
+            and self.approved_report is not None
+            and self.report is None
+        ):
+            return self.approved_report
+        raise ValueError("Invalid import report arguments")
+
+
+ExistingCommand = (
     Annotated[ControlPlaneCommand, tyro.conf.subcommand(name="control-plane")]
     | Annotated[ServeCommand, tyro.conf.subcommand(name="serve")]
     | Annotated[ReleaseCommand, tyro.conf.subcommand(name="release")]
@@ -101,6 +131,12 @@ Command = (
     | Annotated[GcCommand, tyro.conf.subcommand(name="gc")]
     | Annotated[StatsCollectCommand, tyro.conf.subcommand(name="stats-collect")]
     | Annotated[StatsStreamCommand, tyro.conf.subcommand(name="stats-stream")]
+)
+Command = (
+    ExistingCommand
+    | Annotated[
+        ControlPlaneImportCommand, tyro.conf.subcommand(name="control-plane-import")
+    ]
 )
 
 
@@ -272,7 +308,41 @@ def _run_stats_stream(_: StatsStreamCommand, settings: Settings) -> None:
         raise SystemExit(1) from exc
 
 
+def _run_import(command: ControlPlaneImportCommand, settings: Settings) -> None:
+    from sing_box_manager.control_plane.import_runner import run as run_import
+    from sing_box_manager.control_plane.import_schema import ImportRejected
+
+    try:
+        result = run_import(
+            command.action, command.snapshot, command.report_path(), settings
+        )
+    except ImportRejected as exc:
+        print(f"Import rejected: {exc}.", file=sys.stderr)
+        raise SystemExit(2) from None
+    except Exception:
+        print(
+            "Import operation failed. No error details are logged. Retry the exact inputs if the commit outcome is uncertain.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
+    label = (
+        "Receipt confirmed"
+        if result.get("noop")
+        else "Preview ready"
+        if command.action == "preview"
+        else "Copy applied"
+    )
+    print(f"{label}. Counts: {json.dumps(result['counts'], sort_keys=True)}")
+
+
 def _dispatch(command: Command, settings: Settings) -> None:
+    if isinstance(command, ControlPlaneImportCommand):
+        _run_import(command, settings)
+    else:
+        _dispatch_existing(command, settings)
+
+
+def _dispatch_existing(command: ExistingCommand, settings: Settings) -> None:
     if isinstance(command, ControlPlaneCommand):
         from sing_box_manager.control_plane.runner import run
 
@@ -309,7 +379,9 @@ def _dispatch(command: Command, settings: Settings) -> None:
     _run_deploy(command, settings)
 
 
-def _resolve_config_path(cli_config: Path | None) -> Path:
+def _resolve_config_path(
+    cli_config: Path | None, *, invalid_exit_code: int = 1
+) -> Path:
     if cli_config is not None:
         return cli_config
 
@@ -321,22 +393,54 @@ def _resolve_config_path(cli_config: Path | None) -> Path:
         "Error: --config flag or SBM_CONFIG environment variable is required.",
         file=sys.stderr,
     )
-    raise SystemExit(1)
+    raise SystemExit(invalid_exit_code)
+
+
+def _parse_cli(argv: list[str] | None) -> Cli:
+    arguments = sys.argv[1:] if argv is None else argv
+    if "control-plane-import" not in arguments:
+        return tyro.cli(Cli, args=arguments, prog="sbm", description=CLI_DESCRIPTION)
+    output, errors = StringIO(), StringIO()
+    try:
+        with redirect_stdout(output), redirect_stderr(errors):
+            parsed = tyro.cli(
+                Cli, args=arguments, prog="sbm", description=CLI_DESCRIPTION
+            )
+    except SystemExit as error:
+        if error.code == 0:
+            print(output.getvalue(), end="")
+            print(errors.getvalue(), end="", file=sys.stderr)
+        else:
+            print(
+                "Invalid import arguments. Use control-plane-import --help.",
+                file=sys.stderr,
+            )
+        raise
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> None:
-    cli = tyro.cli(
-        Cli,
-        args=argv,
-        prog="sbm",
-        description=CLI_DESCRIPTION,
+    cli = _parse_cli(argv)
+    if isinstance(cli.command, ControlPlaneImportCommand):
+        try:
+            cli.command.report_path()
+        except ValueError:
+            print("Invalid import report arguments.", file=sys.stderr)
+            raise SystemExit(2) from None
+    config_path = _resolve_config_path(
+        cli.config,
+        invalid_exit_code=2
+        if isinstance(cli.command, ControlPlaneImportCommand)
+        else 1,
     )
-    config_path = _resolve_config_path(cli.config)
     from sing_box_manager.settings import load_settings
 
     try:
         settings = load_settings(config_path)
     except Exception as exc:
+        if isinstance(cli.command, ControlPlaneImportCommand):
+            print("Import configuration could not be loaded.", file=sys.stderr)
+            raise SystemExit(2) from None
         print(f"Failed to load settings: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
