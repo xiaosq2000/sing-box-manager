@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "sing_box_manager.control_plane.apps.ControlPlaneConfig",
+    "sing_box_manager.account_copy.apps.AccountCopyConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

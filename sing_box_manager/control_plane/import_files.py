@@ -33,28 +33,35 @@ def private_directory(path: Path) -> int:
 def read_private(path: Path) -> bytes:
     directory = private_directory(path.parent)
     try:
-        descriptor = _open_checked(
-            path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, directory=directory
-        )
-        try:
-            info = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or info.st_uid != os.geteuid()
-                or stat.S_IMODE(info.st_mode) != 0o600
-                or info.st_nlink != 1
-                or info.st_size > MAX_BYTES
-            ):
-                raise ImportRejected("unsafe_input_file")
-            with os.fdopen(descriptor, "rb", closefd=False) as stream:
-                content = stream.read(MAX_BYTES + 1)
-            if len(content) > MAX_BYTES:
-                raise ImportRejected("input_too_large")
-            return content
-        finally:
-            os.close(descriptor)
+        return read_private_at(directory, path.name)
     finally:
         os.close(directory)
+
+
+def read_private_at(directory: int, name: str) -> bytes:
+    """Read a basename relative to an already checked private directory."""
+    if Path(name).name != name or name in {".", ".."}:
+        raise ImportRejected("unsafe_input_path")
+    descriptor = _open_checked(
+        name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, directory=directory
+    )
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o600
+            or info.st_nlink != 1
+            or info.st_size > MAX_BYTES
+        ):
+            raise ImportRejected("unsafe_input_file")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            content = stream.read(MAX_BYTES + 1)
+        if len(content) > MAX_BYTES:
+            raise ImportRejected("input_too_large")
+        return content
+    finally:
+        os.close(descriptor)
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:
@@ -81,6 +88,16 @@ def decode_json(content: bytes) -> object:
 
 def publish_private(path: Path, content: bytes) -> None:
     directory = private_directory(path.parent)
+    try:
+        publish_private_at(directory, path.name, content)
+    finally:
+        os.close(directory)
+
+
+def publish_private_at(directory: int, name: str, content: bytes) -> None:
+    """Publish a basename relative to an already checked private directory."""
+    if Path(name).name != name or name in {".", ".."}:
+        raise ImportRejected("unsafe_input_path")
     temporary = f".import-report-{secrets.token_hex(12)}.tmp"
     created = False
     try:
@@ -99,7 +116,7 @@ def publish_private(path: Path, content: bytes) -> None:
         # Atomic publication without replacing an existing file or symlink.
         os.link(
             temporary,
-            path.name,
+            name,
             src_dir_fd=directory,
             dst_dir_fd=directory,
             follow_symlinks=False,
@@ -110,4 +127,4 @@ def publish_private(path: Path, content: bytes) -> None:
     finally:
         if created:
             os.unlink(temporary, dir_fd=directory)
-        os.close(directory)
+    os.fsync(directory)

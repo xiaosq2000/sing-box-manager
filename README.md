@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-14.
+Checked on 2026-10-15.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -14,7 +14,9 @@ An opt-in Django/PostgreSQL foundation runs beside the portal. Its private admin
 manages Django operators only. Inventory still owns proxy users and credentials.
 See [the control-plane guide](docs/CONTROL_PLANE.md) for enablement and recovery.
 The separate [fixture-only importer](docs/CONTROL_PLANE_IMPORT.md) tests access
-copying in disposable databases. Production capture and import are unsupported.
+copying in disposable databases. The separate [account-copy path](docs/CONTROL_PLANE_ACCOUNT_COPY.md)
+is implemented, independently source-reviewed, and tested with synthetic sources.
+It activates no links and is not deployed. Real import needs separate approval.
 
 ## Public source and private operations
 

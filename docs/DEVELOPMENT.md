@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-14.
+Checked on 2026-10-15.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -25,7 +25,7 @@ bash scripts/dev/check-secrets.sh
 
 The scanner is pinned by version and SHA-256 and redacts findings. Its narrow
 allowlists cover only reviewed non-secret values, including synthetic fixtures
-and one exact documentation fingerprint. A negative control checks that they do
+and exact documentation fingerprints. A negative control checks that they do
 not hide new credentials. Keep these safeguards
 and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 
@@ -269,6 +269,28 @@ while valid Unicode round-trips through PostgreSQL.
 A synthetic HTTP harness checks copied access rules, revoked tokens, ETags,
 versions, and signed downloads.
 These tests do not read runtime inventory, inspect real backups, or change services.
+
+The separate [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) has synthetic export,
+CLI, private-file, and disposable PostgreSQL checks:
+
+```sh
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test \
+  tests/test_control_plane_account_copy.py \
+  tests/test_control_plane_account_copy_review.py \
+  tests/test_control_plane_account_copy_integration.py
+```
+
+These cover separate admission, complete account/config parity without token state,
+private source reads, stale reports, exact/no-op receipts, concurrent copies, corruption
+rollback, closure, and migration without the deferred capture schema. Review regressions
+cover bounded first reads, YAML expansion rejection, JSON type preservation, and
+structural Argon2id checks without password computation. Run the fixture importer
+checks too when shared projections, file helpers, or parity code changes.
+No test uses production data or opens an operational database.
+
+The witness/journal capture protocol is deferred and is not part of this implementation.
+Do not expand that protocol for the [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md).
+Keep separately retained prototype artifacts outside the account-copy change set.
 
 ## Traffic accounting checks
 
