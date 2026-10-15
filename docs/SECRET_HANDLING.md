@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-14.
+Checked on 2026-10-15.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -139,6 +139,8 @@ related by username, but they are stored independently.
 - it protects the portal login without storing the plaintext password
 - it is one-way, so you cannot recover the original password from the hash
 - the app verifies a submitted password against the stored hash during login
+- configuration and account-copy validation check the encoded format without running
+  Argon2 or changing the verifier. This does not approve its login resource cost
 
 Format illustration (the salt and hash below are placeholders):
 
@@ -176,7 +178,11 @@ If you forget the plaintext portal password, you cannot recover it from
   The [fixture-only importer](CONTROL_PLANE_IMPORT.md) stores synthetic access
   copies in separate tables. Its protocol credentials remain usable plaintext.
   Snapshot files contain credentials. Reports omit them, but still require private
-  permissions. Production capture/import is unsupported.
+  permissions. The separate [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md)
+  stores account copies without legacy tokens. Its private snapshots contain usable
+  protocol credentials and password verifiers, but no signing secrets. It uses distinct
+  report HMAC domains and an explicit database admission. It passed independent source
+  review and synthetic tests. It is not deployed. Fresh-link issuance is not implemented.
   See [control-plane recovery](CONTROL_PLANE.md#back-up-and-test-recovery).
 - `client_signing_key` is the base64 ed25519 private key that signs the manifest of
   `sbc` downloads. It is a top-level setting rather than inventory, so deploy never
@@ -206,6 +212,9 @@ If you forget the plaintext portal password, you cannot recover it from
 - when `deployment.tls.self_signed_cert` is `true`, `sbm release` reads those files and inlines their PEM lines into the rendered sing-box JSON
 - use `pixi run sops <your config file>` to edit the encrypted inventory
 - `config/generated/auth-users.json` stores only the generated portal auth snapshot
+
+The active [first-copy plan](CONTROL_PLANE_CAPTURE.md) keeps real inputs and backups
+private. It does not use the witness/journal protocol or permit fixture admission.
 
 ## TLS handling now
 

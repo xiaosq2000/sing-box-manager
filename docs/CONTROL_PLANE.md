@@ -1,16 +1,29 @@
 # Control-plane foundation
 
-Checked on 2026-10-14.
+Checked on 2026-10-15.
 
 The opt-in Django 5.2 service runs beside the FastAPI portal. PostgreSQL stores
 Django operator accounts and sessions. It does not own proxy users, credentials,
 subscriptions, or traffic. The encrypted inventory remains authoritative for them.
 
 A separate [fixture-only importer](CONTROL_PLANE_IMPORT.md) tests access copying
-in disposable databases. Its target marker defaults to disabled. It has no public
-routes or import admin pages. Release and deploy never run an import.
+in disposable databases. Its target marker defaults to disabled. The separate account-copy app adds a disabled
+admission table, no admission rows, and no admin pages. Neither path has public routes.
+Release and deploy never run or authorize an import.
 
 No node agent is installed. Current clients keep their existing subscription URLs.
+
+The next delivery target is [basic live migration](REFACTOR_SPEC.md#m4b-control-plane-devices-and-subscriptions):
+Django-managed proxy accounts, PostgreSQL ownership, and working subscriptions on
+the single VPS. A [checked real-data copy](CONTROL_PLANE_CAPTURE.md) comes first.
+The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) is implemented, independently
+source-reviewed, and tested with synthetic sources. It is not deployed. Serving and
+proxy-account management remain unimplemented.
+Traffic features, devices, and the general node agent are deferred from this delivery.
+The selected cutover policy preserves account credentials but issues fresh subscription
+links. Each installation must update its saved URL. Old links remain unchanged now
+and must be rejected after cutover. Goal or policy approval does not authorize live operations. The foundation below remains
+operator-only until a separately approved cutover.
 
 ## Layout
 

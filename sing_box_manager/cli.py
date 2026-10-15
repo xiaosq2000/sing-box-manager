@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import uvicorn
 
+from sing_box_manager.account_copy.command import AccountCopyCommand
+
 tyro: Any = importlib.import_module("tyro")
 
 if TYPE_CHECKING:
@@ -137,6 +139,7 @@ Command = (
     | Annotated[
         ControlPlaneImportCommand, tyro.conf.subcommand(name="control-plane-import")
     ]
+    | Annotated[AccountCopyCommand, tyro.conf.subcommand(name="account-copy")]
 )
 
 
@@ -335,9 +338,42 @@ def _run_import(command: ControlPlaneImportCommand, settings: Settings) -> None:
     print(f"{label}. Counts: {json.dumps(result['counts'], sort_keys=True)}")
 
 
+def _run_account_copy(command: AccountCopyCommand, settings: Settings) -> None:
+    from sing_box_manager.account_copy.runner import run
+    from sing_box_manager.control_plane.import_schema import ImportRejected
+
+    try:
+        result = run(command.action, settings, command.options())
+    except ImportRejected as error:
+        print(f"Account copy rejected: {error}.", file=sys.stderr)
+        raise SystemExit(2) from None
+    except Exception:
+        print(
+            "Account copy operation failed. Retry exact apply inputs if the commit outcome is uncertain.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
+    safe = {
+        key: result[key]
+        for key in (
+            "counts",
+            "noop",
+            "superseded",
+            "authorized",
+            "closed",
+            "exported",
+            "subjects",
+        )
+        if key in result
+    }
+    print(f"Account copy {command.action} complete. {json.dumps(safe, sort_keys=True)}")
+
+
 def _dispatch(command: Command, settings: Settings) -> None:
     if isinstance(command, ControlPlaneImportCommand):
         _run_import(command, settings)
+    elif isinstance(command, AccountCopyCommand):
+        _run_account_copy(command, settings)
     else:
         _dispatch_existing(command, settings)
 
@@ -398,7 +434,7 @@ def _resolve_config_path(
 
 def _parse_cli(argv: list[str] | None) -> Cli:
     arguments = sys.argv[1:] if argv is None else argv
-    if "control-plane-import" not in arguments:
+    if not {"control-plane-import", "account-copy"}.intersection(arguments):
         return tyro.cli(Cli, args=arguments, prog="sbm", description=CLI_DESCRIPTION)
     output, errors = StringIO(), StringIO()
     try:
@@ -412,7 +448,9 @@ def _parse_cli(argv: list[str] | None) -> Cli:
             print(errors.getvalue(), end="", file=sys.stderr)
         else:
             print(
-                "Invalid import arguments. Use control-plane-import --help.",
+                "Invalid account-copy arguments. Use account-copy --help."
+                if "account-copy" in arguments
+                else "Invalid import arguments. Use control-plane-import --help.",
                 file=sys.stderr,
             )
         raise
@@ -427,18 +465,44 @@ def main(argv: list[str] | None = None) -> None:
         except ValueError:
             print("Invalid import report arguments.", file=sys.stderr)
             raise SystemExit(2) from None
+    if isinstance(cli.command, AccountCopyCommand):
+        try:
+            cli.command.options()
+        except ValueError:
+            print(
+                "Invalid account-copy arguments. Use account-copy --help.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from None
     config_path = _resolve_config_path(
         cli.config,
         invalid_exit_code=2
-        if isinstance(cli.command, ControlPlaneImportCommand)
+        if isinstance(cli.command, (ControlPlaneImportCommand, AccountCopyCommand))
         else 1,
     )
+    if (
+        isinstance(cli.command, AccountCopyCommand)
+        and cli.command.action == "export"
+        and config_path.name.endswith((".sops.yaml", ".sops.yml"))
+    ):
+        print(
+            "Account export requires a plaintext stored source config.", file=sys.stderr
+        )
+        raise SystemExit(2)
     from sing_box_manager.settings import load_settings
 
     try:
-        settings = load_settings(config_path)
+        if (
+            isinstance(cli.command, AccountCopyCommand)
+            and cli.command.action == "export"
+        ):
+            from sing_box_manager.account_copy.export import load_source_settings
+
+            settings = load_source_settings(config_path)
+        else:
+            settings = load_settings(config_path)
     except Exception as exc:
-        if isinstance(cli.command, ControlPlaneImportCommand):
+        if isinstance(cli.command, (ControlPlaneImportCommand, AccountCopyCommand)):
             print("Import configuration could not be loaded.", file=sys.stderr)
             raise SystemExit(2) from None
         print(f"Failed to load settings: {exc}", file=sys.stderr)

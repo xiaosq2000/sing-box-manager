@@ -10,6 +10,7 @@ from sing_box_manager.control_plane.import_schema import (
     Snapshot,
     canonical,
 )
+from sing_box_manager.release.profiles import build_server_config
 from sing_box_manager.settings import (
     NaiveInventory,
     Settings,
@@ -123,11 +124,11 @@ def _verify_fields(snapshot: Snapshot, copied: AccessRecords, state: dict) -> No
 
 
 def _verify_renders(
-    snapshot: Snapshot, runtime: Settings, copied: AccessRecords
+    records: AccessRecords, runtime: Settings, copied: AccessRecords
 ) -> None:
-    left = _service(runtime, snapshot.access)
+    left = _service(runtime, records)
     right = _service(runtime, copied)
-    for name in snapshot.access.memberships():
+    for name in records.memberships():
         for platform in ("linux", "darwin", "windows"):
             first = build_envelope(left, name, os_name=platform)
             second = build_envelope(right, name, os_name=platform)
@@ -169,6 +170,54 @@ def _verify_tokens(
             raise ImportRejected("revocation_parity_failed")
 
 
+def _account_checks(records: AccessRecords, runtime: Settings, state: dict) -> None:
+    if runtime.deployment.tls.self_signed_cert or state["legacy"]:
+        raise ImportRejected("account_copy_context_rejected")
+    copied = records_from_state(state)
+    incoming = records.memberships()
+    if canonical(copied.memberships()) != canonical(incoming):
+        raise ImportRejected("field_parity_failed")
+    if set(incoming) != {
+        row["username"] for row in state["subjects"] if row["present"]
+    }:
+        raise ImportRejected("subject_parity_failed")
+    for row in state["access"]:
+        if row["payload"].get("username") != row["username"] or row["present"] != (
+            row["kind"] in incoming.get(row["username"], {})
+        ):
+            raise ImportRejected("membership_binding_failed")
+    _verify_renders(records, runtime, copied)
+    # The database reads in username order. Normalize source order too.
+    ordered = AccessRecords.model_validate(
+        {
+            kind: sorted(
+                [row.model_dump(mode="json") for row in getattr(records, kind)],
+                key=lambda row: row["username"],
+            )
+            for kind in KINDS
+        }
+    )
+    if build_server_config(
+        inventory_from_records(runtime, ordered), runtime.traffic_stats
+    ) != build_server_config(
+        inventory_from_records(runtime, copied), runtime.traffic_stats
+    ):
+        raise ImportRejected("render_parity_failed")
+
+
+def verify_account_parity(
+    records: AccessRecords, runtime: Settings, state: dict
+) -> dict[str, bool]:
+    """Check account copies without deriving tokens or consulting reset counters."""
+    try:
+        _account_checks(records, runtime, state)
+    except ImportRejected:
+        raise
+    except Exception:
+        raise ImportRejected("parity_validation_failed") from None
+    return {"fields": True, "configs_and_etags": True, "server_config": True}
+
+
 def verify_parity(
     snapshot: Snapshot, runtime: Settings, state: dict
 ) -> dict[str, bool]:
@@ -176,7 +225,7 @@ def verify_parity(
     try:
         copied = records_from_state(state)
         _verify_fields(snapshot, copied, state)
-        _verify_renders(snapshot, runtime, copied)
+        _verify_renders(snapshot.access, runtime, copied)
         _verify_tokens(snapshot, runtime, copied, state)
     except ImportRejected:
         raise

@@ -9,15 +9,13 @@ import os
 import re
 import subprocess
 import tempfile
+from base64 import b64decode, b64encode
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
-from argon2 import PasswordHasher, extract_parameters
-from argon2.exceptions import InvalidHashError, VerificationError
-from argon2.low_level import Type
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -39,7 +37,11 @@ STATE_ROOT = Path("/var/lib/sing-box-manager")
 DEFAULT_TRAFFIC_STATS_DATABASE_PATH = STATE_ROOT / "traffic-stats.sqlite3"
 DEFAULT_SUBSCRIPTION_DATABASE_PATH = STATE_ROOT / "subscriptions.sqlite3"
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{3,32}$")
-ARGON2ID_VERIFIER = PasswordHasher(type=Type.ID)
+ARGON2ID_ENCODING = re.compile(
+    r"\$argon2id(?:\$v=(?:16|19))?\$m=([1-9][0-9]{0,9}),"
+    r"t=([1-9][0-9]{0,9}),p=([1-9][0-9]{0,9})"
+    r"\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)"
+)
 INVENTORY_KEYS = {
     "deployment",
     "web_portal",
@@ -81,16 +83,35 @@ def _validate_username(value: str) -> str:
     return value
 
 
+def _valid_argon2id_encoding(value: str) -> bool:
+    """Check the PHC encoding without running its input-selected password work."""
+    match = ARGON2ID_ENCODING.fullmatch(value)
+    if match is None:
+        return False
+    memory, iterations, parallelism = map(int, match.groups()[:3])
+    # Argon2 uses 32-bit costs and at most 24 bits for the lane count.
+    if not (
+        1 <= parallelism <= 2**24 - 1
+        and 8 * parallelism <= memory <= 2**32 - 1
+        and 1 <= iterations <= 2**32 - 1
+    ):
+        return False
+    for encoded, minimum in zip(match.groups()[3:], (8, 4), strict=True):
+        try:
+            decoded = b64decode(encoded + "=" * (-len(encoded) % 4), validate=True)
+        except ValueError:
+            return False
+        if (
+            len(decoded) < minimum
+            or b64encode(decoded).decode("ascii").rstrip("=") != encoded
+        ):
+            return False
+    return True
+
+
 def _validate_password_hash(value: str) -> str:
-    try:
-        parameters = extract_parameters(value)
-        if parameters.type is not Type.ID:
-            raise ValueError("password_hash must be an Argon2id hash")
-        ARGON2ID_VERIFIER.verify(value, "__validation_probe__")
-    except InvalidHashError as exc:
-        raise ValueError("password_hash must be a valid Argon2id hash") from exc
-    except VerificationError:
-        pass
+    if not _valid_argon2id_encoding(value):
+        raise ValueError("password_hash must be a valid Argon2id hash")
     return value
 
 

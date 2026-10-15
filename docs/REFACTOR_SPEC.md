@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-14.
+Checked on 2026-10-15.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -84,8 +84,9 @@ node agent + sing-box on each VPS  ◀── proxy traffic from clients
 Each enrolled installation gets distinct proxy credentials. One secret may serve
 its allowed protocols. Enrollment consumes a device slot in one transaction.
 The limit counts enrolled installations, not physical devices. A copied profile
-uses the same identity. Migration must explicitly map legacy shared subscriptions
-and preserve valid links without restoring revoked ones.
+uses the same identity. The first live cutover issues fresh subscription links under
+independent signing state and rejects old links. The later device rollout must map
+shared access explicitly and preserve its valid links without restoring revoked ones.
 
 ### Interfaces
 
@@ -484,8 +485,17 @@ successfully, and every protocol available to that client passed connection test
 
 ### M4b: Control plane, devices and subscriptions
 
-Build from current main. Reuse the config builders, signed-download contract, and
-hosted installers. Keep the service working between these incremental PRs:
+**Next delivery: basic live migration of existing users on the single VPS.**
+The operator manages access through Django admin. PostgreSQL owns the accounts.
+Existing clients connect and refresh subscriptions. A checked non-serving copy is
+an intermediate checkpoint, not the delivery target. Device enrollment follows
+this delivery and does not block account ownership.
+
+Build from current main. Reuse Django/PostgreSQL, the importer checks, config
+builders, signed-download contract, and hosted installers. Use the private admin
+as the initial management interface. Use a supervised config-apply step for the
+single node before building a general node agent. Keep the service working between
+these incremental PRs:
 
 1. **Deployable foundation.** Implemented and deployed on the single VPS.
    Opt-in Django/PostgreSQL runs beside the existing portal. Private admin access
@@ -494,41 +504,81 @@ hosted installers. Keep the service working between these incremental PRs:
    Django accounts are operators only. This deployment imports no proxy users
    or credentials.
    See [the foundation guide](CONTROL_PLANE.md).
-2. **Import and migration contracts.** Import users, credentials, and subscription
-   counters idempotently. Keep inventory authoritative during this stage. Define
-   the mapping from shared profiles to enrolled installations. Test valid links,
-   revoked links, config parity, and protected download behavior.
-   The fixture-only importer is implemented and tested locally, not deployed.
-   Production capture and import remain unsupported.
-3. **Subscription serving.** Django takes over subscriptions and mirrored signed
-   downloads using the existing renderers. Preserve ETags, version negotiation,
-   authentication, and download path checks. Add the subscription page, mobile QR
-   code, and remote Android profiles. Keep usage on the old portal until M5.
-4. **Device management and ownership cutover.** Add account-authenticated enrollment,
-   revocation, transactional slot checks, and per-user policies. Postgres becomes
-   authoritative for users, devices, and policies. Later deploys cannot overwrite
-   database-managed records from inventory. SOPS retains infrastructure secrets.
+2. **Checked real-data copy.** Import accounts and credentials idempotently without
+   activating subscription links. Inventory remains authoritative during this checkpoint.
+   Check every copied field and rendered config. The fixture-only
+   importer remains separate. The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md)
+   implements export/admission/preview/apply locally. It passed independent source
+   review and synthetic tests. It is not deployed. Use the [one-time plan](CONTROL_PLANE_CAPTURE.md),
+   not the deferred capture protocol. Do not require enrolled devices for this copy.
+3. **Basic live serving and account ownership.** Django serves subscriptions and
+   protected signed downloads using the existing renderers. Preserve authentication,
+   ETags, version negotiation, and download path checks. Add basic proxy-account
+   management for operators through private Django admin. PostgreSQL becomes authoritative for
+   proxy accounts and credentials. Prevent inventory/deploy/import from overwriting
+   database-managed access after cutover. SOPS retains infrastructure secrets.
+   Account changes reach sing-box through a supervised, validated config-apply step.
+   This serving/management path is not implemented. Copy success alone permits no
+   handover. Reconcile fresh source state before the separately approved cutover.
+4. **Device management, after basic live migration.** Add account-authenticated
+   enrollment, revocation, transactional slot checks, and per-user policies. Define
+   how shared legacy access moves to enrolled installations. Add mobile QR/profile
+   conveniences where needed. PostgreSQL retains account ownership throughout.
 
-Before cutover, define how credential changes reach the current node without the
-M5 agent. A subscription token alone must not authorize device or policy management.
-Model budgets in M4b; M5 adds collection and automatic suspension.
+**Defer from basic live migration:** traffic dashboards and history migration,
+quotas and usage-based suspension, device enrollment/limits, the general node agent,
+multi-node support, invitations, payments, and the capture protocol prototype.
+Preserve existing data and backups. Existing traffic collectors may remain unchanged
+or be disabled during a separately approved cutover. Do not migrate traffic history
+merely to complete account migration. Do not present missing usage as measured zero.
+The selected policy issues fresh links under independent signing state at cutover.
+Preserve proxy credentials and portal verifiers. Update every installation's saved
+URL through a private authenticated handoff. Reject old links on subscriptions and
+protected downloads, including any retained legacy routes. Missing old reset history
+does not block account copying. Never manufacture verified legacy zero counters.
+Durable reset/revocation of new links remains required, not optional traffic data.
+
+Before cutover, test how account changes reach the current node without the M5 agent.
+A database change alone is not applied proxy access. Show pending/failed application
+rather than claiming success. Define and check revocation of new and existing
+connections, including any required restart. Validate configs before application,
+retain recovery artifacts, and test client connectivity. Keep Django operator
+permissions separate from imported portal flags. Subscription tokens cannot authorize
+account management. Fresh-link policy approval is not authorization to rotate secrets
+now. Preserve current access until an approved cutover. Test the operator's connection
+and each current client after updating saved URLs. Account-password or proxy-credential
+rotation is outside this policy.
+
+**Basic live migration is done when:** real accounts are verified in PostgreSQL,
+Django serves their subscriptions, operator access changes take effect on sing-box,
+and inventory can no longer overwrite those accounts. Backups, recovery, valid/revoked
+access, signed downloads, and current-client connectivity must pass the cutover checks.
+Devices, traffic accounting, and quotas are not completion conditions.
 
 After all installations migrate, remove per-user archives, the archive store and
 its manifest, archive packing, `sbm gc`, and replaced download routes/templates.
 Keep the signed binary/rule-set manifest and working hosted installers.
 
-Done when every current installation has a device subscription, enrollment limits
-and revocation work, and the database owns user/device policy.
+The later device checkpoint is done when every current installation has a device
+subscription, enrollment limits and revocation work, and the database owns device
+policy. It does not delay the basic live migration above.
 
 #### M4b-2: safe-copy contract
 
 Status: fixture-only importer implemented and tested locally, not deployed.
-The legacy-access mapping, preview/apply workflow, and command interface are approved.
-Production capture and import are unsupported. Their procedure still needs design
-and separate approval. See [the fixture importer guide](CONTROL_PLANE_IMPORT.md).
+The active [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md) targets stored account
+state, followed by fresh subscription links at cutover. It does not prove current
+loaded-process state. The [account-copy implementation](CONTROL_PLANE_ACCOUNT_COPY.md)
+reuses the fixture importer's account validation, projections, and field/render checks.
+Its independent admission migration depends on the existing account tables, not the
+capture prototype. Local synthetic checks do not authorize live import. Never enable the operational fixture marker or invent fixture evidence.
+The existing fixture importer still tests legacy-token preservation. Its format,
+legacy records, and counter tests do not define the fresh-link production path.
 
-The prototype checks synthetic evidence only. The production capture and handover
-checks below are requirements, not implemented source-state verification.
+The capture protocol prototype is deferred and is not part of this implementation.
+Preserve any separately retained prototype code, schema, and tests.
+Do not build that machinery as a prerequisite for the first real copy. Live operations
+need separate approval. See [the fixture importer guide](CONTROL_PLANE_IMPORT.md).
 
 First copy existing access records into PostgreSQL. Check the copy before using it.
 Inventory and the existing portal remain authoritative throughout this stage.
@@ -537,7 +587,7 @@ The copy must not serve clients, configure sing-box, or grant live access.
 Build from current main. Reuse the Django foundation, config builders, token
 derivation, and signed-download checks. Do not resume the older control-plane draft.
 
-**Import records**
+**Retained fixture import records**
 
 | Record          | Purpose                                                                                                |
 | --------------- | ------------------------------------------------------------------------------------------------------ |
@@ -552,51 +602,50 @@ or superuser permissions. Do not infer a person's identity, email, or devices fr
 an inventory username. Only the importer may change copied records before cutover.
 Admin views may show redacted metadata, not usable credentials or verifiers.
 
-**One snapshot, one capture cutoff**
+**One selected stored-source snapshot**
 
-An immutable snapshot bundle must bind these inputs:
+The operator approves the source and its private artifacts. Bind the exact input
+bytes, stable source/namespace, capture time/window, rendering context, fresh-link
+policy, and destination. Copy every account record and flag, including disabled
+records. Activate no links. Record missing old counters as unavailable, not verified
+zeros or usable legacy-token records. Retain available history privately. If counter
+artifacts are captured, validate a consistent SQLite snapshot with WAL state.
 
-- Format version, source namespace, authoritative source identity, and capture cutoff.
-- A source-issued capture sequence. This orders captures, not database applications.
-- All portal and protocol access records, including disabled records.
-- Evidence that those records match the portal's loaded authentication and runtime
-  inventory, and the deployed proxy configuration at the cutoff.
-- A consistent SQLite counter backup, its schema/state evidence, and all counter rows.
-- The deployed subscription-secret identity and the frozen rendering-context identity.
+Pause operator configuration edits during extraction. Old link resets may continue:
+the copy serves no clients and the cutover rejects the entire old link family.
+No portal/proxy restart or loaded-process attestation is required for the first copy.
 
-Keep the namespace independent of filenames and hostnames. Renaming a file or
-moving a host must not create a new identity or bypass retained counter history.
-Reject a second namespace for the same authoritative source.
+Private operator custody and explicit artifact selection supply trust for this
+one-time procedure. Checksums bind bytes, not authenticity alone. An empty database,
+new timestamp, changed filename, or new source label does not authorize an old
+snapshot. Retain source ordering and destination conflict checks, but do not claim
+the deferred protocol's automated rollback-proof freshness.
 
-A consistent SQLite backup alone does not bind the other inputs. A live capture
-procedure must coordinate deployments, inventory edits, portal reloads, and resets.
-It must establish which state the portal loaded, not merely hash files on disk.
-An authoritative capture sequence must come from that coordinated procedure.
-Timestamps, importer arrival order, or relabeling an old backup are not sufficient.
-Checksums detect changes, not authenticity or freshness. Define trusted provenance
-verification before accepting production bundles. Format validation alone is insufficient.
-The first import also needs this evidence. An empty database proves no freshness.
+The copy proves selected snapshot parity, not loaded-state equality or complete
+lifetime history. Record unknowns and stop on known identity ambiguity. The fresh-link
+policy removes old reset history as a prerequisite, but does not permit lowering
+retained counters. Keep the old subscription secret unchanged until cutover. New
+links use independent signing state, not a Django session key or proxy password.
 
-The subscription secret remains in protected infrastructure configuration.
-Check its deployed identity rather than assuming the local inventory has the same
-value. Deployment can preserve a server-generated secret. Keep shared protocol
-settings, version pins, defaults, and client-manifest identity in the frozen context.
-Bind that context to the bundle without importing infrastructure secrets into rows.
-
-A comparison proves parity only at the capture cutoff. The old portal can change
-later. Before M4b-3 serving, require refreshed evidence and a coordinated handover
-that includes every intervening reset and access change.
+Before M4b-3 serving, reconcile fresh account/credential state, deliver new links, and
+test old-link rejection. The shadow copy alone permits no serving switch or silent
+activation of pending disk configuration.
 
 **Counters and identity lifecycle**
+
+Legacy-counter rules below remain requirements for the fixture importer and any
+future link-preserving import. The selected production path does not preserve old
+links. It must neither fabricate legacy state nor bypass these rules by relabeling
+input. Account identity rules apply to both paths.
 
 - Match the namespace and exact validated username. Preserve IDs across accepted
   updates. Do not add case folding or infer renames from credentials.
 - Mark missing subjects and removed access memberships absent/inactive in the copy.
   Retain subject IDs and counter history. Disabled membership and absent membership
   are distinct states. Do not generate credentials or silently reactivate records.
-- The source has no immutable person IDs. Require source-owner continuity evidence
-  for username bindings. Do not claim to detect undeclared reassignment from names
-  or changed credentials. Missing continuity evidence blocks ambiguous bindings.
+- The source has no immutable person IDs. Copy exact username bindings without
+  inferring people. Record unknown history and stop on known ambiguity. Do not
+  claim to detect undeclared reassignment from names or changed credentials.
 - The first implementation must reject declared rename/reassignment mappings and
   known retired-name reappearance. Define explicit continuity approval before
   supporting these cases. A new unseen username creates a new proxy subject,
@@ -609,9 +658,10 @@ that includes every intervening reset and access change.
   counters. A missing row in a validated complete table can mean zero only when
   no retained counter contradicts it. Do not use the permissive portal reader as
   the import validator.
-- A missing file or table needs explicit, verified initial-zero evidence. Missing,
-  unreadable, incomplete, or corrupt expected state blocks import. A restore or
-  new source label must not erase an existing counter boundary.
+- Missing, unreadable, incomplete, or corrupt counters block link-preserving import.
+  The selected fresh-link account copy records unavailable legacy state instead.
+  Never silently assume initial zero. A restore or new source label must not erase
+  an existing destination counter boundary.
 
 Keep old shared access separate from enrolled installations. Preserve credentials
 and counters without inventing device identities. Legacy access consumes no device
@@ -707,8 +757,10 @@ rules. A subscription token alone must not authorize link or device management.
 
 **Acceptance checks for the implementation**
 
-- Validated bundle evidence rejects mixed source revisions, relabeled backups,
-  secret/context/target-database mismatches, and missing or malformed counter state.
+- Operator-selected private inputs reject mixed stored configuration, unapproved
+  artifacts, and policy/context/target mismatches. Record snapshot limits, not a
+  loaded-state claim. A fresh-link account copy permits unavailable old counters,
+  but must not create working legacy access or claim verified zero history.
 - Identical retries preserve IDs and counts. Different-capture races, invalidated
   previews, equal-counter flag changes, and lost responses cannot replay old state.
 - A validation or commit failure changes no imported records, source head, or receipt.
@@ -724,9 +776,12 @@ rules. A subscription token alone must not authorize link or device management.
 - Render the comparison side from database-loaded user data only. Use the same
   frozen infrastructure context for both sides. Deliberately mutate database fields
   and require field or render checks to fail. Do not compare inventory with itself.
-- At the cutoff, valid tokens work and revoked tokens fail. Check every access case
-  above, configs/envelopes, ETags, version negotiation, signed manifests/downloads,
-  and authentication/path rejection. Use fixture usage inputs, not live traffic data.
+- The fixture importer retains token parity and counter-boundary tests. The fresh-link
+  production copy checks account/config parity and activates no links. Its later
+  serving checks must accept new links, reject old links everywhere, and preserve
+  durable new-link revocation. Synthetic HTTP checks retain every access case above,
+  ETags, versions, signed downloads, and path/authentication rejection. Live routes
+  do not change during the copy. Serving handover needs fresh client checks.
 - Redaction checks cover stdout, stderr, validation errors, reports, and admin views.
   The existing portal, proxy configuration, and Django operators remain unchanged.
 
@@ -736,13 +791,24 @@ The local implementation adds isolated import records, strict fixture validation
 the approved command interface, transactional preview/apply logic, and comparisons
 from database-loaded records. Tests use synthetic snapshots and disposable
 PostgreSQL only. Snapshot assertions are not production provenance.
-The prototype does not inspect real SQLite backups or deployed manifest files.
-There is no live capture command.
+The fixture importer does not inspect real SQLite backups or deployed manifest files.
+The separate account-copy command exports stored account inputs and applies them
+through its own admission. It does not read counters, activate links, or implement
+the deferred capture protocol. It passed independent source review and synthetic tests.
+It is not deployed.
 
-Before any live import, settle and validate the capture procedure: source ordering,
-writer coordination, loaded-state evidence, and initial-zero evidence. No automatic
-live capture or import belongs in the first PR. Serving also needs a coordinated
-handover, not just a successful copy. Rename/reuse support needs its own contract.
+The active [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md) starts with actual
+source preflight, then a small production admission/extraction implementation,
+private backups, preview, and an explicitly approved non-serving apply. Preflight,
+support installation, capture, and import each need live-operation scope. No such
+operation follows from plan approval.
+
+The capture protocol prototype remains deferred and outside this implementation.
+Its witness, source journal, RPC, writer gates, and launch attestation are not the
+next milestone. Retain the code and tests without expanding or deploying them.
+Use the checked copy as a checkpoint toward basic live serving and account ownership.
+Serving still needs fresh reconciliation and separate approval. Devices remain later.
+Rename/reuse support needs its own contract.
 
 No subscription-route replacement, mobile page, device enrollment, credential
 rotation, ownership cutover, traffic migration, node agent, payments, or multiple

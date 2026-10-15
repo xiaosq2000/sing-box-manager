@@ -6,6 +6,7 @@ import hashlib
 import hmac
 from copy import deepcopy
 from pathlib import Path
+from uuid import UUID
 
 from django.db import connection, transaction
 
@@ -19,6 +20,7 @@ from sing_box_manager.control_plane.import_parity import (
     verify_projection,
 )
 from sing_box_manager.control_plane.import_schema import (
+    AccessRecords,
     ImportRejected,
     SealedReport,
     Snapshot,
@@ -42,12 +44,14 @@ def _target(*, lock: bool = False) -> ImportTarget:
         ImportTarget.objects.select_for_update() if lock else ImportTarget.objects.all()
     )
     target = targets.get(pk=1)
-    if not target.fixture_enabled:
+    from sing_box_manager.account_copy.models import AccountCopyAdmission
+
+    if not target.fixture_enabled or AccountCopyAdmission.objects.exists():
         raise ImportRejected("fixture_target_required")
     return target
 
 
-def _database_identity(runtime: Settings, target: ImportTarget) -> str:
+def database_identity(runtime: Settings, target: ImportTarget) -> str:
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT current_database(), oid FROM pg_database WHERE datname = current_database()"
@@ -85,16 +89,18 @@ def load_snapshot(path: Path, runtime: Settings) -> tuple[Snapshot, str]:
     return snapshot, hashlib.sha256(content).hexdigest()
 
 
-def _source(snapshot: Snapshot) -> ImportSource | None:
-    other = ImportSource.objects.filter(
-        source_identity=snapshot.source_identity
-    ).first()
-    if other is not None and other.namespace != snapshot.namespace:
+def source_for(namespace: UUID, source_identity: UUID) -> ImportSource | None:
+    other = ImportSource.objects.filter(source_identity=source_identity).first()
+    if other is not None and other.namespace != namespace:
         raise ImportRejected("source_namespace_conflict")
-    source = ImportSource.objects.filter(namespace=snapshot.namespace).first()
-    if source is not None and source.source_identity != snapshot.source_identity:
+    source = ImportSource.objects.filter(namespace=namespace).first()
+    if source is not None and source.source_identity != source_identity:
         raise ImportRejected("source_identity_conflict")
     return source
+
+
+def _source(snapshot: Snapshot) -> ImportSource | None:
+    return source_for(snapshot.namespace, snapshot.source_identity)
 
 
 def database_state(source: ImportSource | None) -> dict:
@@ -137,22 +143,29 @@ def database_state(source: ImportSource | None) -> dict:
     }
 
 
-def _validate_transition(snapshot: Snapshot, digest: str, state: dict) -> None:
+def validate_account_transition(
+    records: AccessRecords, sequence: int, digest: str, state: dict
+) -> None:
     head = state["head"]
     if head and (
-        snapshot.sequence < head["sequence"]
-        or (snapshot.sequence == head["sequence"] and digest != head["bundle_digest"])
+        sequence < head["sequence"]
+        or (sequence == head["sequence"] and digest != head["bundle_digest"])
     ):
         raise ImportRejected("stale_or_conflicting_capture")
-    incoming = snapshot.access.memberships()
+    incoming = records.memberships()
     subjects = {row["username"]: row for row in state["subjects"]}
     for name in incoming:
         if name in subjects and not subjects[name]["present"]:
             raise ImportRejected("retired_username_reappearance")
-    counters = snapshot.counter_map()
     for row in state["legacy"]:
         if row["subject"] is None and row["username"] in incoming:
             raise ImportRejected("retired_username_reappearance")
+
+
+def _validate_transition(snapshot: Snapshot, digest: str, state: dict) -> None:
+    validate_account_transition(snapshot.access, snapshot.sequence, digest, state)
+    counters = snapshot.counter_map()
+    for row in state["legacy"]:
         if counters.get(row["username"], 0) < row["counter"]:
             raise ImportRejected("counter_regression")
 
@@ -180,11 +193,12 @@ def _project_access(incoming: dict, state: dict, counts: dict) -> dict:
     return access
 
 
-def _project(snapshot: Snapshot, state: dict) -> tuple[dict, dict[str, int]]:
+def project_accounts(
+    records: AccessRecords, state: dict
+) -> tuple[dict, dict[str, int]]:
     projected = deepcopy(state)
-    incoming = snapshot.access.memberships()
+    incoming = records.memberships()
     subjects = {row["username"]: row for row in projected["subjects"]}
-    legacy = {row["username"]: row for row in projected["legacy"]}
     counts = dict.fromkeys(
         (
             "subjects_added",
@@ -205,6 +219,18 @@ def _project(snapshot: Snapshot, state: dict) -> tuple[dict, dict[str, int]]:
             subjects[name] = {"id": "new", "username": name, "present": True}
             counts["subjects_added"] += 1
     access = _project_access(incoming, state, counts)
+    projected["subjects"] = sorted(subjects.values(), key=lambda row: row["username"])
+    projected["access"] = sorted(
+        access.values(), key=lambda row: (row["username"], row["kind"])
+    )
+    return projected, counts
+
+
+def _project(snapshot: Snapshot, state: dict) -> tuple[dict, dict[str, int]]:
+    projected, counts = project_accounts(snapshot.access, state)
+    incoming = snapshot.access.memberships()
+    subjects = {row["username"]: row for row in projected["subjects"]}
+    legacy = {row["username"]: row for row in projected["legacy"]}
     counters = snapshot.counter_map()
     for name in set(legacy) | set(incoming) | set(counters):
         counter = counters.get(name, 0)
@@ -216,10 +242,6 @@ def _project(snapshot: Snapshot, state: dict) -> tuple[dict, dict[str, int]]:
             "counter": counter,
             "secret_identity": snapshot.secret_identity,
         }
-    projected["subjects"] = sorted(subjects.values(), key=lambda row: row["username"])
-    projected["access"] = sorted(
-        access.values(), key=lambda row: (row["username"], row["kind"])
-    )
     projected["legacy"] = sorted(legacy.values(), key=lambda row: row["username"])
     return projected, counts
 
@@ -235,7 +257,7 @@ def _binding(
         "bundle_digest": digest,
         "context_identity": snapshot.context_identity,
         "secret_identity": snapshot.secret_identity,
-        "target_identity": _database_identity(runtime, target),
+        "target_identity": database_identity(runtime, target),
     }
 
 
@@ -282,7 +304,7 @@ def _read_report(path: Path, runtime: Settings) -> tuple[dict, str]:
     return report.body, hashlib.sha256(content).hexdigest()
 
 
-def _lock(snapshot: Snapshot) -> None:
+def lock_source(namespace: UUID, source_identity: UUID) -> None:
     # Lock both bindings to serialize first imports, including namespace conflicts.
     keys = sorted(
         {
@@ -290,8 +312,8 @@ def _lock(snapshot: Snapshot) -> None:
                 hashlib.sha256(label.encode()).digest()[:8], "big", signed=True
             )
             for label in (
-                f"namespace:{snapshot.namespace}",
-                f"source:{snapshot.source_identity}",
+                f"namespace:{namespace}",
+                f"source:{source_identity}",
             )
         }
     )
@@ -300,8 +322,12 @@ def _lock(snapshot: Snapshot) -> None:
             cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
 
 
-def _copy(snapshot: Snapshot, source: ImportSource) -> None:
-    incoming = snapshot.access.memberships()
+def _lock(snapshot: Snapshot) -> None:
+    lock_source(snapshot.namespace, snapshot.source_identity)
+
+
+def copy_accounts(records: AccessRecords, source: ImportSource) -> dict:
+    incoming = records.memberships()
     subjects = {row.username: row for row in ProxySubject.objects.filter(source=source)}
     ProxySubject.objects.filter(source=source).update(present=False)
     ImportedAccess.objects.filter(subject__source=source).update(present=False)
@@ -319,6 +345,12 @@ def _copy(snapshot: Snapshot, source: ImportSource) -> None:
                 kind=kind,
                 defaults={"present": True, "payload": payload},
             )
+    return subjects
+
+
+def _copy(snapshot: Snapshot, source: ImportSource) -> None:
+    subjects = copy_accounts(snapshot.access, source)
+    incoming = snapshot.access.memberships()
     counters = snapshot.counter_map()
     previous = set(
         LegacyAccess.objects.filter(source=source).values_list(
