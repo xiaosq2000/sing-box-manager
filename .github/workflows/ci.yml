@@ -110,7 +110,7 @@ jobs:
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Check isolated PostgreSQL and private HTTP lifecycle
-        run: pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py
+        run: pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_managed_access*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py
         env:
           SBM_REQUIRE_POSTGRES: "1"
       - name: Check native PostgreSQL and hardened systemd deployment

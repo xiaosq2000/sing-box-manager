@@ -300,6 +300,7 @@ SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test \
   tests/test_managed_access_deployment.py
 ```
 
+The `control-plane` CI job includes this suite and requires PostgreSQL.
 These tests use synthetic accounts and disposable PostgreSQL. They cover migration
 drift, explicit ownership, admin permissions, CSRF, session isolation, password/link
 races, bounded password work, subscription rules, and managed deployment.
