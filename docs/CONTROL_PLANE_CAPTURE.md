@@ -1,12 +1,15 @@
 # One-time first-copy plan
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
-**First checkpoint of basic live migration: a supervised, non-serving account copy.**
-The Django foundation is live. No real proxy accounts are copied into PostgreSQL.
-The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) is implemented, independently
-source-reviewed, and tested with synthetic sources. It is not deployed.
-Database-backed serving and fresh-link issuance remain unimplemented.
+**First checkpoint complete: a verified, non-serving real-account copy.**
+The Django foundation is live. The approved account copy is committed in PostgreSQL.
+The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) is independently source-reviewed
+and tested with synthetic sources. Its tools and schema are installed separately
+from active services. The committed receipt and database-loaded field/render parity
+passed read-only checks. Inventory remains authoritative for live access.
+The [local managed-access candidate](CONTROL_PLANE_LIVE.md) implements serving and
+fresh links. It is not installed or approved for cutover.
 Goal or policy approval does not authorize deployment, capture, import, or cutover.
 
 ## Delivery goal

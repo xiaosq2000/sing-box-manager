@@ -1,11 +1,13 @@
 # Supervised account copy
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
-**Implemented and independently source-reviewed locally.**
-Synthetic-source and disposable PostgreSQL tests pass. Not deployed. No real accounts
-were imported. This command copies accounts only. It does not serve subscriptions,
-issue links, configure sing-box, or change Django operators. Live use needs separate approval.
+**Approved non-serving account copy committed and verified.**
+The implementation passed independent source review and synthetic PostgreSQL tests.
+The exact-report-approved copy passed committed-receipt and database-loaded parity
+checks. This command does not serve subscriptions, issue links, configure sing-box,
+or change Django operators. Inventory remains authoritative for live access.
+One source-bound admission remains enabled. Further copying needs exact-report approval.
 
 ## Scope
 
@@ -15,12 +17,34 @@ records. Copied portal admin flags grant no Django permissions.
 
 The required policy is `fresh-links-at-cutover`. Export and import create no
 `LegacyAccess` rows and do not read the counter database. Unavailable legacy history
-stays unavailable, not verified zero. Fresh-link issuance and durable revocation
-remain unimplemented. Before serving, deliver new URLs and reject the old link family.
+stays unavailable, not verified zero. The separate
+[managed-access candidate](CONTROL_PLANE_LIVE.md) implements fresh links and durable
+revocation but is not installed. Before serving, deliver new URLs and reject old links.
 
 The [fixture importer](CONTROL_PLANE_IMPORT.md) retains its separate command, format,
 and counter/token tests. Never use its marker or synthetic assertions for real data.
 The witness/journal capture protocol is deferred and is not part of this implementation.
+
+## Isolated installation
+
+The copy tools use a versioned directory outside the active application tree.
+They reuse the existing Python environment. No service points at that directory.
+Only `control_plane.0002_fixture_imports` and `account_copy.0001_initial` were applied.
+The fixture marker is false. One source-bound admission is enabled and not closed.
+The account copy and its receipt are committed. Source freshness, exact input bytes,
+report seal, and destination binding passed before apply. Read-only post-commit checks
+verified the receipt and database-loaded fields, client configs/ETags, and server rendering.
+These checks establish snapshot parity, not loaded-process equality or live serving.
+
+Django created the models' normal content-type and permission definitions. Existing
+permission assignments, operator records, and sessions remain unchanged. Source files,
+service identities, and the running Django readiness check passed after copying.
+An encrypted post-copy backup is verified off-host. An isolated PostgreSQL 17 restore
+matched all rows, stable IDs, logical schema, sequence values, and the copy receipt.
+Restored accounts passed field/render checks. Native PostgreSQL 16 restoration and
+full-host recovery remain untested.
+Keep exact paths, dependency checks, and recovery receipts in private operator records.
+Recheck compatibility if an ordinary deployment replaces the shared Python environment.
 
 ## Admission and schema
 
@@ -151,6 +175,21 @@ Exit `1` means an operational failure. Output uses counts and fixed error codes.
 For an uncertain apply, retry the exact snapshot/report while admission remains open.
 Do not repeat export, rotate keys, restore the database, or activate links as recovery.
 
+## Retire temporary copy tools
+
+Close admission before ownership handover. Retain the tools and receipts through an
+agreed recovery period after full live migration, not just after the account copy.
+
+After that period, remove unused copy commands, copy-only helpers, and their dedicated
+tests. Replace the first-copy procedure with a short recovery guide. Keep live account
+records, stable IDs, shared validation, and tests for retained behavior.
+
+Do not delete tables merely because their names contain `Import`. These tables hold
+account data. Managed access also uses the source/target bindings, closed admission,
+and shared context validation. Retain these records and helpers until a reviewed
+schema change removes their serving and recovery dependencies. Do not simply delete Django migration files.
+Cleanup needs separate approval.
+
 ## Verification
 
 ```sh
@@ -168,8 +207,7 @@ migrations, read-only previews, exact retries, no-op receipts, stale/racing appl
 post-copy corruption, rollback, closure, and unchanged fixture-import behavior.
 Review regressions cover first-read safety, YAML expansion, type-preserving proxy
 comparison, and verifier validation without password computation.
-The account-copy-only tree passed 1,386 tests with required PostgreSQL/sing-box checks
-and no skips. This tree excludes the deferred prototype and its tests.
-Independent review found no remaining blocking source issues in this non-serving
-slice. The reviewer did not execute tests or inspect live state.
+These checks require PostgreSQL and sing-box, not the deferred prototype.
+The account-copy source review found no remaining blocking issues in this non-serving
+slice. It did not cover the managed-access candidate, execute tests, or inspect live state.
 Deployment, real-data validation, fresh links, serving, and ownership remain separate.

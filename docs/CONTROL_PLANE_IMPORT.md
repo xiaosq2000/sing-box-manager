@@ -1,6 +1,6 @@
 # Fixture-only access importer
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
 The importer makes a checkable PostgreSQL copy of synthetic access records.
 It does not serve subscriptions, configure sing-box, or manage devices.
@@ -8,8 +8,9 @@ Inventory and the existing portal remain authoritative for live access.
 
 **This command accepts synthetic fixtures only.** The separate
 [account-copy command](CONTROL_PLANE_ACCOUNT_COPY.md) implements the fresh-link
-account-copy path locally. It passed independent source review and synthetic checks.
-It is not deployed.
+account-copy path with independent admission. It passed source review and synthetic checks.
+Its guide records the verified non-serving real-account copy. Further copying needs
+exact-report approval. Inventory still owns live access.
 A fixture snapshot's assertions do not prove a real server's state or freshness.
 
 ## Scope and fixture gate
@@ -22,7 +23,9 @@ Do not enable this marker in an operational database. This service also rejects
 any database with an account-copy admission, even if its fixture marker is enabled.
 
 Imported proxy subjects are not Django operators. Copied portal admin flags do
-not grant Django permissions. Import records have no admin pages or public routes.
+not grant Django permissions. Import does not activate account forms or public routes.
+The separate [managed-access gates](CONTROL_PLANE_LIVE.md) require a closed production
+copy and disabled fixture admission.
 Legacy access retains token usernames and counters. It creates no enrolled devices
 and consumes no device slots. Protocol credentials remain usable plaintext in
 database fields. Portal passwords remain one-way verifiers.

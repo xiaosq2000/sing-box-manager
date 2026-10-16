@@ -47,6 +47,8 @@ unix-installer = [
 control-plane = [
   "sing_box_manager/control_plane/",
   "sing_box_manager/account_copy/",
+  "sing_box_manager/managed_access/",
+  "tests/test_managed_access*.py",
   "sing_box_manager/cli.py",
   "sing_box_manager/settings.py",
   "sing_box_manager/deploy.py",
@@ -84,6 +86,13 @@ proxy-import = [
 
 "docs/CONTROL_PLANE_ACCOUNT_COPY.md" = ["@control-plane", "@proxy-import"]
 "docs/CONTROL_PLANE_IMPORT.md" = ["@control-plane", "@proxy-import"]
+"docs/CONTROL_PLANE_LIVE.md" = [
+  "@control-plane",
+  "@proxy-import",
+  "sing_box_manager/web/app.py",
+  "scripts/server-install.sh",
+  "scripts/sing-box.service",
+]
 
 "docs/CONTROL_PLANE.md" = [
   "@control-plane",

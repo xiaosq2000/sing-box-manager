@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -508,8 +508,13 @@ these incremental PRs:
    activating subscription links. Inventory remains authoritative during this checkpoint.
    Check every copied field and rendered config. The fixture-only
    importer remains separate. The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md)
-   implements export/admission/preview/apply locally. It passed independent source
-   review and synthetic tests. It is not deployed. Use the [one-time plan](CONTROL_PLANE_CAPTURE.md),
+   implements export/admission/preview/apply. It passed independent source review
+   and synthetic tests. Its isolated tools and schema are installed. The approved
+   non-serving account copy is committed. Read-only checks verified its receipt and
+   complete database-loaded field/config parity. An encrypted post-copy backup and
+   isolated logical restore checks passed. Native-version and full-host recovery
+   remain untested.
+   Use the [one-time plan](CONTROL_PLANE_CAPTURE.md),
    not the deferred capture protocol. Do not require enrolled devices for this copy.
 3. **Basic live serving and account ownership.** Django serves subscriptions and
    protected signed downloads using the existing renderers. Preserve authentication,
@@ -518,8 +523,11 @@ these incremental PRs:
    proxy accounts and credentials. Prevent inventory/deploy/import from overwriting
    database-managed access after cutover. SOPS retains infrastructure secrets.
    Account changes reach sing-box through a supervised, validated config-apply step.
-   This serving/management path is not implemented. Copy success alone permits no
-   handover. Reconcile fresh source state before the separately approved cutover.
+   The [local candidate](CONTROL_PLANE_LIVE.md) implements this path with separate
+   preparation, fencing, node application, activation, and public routing.
+   Source review found no remaining blockers. Synthetic checks pass.
+   Operational checks are not complete. It is not installed.
+   Copy success alone permits no handover. Reconcile source state before approved cutover.
 4. **Device management, after basic live migration.** Add account-authenticated
    enrollment, revocation, transactional slot checks, and per-user policies. Define
    how shared legacy access moves to enrolled installations. Add mobile QR/profile
@@ -565,7 +573,8 @@ policy. It does not delay the basic live migration above.
 
 #### M4b-2: safe-copy contract
 
-Status: fixture-only importer implemented and tested locally, not deployed.
+Status: fixture-only importer implemented and tested. Operational fixture admission
+remains disabled.
 The active [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md) targets stored account
 state, followed by fresh subscription links at cutover. It does not prove current
 loaded-process state. The [account-copy implementation](CONTROL_PLANE_ACCOUNT_COPY.md)
@@ -787,7 +796,7 @@ rules. A subscription token alone must not authorize link or device management.
 
 **First implementation and remaining gates**
 
-The local implementation adds isolated import records, strict fixture validation,
+The implementation adds isolated import records, strict fixture validation,
 the approved command interface, transactional preview/apply logic, and comparisons
 from database-loaded records. Tests use synthetic snapshots and disposable
 PostgreSQL only. Snapshot assertions are not production provenance.
@@ -795,13 +804,14 @@ The fixture importer does not inspect real SQLite backups or deployed manifest f
 The separate account-copy command exports stored account inputs and applies them
 through its own admission. It does not read counters, activate links, or implement
 the deferred capture protocol. It passed independent source review and synthetic tests.
-It is not deployed.
+Its isolated tools and schema are installed. The approved non-serving account copy
+is committed. Read-only checks verified its receipt and database-loaded field/config
+parity. Inventory and the existing portal remain authoritative for live access.
 
-The active [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md) starts with actual
-source preflight, then a small production admission/extraction implementation,
-private backups, preview, and an explicitly approved non-serving apply. Preflight,
-support installation, capture, and import each need live-operation scope. No such
-operation follows from plan approval.
+The committed copy has a verified encrypted backup and isolated logical restore check.
+Further copying needs fresh source/destination checks and exact-report approval. Follow the
+[one-time first-copy plan](CONTROL_PLANE_CAPTURE.md). Permission to generate a preview
+does not authorize apply. Keep inputs, reports, and recovery artifacts private.
 
 The capture protocol prototype remains deferred and outside this implementation.
 Its witness, source journal, RPC, writer gates, and launch attestation are not the

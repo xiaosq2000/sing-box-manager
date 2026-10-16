@@ -363,6 +363,57 @@ class ControlPlaneSettings(StrictModel):
     database_name: str = "sbm_control_plane"
     database_socket_dir: Path = Path("/var/run/postgresql")
     database_port: int = Field(default=5432, ge=1, le=65535, strict=True)
+    portal_enabled: bool = Field(default=False, strict=True)
+    portal_port: int = Field(default=47072, ge=1024, le=65535, strict=True)
+    portal_origin: str | None = None
+    subscription_secret: str | None = Field(
+        default=None,
+        min_length=50,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        repr=False,
+    )
+
+    @field_validator("portal_origin")
+    @classmethod
+    def validate_portal_origin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or re.fullmatch(
+                r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", parsed.hostname
+            )
+            is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+            or any(c.isspace() for c in value)
+        ):
+            raise ValueError("control_plane.portal_origin must be an HTTPS origin")
+        try:
+            port = parsed.port
+        except ValueError:
+            raise ValueError(
+                "control_plane.portal_origin has an invalid port"
+            ) from None
+        if port == 0 or parsed.netloc.endswith(":"):
+            raise ValueError("control_plane.portal_origin has an invalid port")
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def portal_requires_control_plane(self) -> Self:
+        if self.portal_enabled and (not self.enabled or self.portal_origin is None):
+            raise ValueError(
+                "The public portal requires the control plane and an HTTPS origin"
+            )
+        return self
 
     @field_validator("database_name")
     @classmethod
@@ -588,6 +639,13 @@ class Settings(StrictModel):
             )
         if self.control_plane.port in ports:
             raise ValueError("control_plane.port must differ from configured TCP ports")
+        if (
+            self.control_plane.portal_enabled
+            and self.control_plane.portal_port in ports | {self.control_plane.port}
+        ):
+            raise ValueError(
+                "control_plane.portal_port must differ from configured TCP ports"
+            )
         return self
 
     @model_validator(mode="after")

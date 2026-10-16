@@ -116,6 +116,8 @@ class DeployOptions:
     skip_code: bool = False
     dry_run: bool = False
     certbot_email: str | None = None
+    managed_accounts: bool = False
+    acknowledge_interrupt: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +167,7 @@ def deploy_release(
 ) -> None:
     """Deploy the active release, and the code that serves it, to a remote host."""
     normalized_hostname = _normalize_hostname(hostname)
+    _validate_ownership_options(settings, protocols, options)
     normalized_protocols = _normalize_protocols(protocols)
     protocol_description = ", ".join(normalized_protocols) or "all packaged inbounds"
     normalized_remote_root = _normalize_remote_root(remote_root)
@@ -199,18 +202,22 @@ def deploy_release(
     # its own handshake, and on a path where those get reset the deploy
     # died partway through more often than it finished.
     with ssh.multiplexed_session(normalized_hostname):
-        print(f"Deploying release {release_dir.name} to {normalized_hostname}")
-        print(f"Remote root: {normalized_remote_root}")
-        print(f"Protocols: {protocol_description}")
-        if options.dry_run:
-            print("Dry run: no remote state will be modified.")
-        if release_info.dirty:
-            print("Warning: release was built from a dirty worktree.")
+        _announce_deployment(remote, protocol_description, release_info, options)
 
         if not options.skip_code:
             # Before any remote contact: a pointer-file font is a local mistake and
             # there is no reason to open an ssh connection to discover it.
             _check_lfs_objects(artifacts.PROJECT_ROOT)
+
+        from sing_box_manager.managed_access.deployment import (
+            preflight as ownership_preflight,
+        )
+
+        ownership_preflight(
+            normalized_hostname,
+            normalized_remote_root,
+            managed=options.managed_accounts,
+        )
 
         _provision_if_bootstrapping(
             normalized_hostname,
@@ -287,7 +294,8 @@ def deploy_release(
         print("Locking down the deployed tree...")
         _lock_down_remote_tree(remote, options)
 
-        _install_services(remote, normalized_protocols, options)
+        if not options.managed_accounts:
+            _install_services(remote, normalized_protocols, options)
 
         print("Publishing generated portal metadata...")
         _publish_metadata(remote, options)
@@ -301,10 +309,7 @@ def deploy_release(
             options,
         )
 
-        _install_nginx_log_redaction(normalized_hostname, options)
-
-        _restart_web_service(remote, options)
-        _verify_services(remote, settings, options)
+        _finish_services(remote, settings, options)
         _publish_deployment_info(remote, options, release_info)
 
         print(
@@ -312,6 +317,60 @@ def deploy_release(
             f"{release_dir.name} is active on {remote.hostname} "
             f"({protocol_description})."
         )
+
+
+def _announce_deployment(
+    remote: _Remote,
+    protocols: str,
+    release: artifacts.ReleaseInfo,
+    options: DeployOptions,
+) -> None:
+    print(f"Deploying release {release.release_dir_name} to {remote.hostname}")
+    print(f"Remote root: {remote.root}")
+    print(f"Protocols: {protocols}")
+    if options.dry_run:
+        print("Dry run: no remote state will be modified.")
+    if release.dirty:
+        print("Warning: release was built from a dirty worktree.")
+
+
+def _validate_ownership_options(
+    settings: Settings, protocols: Sequence[str] | None, options: DeployOptions
+) -> None:
+    if options.managed_accounts:
+        from sing_box_manager.managed_access.deployment import validate
+
+        validate(settings)
+        if options.bootstrap or options.skip_code or protocols:
+            raise DeploymentError(
+                "Managed deployment requires full code and all database-managed protocols, without bootstrap."
+            )
+        if not options.dry_run and not options.acknowledge_interrupt:
+            raise DeploymentError(
+                "Managed deployment requires explicit acknowledgement of proxy interruption."
+            )
+    elif options.acknowledge_interrupt:
+        raise DeploymentError(
+            "Interruption acknowledgement requires managed account deployment."
+        )
+
+
+def _finish_services(
+    remote: _Remote, settings: Settings, options: DeployOptions
+) -> None:
+    if options.managed_accounts:
+        from sing_box_manager.managed_access.deployment import apply_node, finish
+
+        _prepare_control_plane(remote, settings, options)
+        apply_node(
+            remote.hostname, remote.root, remote.server_dir, dry_run=options.dry_run
+        )
+        _verify_traffic_stats_collector(remote, settings, options)
+        finish(remote.hostname, remote.root, settings, dry_run=options.dry_run)
+    else:
+        _install_nginx_log_redaction(remote.hostname, options)
+        _restart_web_service(remote, options)
+        _verify_services(remote, settings, options)
 
 
 def _build_remote(
@@ -591,6 +650,8 @@ def _upload_metadata(
             (version_path, remote.version_file, "version marker"),
         )
         for source, destination, label in uploads:
+            if options.managed_accounts and destination == remote.auth_snapshot:
+                continue
             _rsync_file(
                 _Transfer(
                     source=source,
@@ -698,6 +759,7 @@ def _sync_remote_config(
         "-m sing_box_manager.remote_config "
         f"{shlex.quote(staged_path)} {shlex.quote(target_path)} "
         f"{shlex.quote(remote.root)}"
+        + (" --managed" if options.managed_accounts else "")
     )
     _run_remote_command(
         remote.hostname,
@@ -731,6 +793,7 @@ def _publish_metadata(remote: _Remote, options: DeployOptions) -> None:
     moves = " && ".join(
         f"mv -f {shlex.quote(f'{path}.tmp')} {shlex.quote(path)}"
         for path in (remote.auth_snapshot, remote.release_info, remote.version_file)
+        if not options.managed_accounts or path != remote.auth_snapshot
     )
     _run_remote_command(
         remote.hostname,
@@ -785,6 +848,7 @@ def _install_managed_units(
         remote_root=remote_root,
         settings=settings,
         dry_run=options.dry_run,
+        **({"database_owned": True} if options.managed_accounts else {}),
     )
 
 
@@ -792,6 +856,12 @@ def _verify_services(
     remote: _Remote, settings: Settings, options: DeployOptions
 ) -> None:
     _verify_traffic_stats_collector(remote, settings, options)
+    _prepare_control_plane(remote, settings, options)
+
+
+def _prepare_control_plane(
+    remote: _Remote, settings: Settings, options: DeployOptions
+) -> None:
     if options.skip_code:
         return
     from sing_box_manager.control_plane.deployment import deploy as deploy_control_plane

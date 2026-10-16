@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -287,6 +287,27 @@ cover bounded first reads, YAML expansion rejection, JSON type preservation, and
 structural Argon2id checks without password computation. Run the fixture importer
 checks too when shared projections, file helpers, or parity code changes.
 No test uses production data or opens an operational database.
+
+The [managed-access candidate](CONTROL_PLANE_LIVE.md) has separate checks:
+
+```sh
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test \
+  tests/test_managed_access_validation.py \
+  tests/test_managed_access_integration.py \
+  tests/test_managed_access_portal.py \
+  tests/test_managed_access_node.py \
+  tests/test_managed_access_storage.py \
+  tests/test_managed_access_deployment.py
+```
+
+These tests use synthetic accounts and disposable PostgreSQL. They cover migration
+drift, explicit ownership, admin permissions, CSRF, session isolation, password/link
+races, bounded password work, subscription rules, and managed deployment.
+Supervisor tests use synthetic files and stand-in process, service, and database
+operations. Bounded-output tests launch only disposable Python child processes.
+Nginx tests execute the generated script against temporary files with mocked commands.
+No test installs a system unit, changes nginx, opens runtime inventory, or contacts a VPS.
+These checks do not prove native cutover, restore/rebind recovery, or peak VPS capacity.
 
 The witness/journal capture protocol is deferred and is not part of this implementation.
 Do not expand that protocol for the [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md).

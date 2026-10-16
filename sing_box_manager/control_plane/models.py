@@ -6,7 +6,7 @@ from django.db import models
 
 
 class User(AbstractUser):
-    """Django operators only until the explicit proxy-user ownership cutover."""
+    """Private Django operators. Proxy subjects remain separate."""
 
     class Meta:
         verbose_name = "operator"
