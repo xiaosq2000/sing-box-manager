@@ -1,14 +1,17 @@
 # Control-plane foundation
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
-The opt-in Django 5.2 service runs beside the FastAPI portal. PostgreSQL stores
-Django operator accounts and sessions. It does not own proxy users, credentials,
-subscriptions, or traffic. The encrypted inventory remains authoritative for them.
+On the VPS, the opt-in Django 5.2 service runs beside the FastAPI portal. PostgreSQL stores
+Django operator accounts, sessions, and a verified non-serving copy of proxy accounts
+and credentials. It does not own live proxy access, subscriptions, or traffic.
+The encrypted inventory remains authoritative for proxy accounts and credentials.
 
 A separate [fixture-only importer](CONTROL_PLANE_IMPORT.md) tests access copying
-in disposable databases. Its target marker defaults to disabled. The separate account-copy app adds a disabled
-admission table, no admission rows, and no admin pages. Neither path has public routes.
+in disposable databases. Its target marker defaults to disabled. The separate
+account-copy migration creates an empty admission table with disabled-by-default
+records. One source-bound admission is enabled operationally; the fixture marker
+remains false. Neither path has admin pages or public routes.
 Release and deploy never run or authorize an import.
 
 No node agent is installed. Current clients keep their existing subscription URLs.
@@ -17,8 +20,12 @@ The next delivery target is [basic live migration](REFACTOR_SPEC.md#m4b-control-
 Django-managed proxy accounts, PostgreSQL ownership, and working subscriptions on
 the single VPS. A [checked real-data copy](CONTROL_PLANE_CAPTURE.md) comes first.
 The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) is implemented, independently
-source-reviewed, and tested with synthetic sources. It is not deployed. Serving and
-proxy-account management remain unimplemented.
+source-reviewed, and tested with synthetic sources. Its tools and schema are installed
+separately from the operator service. The approved account copy is committed.
+Read-only checks verified its receipt and complete database-loaded field/render
+parity. Inventory and FastAPI still serve live access. The local
+[database-owned access candidate](CONTROL_PLANE_LIVE.md) adds serving, account forms,
+and supervised node application. It is not installed or approved for cutover.
 Traffic features, devices, and the general node agent are deferred from this delivery.
 The selected cutover policy preserves account credentials but issues fresh subscription
 links. Each installation must update its saved URL. Old links remain unchanged now
@@ -41,7 +48,7 @@ operator-only until a separately approved cutover.
 Peer authentication uses the operating-system account to identify a database
 client. Run management commands as `sbm`. No database password is needed.
 The database role has no superuser, role-creation, or database-creation rights.
-Django has no public nginx route. Do not open ports 47071 or 5432 in the firewall.
+The private Django service has no public nginx route. Do not open ports 47071 or 5432 in the firewall.
 
 The service uses HTTP on loopback. SSH encrypts remote access. Do not publish this
 HTTP service or reuse its cookie settings for a public site.
@@ -51,6 +58,10 @@ send `Origin: null` with form submissions. Django rejects that origin. Keep CSRF
 checks enabled. Do not add `null` to trusted origins.
 
 ## Enable and deploy
+
+This section applies to inventory-owned hosts. A fenced host requires the explicit
+[managed deployment mode](CONTROL_PLANE_LIVE.md#deployment-and-first-cutover).
+Deploy and migrations never prepare or activate account ownership.
 
 Read [secret handling](SECRET_HANDLING.md) before editing operator configuration.
 Add this block to the selected inventory:
@@ -116,9 +127,10 @@ Open `http://127.0.0.1:47071/admin/`. Use a different local port if 47071 is occ
 After a CSRF 403, open a fresh login page at the exact tunnel URL.
 Keep the hostname and port unchanged during login.
 
-Admin changes affect Django operators only. They do not grant or revoke proxy access.
+The installed admin currently changes Django operators only. The local candidate
+adds separate proxy-account forms after explicit ownership activation.
 A Django superuser has application permissions, not PostgreSQL superuser rights.
-The custom Django user model is the starting point for the later ownership cutover.
+Django operator accounts remain separate from proxy subjects after cutover.
 
 For a manual readiness check on the server:
 
@@ -154,14 +166,24 @@ sudo sh -c 'sudo -u postgres pg_restore --exit-on-error --no-owner --role=sbm --
 sudo -u sbm psql --dbname=sbm_control_plane_restore --command='SELECT count(*) FROM control_plane_user;'
 ```
 
-For recovery, select the restored name in `control_plane.database_name`, then build
-and deploy. Check readiness and admin login. Keep the original database until the
+For an inventory-owned host, select the restored name in
+`control_plane.database_name`, then build and deploy. Prepared or active ownership
+requires the separate [recovery checks](CONTROL_PLANE_LIVE.md#failure-and-recovery).
+Do not deploy a restored managed database as an automatic recovery step. Check readiness and admin login. Keep the original database until the
 operator authorizes its removal. A database backup does not contain the Django
 signing key; keep a protected backup of infrastructure configuration too.
 
+The post-copy recovery set has a verified encrypted off-host copy. An isolated
+PostgreSQL 17 restore preserved account rows, stable IDs, admission, receipts,
+operators, sessions, logical schema, and sequence values. Field/render checks passed.
+This is not a native PostgreSQL 16 or full-host recovery test. The isolated restore
+used a different destination binding. Do not replay an approved copy report or assume
+admission is closed. Recheck destination binding, closure, and ownership before live use.
+
 ## Disable without removing data
 
-Set `control_plane.enabled: false` in the inventory and deploy normally.
+Before account ownership is fenced, set `control_plane.enabled: false` and deploy normally.
+Managed deployment refuses to disable the private or public Django service through configuration.
 Deployment disables only the managed Django service. It retains PostgreSQL, the
 database, operator accounts, and signing key. It does not reverse migrations.
 Disable this feature before considering a code rollback. Older revisions do not

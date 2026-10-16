@@ -23,6 +23,7 @@ def _load_mapping(path: Path) -> dict[str, object]:
 PRESERVED_WEB_SECRETS = ("session_secret", "subscription_secret")
 PRESERVED_SECRETS = [("web", name) for name in PRESERVED_WEB_SECRETS] + [
     ("control_plane", "secret_key"),
+    ("control_plane", "subscription_secret"),
 ]
 
 
@@ -42,6 +43,8 @@ def publish_runtime_config(
     staged_path: Path,
     target_path: Path,
     owner_reference_path: Path,
+    *,
+    managed: bool = False,
 ) -> None:
     """Validate and atomically publish ``staged_path`` as ``target_path``.
 
@@ -49,11 +52,26 @@ def publish_runtime_config(
     across later deploys so browser sessions, installer machine tokens and
     subscription links remain valid.
     """
-    incoming = _load_mapping(staged_path)
+    from sing_box_manager.managed_access.storage import legacy_blocked
+
+    if legacy_blocked() != managed:
+        raise ValueError("Runtime publication mode does not match host ownership")
+    if managed:
+        from sing_box_manager.account_copy.export import load_source_settings
+
+        incoming = load_source_settings(staged_path).model_dump(
+            mode="json", by_alias=True
+        )
+        current = load_source_settings(target_path).model_dump(
+            mode="json", by_alias=True
+        )
+        _retain_managed_state(incoming, current)
+    else:
+        incoming = _load_mapping(staged_path)
+        current = _load_mapping(target_path) if target_path.is_file() else {}
 
     reference_path = owner_reference_path
     if target_path.is_file():
-        current = _load_mapping(target_path)
         for section, name in PRESERVED_SECRETS:
             existing_secret = _secret(current, section, name)
             if existing_secret is None:
@@ -78,11 +96,34 @@ def publish_runtime_config(
     os.replace(staged_path, target_path)
 
 
+def _retain_managed_state(incoming: dict, current: dict) -> None:
+    from sing_box_manager.settings import Settings
+
+    before, after = Settings.from_dict(current), Settings.from_dict(incoming)
+    if not after.control_plane.enabled or not after.control_plane.portal_enabled:
+        raise ValueError("Managed runtime must retain both Django services")
+    for name in ("database_name", "database_socket_dir", "database_port"):
+        if getattr(before.control_plane, name) != getattr(after.control_plane, name):
+            raise ValueError("Managed deployment cannot change the database binding")
+    if (
+        before.deployment.host != after.deployment.host
+        or before.control_plane.portal_port != after.control_plane.portal_port
+    ):
+        raise ValueError(
+            "Public host and listener changes require a separate routing migration"
+        )
+    # These retained rosters are recovery/collector inputs, never live authority.
+    # Do not replace them with inventory values or export new database passwords.
+    for name in ("web_portal", "trojan", "hysteria2", "naive"):
+        incoming[name]["users"] = current[name]["users"]
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("staged_path", type=Path)
     parser.add_argument("target_path", type=Path)
     parser.add_argument("owner_reference_path", type=Path)
+    parser.add_argument("--managed", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -93,9 +134,11 @@ def main(argv: list[str] | None = None) -> None:
             args.staged_path,
             args.target_path,
             args.owner_reference_path,
+            managed=args.managed,
         )
     finally:
-        args.staged_path.unlink(missing_ok=True)
+        if not args.managed:
+            args.staged_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

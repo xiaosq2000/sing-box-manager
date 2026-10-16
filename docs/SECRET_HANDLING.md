@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-15.
+Checked on 2026-10-16.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -182,8 +182,18 @@ If you forget the plaintext portal password, you cannot recover it from
   stores account copies without legacy tokens. Its private snapshots contain usable
   protocol credentials and password verifiers, but no signing secrets. It uses distinct
   report HMAC domains and an explicit database admission. It passed independent source
-  review and synthetic tests. It is not deployed. Fresh-link issuance is not implemented.
+  review and synthetic tests. A verified non-serving real-account copy is committed;
+  PostgreSQL now also holds usable protocol credentials and portal password verifiers.
+  Keep these tables and their backups private. Inventory remains authoritative for live
+  access. Further copying needs exact-report approval. The local
+  [managed-access candidate](CONTROL_PLANE_LIVE.md) implements fresh links but is not installed.
   See [control-plane recovery](CONTROL_PLANE.md#back-up-and-test-recovery).
+- `control_plane.subscription_secret` is the independent key for database-owned
+  subscription links. Explicit preparation binds its identity to the database.
+  Deploy preserves it but never generates or rotates it. Durable per-subject
+  generations are not imported legacy counters. Back up the key, database, host
+  fence, and application records together. Never print subscription URLs or place
+  them in command arguments. Private account editors can retrieve URLs for delivery.
 - `client_signing_key` is the base64 ed25519 private key that signs the manifest of
   `sbc` downloads. It is a top-level setting rather than inventory, so deploy never
   copies it to the server. `sbc` carries the matching public keys in `internal/trust/trust.go`, so replacing

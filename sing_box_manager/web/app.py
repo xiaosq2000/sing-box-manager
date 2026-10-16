@@ -11,6 +11,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from sing_box_manager.managed_access.storage import legacy_blocked
 from sing_box_manager.release import artifacts
 from sing_box_manager.release.client_downloads import load_client_downloads
 from sing_box_manager.runtime_env import load_local_env
@@ -81,8 +82,14 @@ def _resolve_vps_hostname() -> str | None:
     return hostname or None
 
 
+def _require_legacy_portal() -> None:
+    if legacy_blocked():
+        raise RuntimeError("The legacy portal is disabled on a database-owned host")
+
+
 def create_app(settings: Settings) -> FastAPI:
     """Create and configure the FastAPI application."""
+    _require_legacy_portal()
     app = FastAPI()
     deployment_host = artifacts.resolve_deployment_host(settings)
 
@@ -105,6 +112,12 @@ def create_app(settings: Settings) -> FastAPI:
         Every non-static response this portal serves is per-user and private, so
         inverting the default makes the safe case automatic and retires the list.
         """
+        if legacy_blocked():
+            from starlette.responses import Response
+
+            return Response(
+                status_code=503, headers={"Cache-Control": "private, no-store"}
+            )
         response = await call_next(request)
         if request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = STATIC_ASSET_CACHE_CONTROL

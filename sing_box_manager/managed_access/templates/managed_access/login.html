@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Subscription login</title>
+  </head>
+  <body>
+    <main>
+      <h1>Subscription login</h1>
+      {% if failed %}
+      <p>
+        Login failed or temporarily limited. Check your credentials and try
+        again later.
+      </p>
+      {% endif %}
+      <form method="post">
+        {% csrf_token %}
+        <p>
+          <label
+            >Username
+            <input
+              name="username"
+              autocomplete="username"
+              maxlength="32"
+              required
+          /></label>
+        </p>
+        <p>
+          <label
+            >Password
+            <input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              maxlength="1024"
+              required
+          /></label>
+        </p>
+        <button type="submit">Sign in</button>
+      </form>
+      <p>This login does not grant operator access.</p>
+    </main>
+  </body>
+</html>

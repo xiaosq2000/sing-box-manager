@@ -180,7 +180,22 @@ def test_full_copy_preview_no_writes_retry_ids_and_operator_separation(case):
     assert (
         python(
             case["env"],
-            "import django; django.setup(); from django.contrib.auth import get_user_model; from django.contrib import admin; from sing_box_manager.control_plane.models import ProxySubject; assert get_user_model().objects.count()==0; assert ProxySubject not in admin.site._registry; print('ok')",
+            """
+import django; django.setup()
+from types import SimpleNamespace
+from django.contrib.auth import get_user_model
+from django.contrib import admin
+from sing_box_manager.control_plane.models import ProxySubject
+from sing_box_manager.managed_access.models import Ownership
+assert get_user_model().objects.count()==0
+assert not Ownership.objects.exists()
+request=SimpleNamespace(user=SimpleNamespace(has_perm=lambda *args:True))
+account_admin=admin.site._registry[ProxySubject]
+assert not account_admin.has_add_permission(request)
+assert not account_admin.has_change_permission(request)
+assert not account_admin.get_queryset(request).exists()
+print('ok')
+""",
         ).strip()
         == "ok"
     )

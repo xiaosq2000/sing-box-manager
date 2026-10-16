@@ -1,6 +1,6 @@
 # Remote Deployment
 
-Checked on 2026-10-12.
+Checked on 2026-10-16.
 
 `sbm deploy` ships two things in one command: the project **code** and the active
 **release artifacts**. The remote is a plain directory, not a git checkout — it needs
@@ -34,6 +34,31 @@ pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-h
   installs the selected protocol inbounds, publishes metadata, and runs service
   checks. Do not use it for the first M3 migration: the collectors and runtime
   configuration must change together with the single node process
+
+## Database-owned mode
+
+The [local managed-access candidate](CONTROL_PLANE_LIVE.md) adds
+`--managed-accounts --acknowledge-interrupt`. It is not active on the VPS.
+Read-only ownership checks run before any remote mutation, including on dry runs.
+They require system `python3` on the target, including before bootstrap.
+They reject symlink/non-directory ancestors and inspection errors, not just marker files.
+Ordinary deploy refuses any ownership marker. Managed mode requires active ownership.
+It rejects bootstrap, `--skip-code`, and protocol selection.
+
+Managed deployment skips the inventory-derived server installer and auth snapshot.
+It preserves stored rosters and signing keys, then renders the node from PostgreSQL.
+Private Django preparation runs before node application. Collector checks run afterward,
+so a changed API listener does not make deployment fail against the old node.
+The supervised apply validates before restart and retains private recovery files.
+It does not restore old credentials after failure. Desired and applied revisions
+show pending work. New subscription configs remain unavailable while application is pending.
+
+The public Django service replaces the old portal route only after readiness succeeds.
+Nginx retains TLS directives, overwrites proxy headers, and disables request/error logs
+for that site. Before/after files remain private. An uncertain reload requires inspection.
+A database binding, public host, or public listener change needs separate migration.
+Deploy never closes copying, prepares ownership, or activates it.
+Do not run deploy and node operations concurrently or use older tools after cutover.
 
 ## Requirements
 
@@ -73,6 +98,8 @@ step before retrying a deploy that may have changed remote state. Retry notices
 appear on stderr.
 
 ## What the Command Does
+
+The sequence below applies to inventory-owned mode. Managed-mode differences are above.
 
 1. checks the bundled LFS fonts locally, before any remote contact
 1. checks the remote root is writable and has `sudo`, `systemctl`, and the expected

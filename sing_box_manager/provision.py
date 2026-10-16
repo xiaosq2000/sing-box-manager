@@ -70,6 +70,13 @@ def provision_remote(  # noqa: PLR0913
     reverse proxy, and obtains a TLS certificate.
     """
     print("Provisioning remote host...")
+    from sing_box_manager.managed_access.deployment import guard_command
+
+    _ssh(
+        hostname,
+        guard_command(managed=False),
+        "Ordinary provisioning refuses a database-owned host.",
+    )
 
     _require_ubuntu_debian(hostname)
 
@@ -103,6 +110,7 @@ def install_managed_units(
     settings: Settings,
     *,
     dry_run: bool = False,
+    database_owned: bool = False,
 ) -> None:
     """Install and enable the managed systemd units after code is in place.
 
@@ -115,13 +123,21 @@ def install_managed_units(
     same bytes again is a no-op, so doing it unconditionally costs nothing.
     """
     print("Installing managed systemd services...")
+    from sing_box_manager.managed_access.deployment import guard_command
 
-    _install_unit(
+    _ssh(
         hostname,
-        _web_service_unit(remote_root),
-        "sing-box-manager-web.service",
-        dry_run=dry_run,
+        guard_command(managed=database_owned),
+        "Service installation mode does not match host ownership.",
     )
+
+    if not database_owned:
+        _install_unit(
+            hostname,
+            _web_service_unit(remote_root),
+            "sing-box-manager-web.service",
+            dry_run=dry_run,
+        )
 
     if settings.traffic_stats.enabled:
         _install_unit(
@@ -156,7 +172,7 @@ def install_managed_units(
         dry_run=dry_run,
     )
 
-    units = ["sing-box-manager-web.service"]
+    units = [] if database_owned else ["sing-box-manager-web.service"]
     if settings.traffic_stats.enabled:
         units.append("sing-box-manager-traffic-stats.timer")
         units.append("sing-box-manager-traffic-stream.service")

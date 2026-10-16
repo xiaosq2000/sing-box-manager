@@ -53,6 +53,28 @@ command -v systemctl >/dev/null
 command -v python3 >/dev/null
 # An override confines fixture tests to a scratch filesystem.
 root="${SBM_SERVER_ROOT:-}"
+fence="${root}/var/lib/sing-box-manager-control-plane/owner.json"
+# Keep this standalone probe aligned with managed_access.storage and deployment.
+if ! python3 -I -B - "$fence" <<'SBM_FENCE'; then
+import stat, sys
+from pathlib import Path
+def marker(path):
+    if not path.is_absolute() or '..' in path.parts: raise OSError()
+    for parent in reversed(path.parents):
+        try: info=parent.lstat()
+        except FileNotFoundError: return None
+        if not stat.S_ISDIR(info.st_mode): raise OSError()
+    try: return path.lstat()
+    except FileNotFoundError: return None
+try:
+    allowed=marker(Path(sys.argv[1])) is None
+except OSError:
+    allowed=False
+raise SystemExit(0 if allowed else 1)
+SBM_FENCE
+	error 'Database-owned host: use supervised managed node application.'
+	exit 1
+fi
 prefix="${root}/usr/local"
 units="${root}/etc/systemd/system"
 state="${root}/var/lib/sing-box"

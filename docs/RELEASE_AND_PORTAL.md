@@ -1,6 +1,6 @@
 # Release Build and Portal Usage
 
-Checked on 2026-10-13.
+Checked on 2026-10-16.
 
 This guide covers the local operator workflow for:
 
@@ -10,6 +10,14 @@ This guide covers the local operator workflow for:
 
 For the encrypted inventory and secret-handling rules, read
 [`docs/SECRET_HANDLING.md`](./SECRET_HANDLING.md) first.
+
+This guide describes the inventory-owned portal. The
+[database-owned access candidate](CONTROL_PLANE_LIVE.md) uses a separate Django
+service and is not active on the VPS. At its cutover, legacy authentication,
+traffic pages, machine-token exchange, and archives stop being public.
+The hosted installers, subscription envelope, ETags, and signed-download contract remain.
+Only password Basic authentication remains on `POST /api/sub`.
+A link reset does not revoke cached protocol credentials.
 
 ## Before Building a Release
 
