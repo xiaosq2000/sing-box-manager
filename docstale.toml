@@ -49,6 +49,7 @@ control-plane = [
   "sing_box_manager/account_copy/",
   "sing_box_manager/managed_access/",
   "tests/test_managed_access*.py",
+  "tests/native_managed.py",
   "sing_box_manager/cli.py",
   "sing_box_manager/settings.py",
   "sing_box_manager/deploy.py",
