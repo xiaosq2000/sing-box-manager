@@ -20,13 +20,14 @@ import shutil
 import ssl
 import subprocess
 import socket
+import stat
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import time
 from unittest.mock import patch
 from uuid import UUID
 
-ROOT = Path("/opt/sbm-managed-native")
+ROOT = Path("/srv/sbm-managed-native")
 SOURCE = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config/inventory/runtime.yaml"
 PYTHON = ROOT / ".pixi/envs/default/bin/python"
@@ -82,6 +83,14 @@ def guard():
         *[Path("/etc/systemd/system") / unit for unit in UNITS],
     ):
         require(not os.path.lexists(path), "Refusing an existing native target")
+    for parent in ROOT.parents:
+        info = parent.lstat()
+        require(
+            stat.S_ISDIR(info.st_mode)
+            and info.st_uid == 0
+            and not info.st_mode & 0o022,
+            "Native application ancestors must be root-owned and non-writable",
+        )
     try:
         pwd.getpwnam("sbm")
     except KeyError:
@@ -149,21 +158,31 @@ try:
  exec(compile({code!r}, '<native-fixture>', 'exec'))
 except Exception as error:
  kind=type(error).__name__
- if kind not in ('AssertionError','ImportError','ValueError','KeyError','TypeError','PermissionError','ProgrammingError','OperationalError','IntegrityError'):
+ codes=('unsafe_directory','unsafe_source_file','source_changed','source_rejected','source_auth_mismatch','source_proxy_mismatch','account_copy_context_rejected','production_target_required','field_parity_failed','render_parity_failed','portal_verifier_cost_unsupported')
+ if kind=='ImportRejectedError' and str(error) in codes:
+  kind=str(error)
+ elif kind not in ('AssertionError','ImportError','ValueError','KeyError','TypeError','PermissionError','ProgrammingError','OperationalError','IntegrityError'):
   kind='OtherError'
  lines=[frame.lineno for frame in traceback.extract_tb(error.__traceback__) if frame.filename=='<native-fixture>']
  print('NATIVE_ERROR:'+kind+':'+str(lines[-1] if lines else 0),file=sys.stderr)
  sys.exit(1)
 """
     result = run(
-        ["sudo", "-u", user, "env", "-i", *environment, str(PYTHON), "-B", "-"],
+        [
+            "sudo",
+            "-u",
+            user,
+            "sh",
+            "-c",
+            f"cd {shlex.quote(str(ROOT))} && exec "
+            + shlex.join(["env", "-i", *environment, str(PYTHON), "-B", "-"]),
+        ],
         data=wrapped.encode(),
-        cwd=ROOT,
         success=False,
     )
     if success and result.returncode:
         diagnostic = re.search(
-            rb"^NATIVE_ERROR:([A-Za-z]+):([0-9]+)$", result.stderr, re.MULTILINE
+            rb"^NATIVE_ERROR:([A-Za-z_]+):([0-9]+)$", result.stderr, re.MULTILINE
         )
         require(
             False,

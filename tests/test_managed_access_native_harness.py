@@ -66,7 +66,9 @@ def test_native_processes_clear_download_proxies_and_capture_output(monkeypatch)
     )
     native.python('print("synthetic-private-body")', user="sbm")
     assert calls[0][0] == ["sudo", "bash", "-eu", "-c", "printf synthetic"]
-    assert calls[1][0][:5] == ["sudo", "-u", "sbm", "env", "-i"]
+    assert calls[1][0][:5] == ["sudo", "-u", "sbm", "sh", "-c"]
+    assert calls[1][0][5].startswith("cd /srv/sbm-managed-native && exec env -i ")
+    assert calls[1][1]["cwd"] is None
     assert b"synthetic-private-body" in calls[1][1]["input"]
     assert b"<native-fixture>" in calls[1][1]["input"]
     for _, kwargs in calls:
