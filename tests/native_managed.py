@@ -456,6 +456,18 @@ def setup(runtime):
     shell(
         f"chown -R root:sbm {ROOT}; chmod -R u+rwX,g+rX,g-w,o-rwx {ROOT}; chmod 0640 {CONFIG}; chmod 0600 {ROOT}/fixture.key"
     )
+    # Hosted images can make tool directories writable by the runner account.
+    # Establish the fixture's production-like protections; never relax node guards.
+    python("""import os,stat,json
+from pathlib import Path
+before=[]
+for name in ('/usr/local/bin','/etc/systemd/system'):
+ path=Path(name); info=path.lstat()
+ assert stat.S_ISDIR(info.st_mode)
+ before.append({'path':name,'uid':info.st_uid,'mode':oct(stat.S_IMODE(info.st_mode))})
+ os.chown(path,0,0); path.chmod(0o755)
+print(json.dumps(before))
+""")
     with (
         patch.multiple(private, _ssh=local_ssh, _ssh_write=local_write),
         patch.multiple(

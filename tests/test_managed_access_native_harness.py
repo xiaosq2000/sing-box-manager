@@ -119,7 +119,13 @@ def test_native_setup_keeps_all_host_commands_local(tmp_path, monkeypatch):
     monkeypatch.setattr(
         native.subprocess, "run", lambda *a, **kw: pytest.fail("Unmocked host command")
     )
-    monkeypatch.setattr(native, "python", lambda *a, **kw: SimpleNamespace(stdout=b""))
+    programs = []
+
+    def local_python(code, **kwargs):
+        programs.append(code)
+        return SimpleNamespace(stdout=b"")
+
+    monkeypatch.setattr(native, "python", local_python)
     monkeypatch.setattr(native, "wait_http", lambda *a, **kw: None)
     calls = []
 
@@ -130,6 +136,9 @@ def test_native_setup_keeps_all_host_commands_local(tmp_path, monkeypatch):
     monkeypatch.setattr(native, "run", invoke)
     native.setup(native.settings())
     assert calls and all(argv[0] == "sudo" for argv in calls)
+    protection = next(code for code in programs if "path.chmod(0o755)" in code)
+    assert "('/usr/local/bin','/etc/systemd/system')" in protection
+    assert "assert stat.S_ISDIR(info.st_mode)" in protection
     assert not any("ssh" in argv or "rsync" in argv for argv in calls)
     assert any("nginx -t" in " ".join(argv) for argv in calls)
     assert any(argv[-1] == "systemctl restart nginx" for argv in calls)

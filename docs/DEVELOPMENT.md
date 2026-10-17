@@ -319,7 +319,8 @@ Environment markers prevent mistakes. They are not a security sandbox.
 
 The rehearsal uses generated keys, a locally trusted TLS fixture, one synthetic
 account, loopback traffic, and the pinned sing-box server build. Only SSH transport
-uses local substitutes. PostgreSQL 16, systemd, sing-box, Gunicorn, and nginx are real.
+uses local substitutes. PostgreSQL 16, systemd, sing-box, Gunicorn, and nginx are real. Fixture setup makes `/usr/local/bin` and `/etc/systemd/system`
+root-owned and non-writable by other users. Product path guards remain unchanged.
 It checks:
 
 - Account copy, permanent closure, preparation, fencing, node application, activation,
