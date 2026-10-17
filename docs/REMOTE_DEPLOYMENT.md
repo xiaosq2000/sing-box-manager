@@ -1,6 +1,6 @@
 # Remote Deployment
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 `sbm deploy` ships two things in one command: the project **code** and the active
 **release artifacts**. The remote is a plain directory, not a git checkout — it needs
@@ -37,8 +37,9 @@ pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-h
 
 ## Database-owned mode
 
-The [local managed-access candidate](CONTROL_PLANE_LIVE.md) adds
-`--managed-accounts --acknowledge-interrupt`. It is not active on the VPS.
+The [managed-access implementation](CONTROL_PLANE_LIVE.md) adds
+`--managed-accounts --acknowledge-interrupt`. Isolated code and empty schema are staged.
+Database-owned access is not active on the VPS.
 Read-only ownership checks run before any remote mutation, including on dry runs.
 They require system `python3` on the target, including before bootstrap.
 They reject symlink/non-directory ancestors and inspection errors, not just marker files.

@@ -1,6 +1,6 @@
 # Supervised account copy
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 **Approved non-serving account copy committed and verified.**
 The implementation passed independent source review and synthetic PostgreSQL tests.
@@ -18,8 +18,9 @@ records. Copied portal admin flags grant no Django permissions.
 The required policy is `fresh-links-at-cutover`. Export and import create no
 `LegacyAccess` rows and do not read the counter database. Unavailable legacy history
 stays unavailable, not verified zero. The separate
-[managed-access candidate](CONTROL_PLANE_LIVE.md) implements fresh links and durable
-revocation but is not installed. Before serving, deliver new URLs and reject old links.
+[managed-access implementation](CONTROL_PLANE_LIVE.md) implements fresh links and durable
+revocation. Its isolated code and empty schema are staged, without serving or ownership.
+Before serving, deliver new URLs and reject old links.
 
 The [fixture importer](CONTROL_PLANE_IMPORT.md) retains its separate command, format,
 and counter/token tests. Never use its marker or synthetic assertions for real data.
@@ -29,7 +30,8 @@ The witness/journal capture protocol is deferred and is not part of this impleme
 
 The copy tools use a versioned directory outside the active application tree.
 They reuse the existing Python environment. No service points at that directory.
-Only `control_plane.0002_fixture_imports` and `account_copy.0001_initial` were applied.
+Copy support uses `control_plane.0002_fixture_imports` and `account_copy.0001_initial`.
+Separate managed-access staging adds `managed_access.0001_initial`, with both tables empty.
 The fixture marker is false. One source-bound admission is enabled and not closed.
 The account copy and its receipt are committed. Source freshness, exact input bytes,
 report seal, and destination binding passed before apply. Read-only post-commit checks

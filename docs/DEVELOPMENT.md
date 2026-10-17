@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -308,7 +308,38 @@ Supervisor tests use synthetic files and stand-in process, service, and database
 operations. Bounded-output tests launch only disposable Python child processes.
 Nginx tests execute the generated script against temporary files with mocked commands.
 No test installs a system unit, changes nginx, opens runtime inventory, or contacts a VPS.
-These checks do not prove native cutover, restore/rebind recovery, or peak VPS capacity.
+These local checks do not prove native cutover, restore/rebind recovery, or peak VPS capacity.
+
+The separate `managed-native` CI job runs `tests/native_managed.py` on a disposable
+GitHub-hosted Ubuntu 24.04 runner. It requires `GITHUB_ACTIONS=true`,
+`RUNNER_ENVIRONMENT=github-hosted`, and `SBM_MANAGED_NATIVE_E2E=1`.
+**Do not run it on an operator machine or VPS. Do not set these markers locally.**
+The guard rejects existing application paths, state, units, and the `sbm` account.
+Environment markers prevent mistakes. They are not a security sandbox.
+
+The rehearsal uses generated keys, a locally trusted TLS fixture, one synthetic
+account, loopback traffic, and the pinned sing-box server build. Only SSH transport
+uses local substitutes. PostgreSQL 16, systemd, sing-box, Gunicorn, and nginx are real. Fixture setup makes `/usr/local/bin` and `/etc/systemd/system`
+root-owned and non-writable by other users. Product path guards remain unchanged.
+It checks:
+
+- Account copy, permanent closure, preparation, fencing, node application, activation,
+  and public routing as separate operations. Fixture import admission stays disabled.
+- A usable legacy link before cutover and its rejection afterward. Fresh links,
+  password exchange, versions, ETags, signed downloads, and link revocation.
+- Real Trojan traffic before and after cutover. A database-owned credential edit,
+  pending subscriptions, reapplication, and rejection of the replaced credential.
+- PostgreSQL 16 dump/restore of all 19 tables, logical columns, constraints, and exact
+  sequence state. Restored active ownership remains blocked by its changed destination.
+
+Generated credentials, keys, links, runtime files, dumps, and process output are not
+uploaded as artifacts. The runner retains fixture files until its disposal.
+Local tests in `tests/test_managed_access_native_harness.py` mock host commands.
+They check refusal guards, transport, proxy removal, fixture construction, and node
+state creation with a private umask. They do not execute the native rehearsal.
+This CI fixture does not measure VPS capacity, prove full-host recovery, rebind a
+restored database, install `sbc`, or test Hysteria2/Naive client connections.
+See [the recovery boundary](CONTROL_PLANE_LIVE.md#failure-and-recovery).
 
 The witness/journal capture protocol is deferred and is not part of this implementation.
 Do not expand that protocol for the [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md).

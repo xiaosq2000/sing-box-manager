@@ -1,11 +1,11 @@
 # Database-owned access
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
-**Local candidate. Not approved for deployment or cutover.**
-Independent source review found no remaining blocking issues.
-The VPS still uses inventory and FastAPI for live access. This work does not
-authorize installation, admission closure, service changes, or cutover.
+**Non-serving staging complete. No cutover approval.**
+Merged code and the empty managed-access tables are staged outside active serving.
+The VPS still uses inventory and FastAPI for live access. Native CI rehearsal does
+not authorize live installation, admission closure, service changes, or cutover.
 
 ## Scope
 
@@ -189,15 +189,35 @@ binding. Do not force old report identities or reopen admission to make it serve
 Restoring all trusted state together cannot prove that no later revocation existed.
 Resolve that uncertainty before selecting credentials or signing state for recovery.
 
+Before a live handover, approve and verify a current recovery set separately:
+
+1. Account for the current schema. The retained account-copy backup has 17 tables.
+   Non-serving staging adds two empty tables and their Django registrations.
+   Old 17-table verification programs are not current-state checks.
+2. Capture a current PostgreSQL 16 dump and the matching protected runtime.
+   After preparation, include signing state, generations, closure, fence, and node records.
+3. Restore into an isolated destination with PostgreSQL 16. Compare retained rows,
+   IDs, logical schema, exact sequences, permissions, and account/render parity.
+4. Check the actual destination binding. Keep managed serving blocked on mismatch.
+   The native fixture checks this rejection, not a supported rebinding procedure.
+5. Inspect any lost or uncertain revocation state. Prepare a separately reviewed
+   recovery plan before changing bindings or applying credentials to a node.
+
+A database dump is not full-host recovery. TLS material, release assets, binaries,
+service configuration, and private link delivery need their own recovery coverage.
+The rehearsal does not create or replace a production backup.
+
 ## Verification boundary
 
-The full Python suite passed 1,478 tests with required PostgreSQL and sing-box checks,
-and no skips. Go tests passed with cgo disabled. Independent review covered public
-source, docs, and synthetic fixtures. It did not execute tests or inspect live state.
+Local verification uses required PostgreSQL tests and synthetic data.
+Source review is separate from native execution and live-state inspection.
+A successful source review does not authorize deployment or cutover.
 
 Synthetic tests cover PostgreSQL transactions, migrations, admin permissions,
 CSRF, session isolation, link reset and password races, subscriptions, downloads,
 deployment mode, private IPC limits, and retained failure outputs.
 Node services, privileged installation, and nginx commands use stand-ins locally.
-These checks do not prove native service behavior, full-host recovery, or peak VPS capacity.
-See [Development](DEVELOPMENT.md#control-plane-checks).
+These local checks do not prove native service behavior, full-host recovery, or peak VPS capacity.
+The separate `managed-native` CI job exercises real services and PostgreSQL 16 with
+synthetic data. A successful run applies only to that disposable fixture, not the VPS.
+See [Development](DEVELOPMENT.md#control-plane-checks) for coverage and exclusions.

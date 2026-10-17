@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -185,8 +185,9 @@ If you forget the plaintext portal password, you cannot recover it from
   review and synthetic tests. A verified non-serving real-account copy is committed;
   PostgreSQL now also holds usable protocol credentials and portal password verifiers.
   Keep these tables and their backups private. Inventory remains authoritative for live
-  access. Further copying needs exact-report approval. The local
-  [managed-access candidate](CONTROL_PLANE_LIVE.md) implements fresh links but is not installed.
+  access. Further copying needs exact-report approval. The
+  [managed-access implementation](CONTROL_PLANE_LIVE.md) has isolated code and empty schema staged.
+  No ownership or new signing state exists. Active services and current links remain unchanged.
   See [control-plane recovery](CONTROL_PLANE.md#back-up-and-test-recovery).
 - `control_plane.subscription_secret` is the independent key for database-owned
   subscription links. Explicit preparation binds its identity to the database.

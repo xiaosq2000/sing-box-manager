@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -19,9 +19,10 @@ is implemented, independently source-reviewed, and tested with synthetic sources
 A verified non-serving account copy is present in PostgreSQL. It activates no links
 and does not transfer account ownership. The account-copy guide records the current
 checkpoint and remaining gates. Further copying needs exact-report approval.
-The [database-owned access candidate](docs/CONTROL_PLANE_LIVE.md) adds private account
+The [database-owned access implementation](docs/CONTROL_PLANE_LIVE.md) adds private account
 management, a separate public Django portal, and supervised node application.
-It is not installed or approved for cutover.
+Its isolated code and empty managed-access schema are staged. Active services remain unchanged.
+Ownership preparation and cutover are not approved.
 
 ## Public source and private operations
 

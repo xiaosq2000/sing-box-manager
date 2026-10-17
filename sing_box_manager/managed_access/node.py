@@ -167,6 +167,8 @@ def _locked():
     if not storage.STATE_ROOT.exists():
         storage.STATE_ROOT.mkdir(mode=0o750)
         os.chown(storage.STATE_ROOT, 0, group)
+        # Root operators can use umask 077. Set the new directory's exact mode.
+        storage.STATE_ROOT.chmod(0o750, follow_symlinks=False)
         storage.sync_directory(storage.STATE_ROOT.parent)
     with directory(storage.STATE_ROOT):
         pass

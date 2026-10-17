@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -523,10 +523,11 @@ these incremental PRs:
    proxy accounts and credentials. Prevent inventory/deploy/import from overwriting
    database-managed access after cutover. SOPS retains infrastructure secrets.
    Account changes reach sing-box through a supervised, validated config-apply step.
-   The [local candidate](CONTROL_PLANE_LIVE.md) implements this path with separate
+   The [managed-access implementation](CONTROL_PLANE_LIVE.md) implements this path with separate
    preparation, fencing, node application, activation, and public routing.
    Source review found no remaining blockers. Synthetic checks pass.
-   Operational checks are not complete. It is not installed.
+   Isolated code and empty managed-access schema are staged. Active services remain unchanged.
+   Operational cutover checks are not complete. Ownership preparation and cutover are not approved.
    Copy success alone permits no handover. Reconcile source state before approved cutover.
 4. **Device management, after basic live migration.** Add account-authenticated
    enrollment, revocation, transactional slot checks, and per-user policies. Define

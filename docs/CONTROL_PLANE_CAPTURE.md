@@ -1,6 +1,6 @@
 # One-time first-copy plan
 
-Checked on 2026-10-16.
+Checked on 2026-10-17.
 
 **First checkpoint complete: a verified, non-serving real-account copy.**
 The Django foundation is live. The approved account copy is committed in PostgreSQL.
@@ -8,8 +8,9 @@ The [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) is independently source-r
 and tested with synthetic sources. Its tools and schema are installed separately
 from active services. The committed receipt and database-loaded field/render parity
 passed read-only checks. Inventory remains authoritative for live access.
-The [local managed-access candidate](CONTROL_PLANE_LIVE.md) implements serving and
-fresh links. It is not installed or approved for cutover.
+The [managed-access implementation](CONTROL_PLANE_LIVE.md) implements serving and
+fresh links. Its isolated code and empty managed-access schema are staged.
+Active services remain unchanged. Cutover is not approved.
 Goal or policy approval does not authorize deployment, capture, import, or cutover.
 
 ## Delivery goal
