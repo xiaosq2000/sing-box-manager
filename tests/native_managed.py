@@ -474,8 +474,14 @@ def setup(runtime):
 """
     local_write(None, provision.NGINX_SITE_PATH, site)
     shell(
-        f"ln -s {provision.NGINX_SITE_PATH} /etc/nginx/sites-enabled/sing-box-manager.conf; systemctl daemon-reload; systemctl start sing-box.service sing-box-manager-web.service; nginx -t; systemctl reload nginx"
+        f"ln -s {provision.NGINX_SITE_PATH} /etc/nginx/sites-enabled/sing-box-manager.conf"
     )
+    shell("systemctl daemon-reload")
+    shell("systemctl start sing-box.service")
+    shell("systemctl start sing-box-manager-web.service")
+    shell("nginx -t")
+    # Package installation does not guarantee that the runner starts nginx.
+    shell("systemctl restart nginx")
     # The legacy landing page redirects to login. Test a usable old link instead.
     from sing_box_manager.subscription import subscription_token
 

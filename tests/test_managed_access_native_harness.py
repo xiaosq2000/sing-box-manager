@@ -130,6 +130,7 @@ def test_native_setup_keeps_all_host_commands_local(tmp_path, monkeypatch):
     assert calls and all(argv[0] == "sudo" for argv in calls)
     assert not any("ssh" in argv or "rsync" in argv for argv in calls)
     assert any("nginx -t" in " ".join(argv) for argv in calls)
+    assert any(argv[-1] == "systemctl restart nginx" for argv in calls)
     assert any(
         "systemctl restart sing-box-manager-control-plane.service" in " ".join(argv)
         for argv in calls
