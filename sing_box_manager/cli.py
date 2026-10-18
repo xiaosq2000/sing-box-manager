@@ -93,11 +93,15 @@ class ControlPlaneCommand:
         "migrate",
         "check",
         "create-admin",
+        "createsuperuser",
         "collect-static",
         "health",
         "import-inventory",
         "sync-node",
     ] = "check"
+    remote: str | None = None
+    """Run this control-plane action on the remote host over SSH."""
+    remote_root: str = "/opt/sing-box-manager"
 
 
 Command = (
@@ -279,18 +283,42 @@ def _run_stats_stream(_: StatsStreamCommand, settings: Settings) -> None:
         raise SystemExit(1) from exc
 
 
+def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None:
+    if command.remote is not None:
+        from sing_box_manager.control_plane.deployment import management_command
+        from sing_box_manager.deploy import DeploymentError, run_remote_command
+
+        service_user = command.action not in {"collect-static", "sync-node"}
+        try:
+            run_remote_command(
+                command.remote,
+                management_command(
+                    command.remote_root,
+                    command.action,
+                    service_user=service_user,
+                ),
+                f"Failed to run control-plane {command.action} on {command.remote}.",
+            )
+        except DeploymentError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(1) from exc
+        return
+
+    from sing_box_manager.control_plane.runner import run
+
+    try:
+        run(command.action, settings)
+    except Exception as exc:
+        print(
+            "Control-plane operation failed. Check the configuration and local database.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+
+
 def _dispatch(command: Command, settings: Settings) -> None:
     if isinstance(command, ControlPlaneCommand):
-        from sing_box_manager.control_plane.runner import run
-
-        try:
-            run(command.action, settings)
-        except Exception as exc:
-            print(
-                "Control-plane operation failed. Check the configuration and local database.",
-                file=sys.stderr,
-            )
-            raise SystemExit(1) from exc
+        _run_control_plane(command, settings)
         return
 
     if isinstance(command, ServeCommand):

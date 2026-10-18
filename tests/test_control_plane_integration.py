@@ -650,7 +650,7 @@ assert client.get(f"/sub/{bob_token}/files/manifest.json").status_code == 404
 assert client.get("/install.sh").status_code == 200
 assert client.get("/install.ps1").status_code == 200
 
-# Admin form hashes plaintext portal password and link reset invalidates old token.
+# Admin form hashes plaintext portal password, auto-generates hash + credentials for new users, and link reset invalidates old token.
 old_hash = alice.portal_password_hash
 form = AccountAdminForm(
     data={
@@ -666,6 +666,32 @@ form = AccountAdminForm(
 assert form.is_valid(), form.errors
 saved = form.save()
 assert saved.portal_password_hash != old_hash
+
+from sing_box_manager.control_plane.services import (
+    ensure_default_credentials,
+    request_node_sync,
+)
+
+new_form = AccountAdminForm(
+    data={
+        "username": "frank",
+        "enabled": True,
+        "is_portal_admin": False,
+        "new_portal_password": "",
+        "portal_password_hash": "",
+        "subscription_counter": 0,
+    },
+)
+assert new_form.is_valid(), new_form.errors
+frank = new_form.save()
+assert frank.portal_password_hash.startswith("$argon2id$")
+created_protos = ensure_default_credentials(frank)
+assert set(created_protos) == {"trojan", "hysteria2", "naive"}
+frank_token = subscription_token(secret, "frank", 0)
+assert client.get(f"/sub/{frank_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 200
+trigger = request_node_sync(runtime)
+assert trigger.is_file()
+frank.delete()
 
 Account.objects.filter(pk=alice.pk).update(subscription_counter=3)
 assert client.get(f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 404

@@ -15,6 +15,7 @@ Action = Literal[
     "migrate",
     "check",
     "create-admin",
+    "createsuperuser",
     "collect-static",
     "health",
     "import-inventory",
@@ -82,7 +83,7 @@ def _run_django_action(action: Action, runtime: Settings) -> None:
                 cursor.execute("SELECT pg_advisory_unlock(%s)", [MIGRATION_LOCK])
     elif action == "collect-static":
         call_command("collectstatic", interactive=False, verbosity=0)
-    elif action == "create-admin":
+    elif action in {"create-admin", "createsuperuser"}:
         if not sys.stdin.isatty():
             raise ValueError("create-admin requires an interactive terminal")
         call_command("createsuperuser", interactive=True)

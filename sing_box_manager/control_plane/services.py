@@ -5,8 +5,10 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import secrets
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from django.db import transaction
@@ -262,6 +264,30 @@ def import_inventory(runtime: Settings) -> dict[str, int]:
         verify_inventory_parity(source, projected, runtime.traffic_stats)
 
     return {"accounts": len(ordered_usernames), "credentials": credential_count}
+
+
+def ensure_default_credentials(account: Account) -> list[str]:
+    """Populate random credentials for all supported protocols when none exist."""
+    if account.credentials.exists():
+        return []
+    created: list[str] = []
+    for protocol in SUPPORTED_PROTOCOLS:
+        Credential.objects.create(
+            account=account,
+            protocol=protocol,
+            secret=secrets.token_urlsafe(24),
+            enabled=True,
+        )
+        created.append(protocol)
+    return created
+
+
+def request_node_sync(runtime: Settings, *, trigger_path: Path | None = None) -> Path:
+    """Write the trigger file watched by sing-box-manager-sync.path."""
+    path = trigger_path or (runtime.generated_root / "node-sync.trigger")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{time.time_ns()}\n", encoding="utf-8")
+    return path
 
 
 def find_db_subscriber(secret: str, token: str) -> Account | None:

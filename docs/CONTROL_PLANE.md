@@ -47,8 +47,13 @@ control_plane:
 
 Set `control_plane.authoritative: true` after importing accounts so every `sbm deploy`
 automatically runs `control-plane --action sync-node` (applying PostgreSQL-managed
-accounts to `sing-box.service`) and routes Nginx `/sub/` and `/install*` requests to
-the control plane.
+accounts to `sing-box.service`), enables `sing-box-manager-sync.path` (so saving or
+deleting accounts in Django Admin automatically triggers a `sing-box` config reload),
+and routes Nginx `/sub/` and `/install*` requests to the control plane.
+When creating a new `Account` in Django Admin (`http://127.0.0.1:47071/admin/`),
+leaving `Credentials` and `New portal password` blank automatically generates strong
+random credentials for all three protocols (`trojan`, `hysteria2`, `naive`) and a
+ready-to-share `https://<host>/sub/<token>/` user page URL.
 
 `secret_key` is optional for release and deploy. Deploy generates it when absent
 and preserves the server's key on later deployments, including disable/re-enable.

@@ -161,6 +161,12 @@ def test_authoritative_deployment_syncs_node_config_from_database(monkeypatch):
         if "--action " in command
     ]
     assert actions == ["check", "migrate", "collect-static", "health", "sync-node"]
+    units = [event[1] for event in events if event[0] == "unit"]
+    assert units == [
+        "sing-box-manager-control-plane.service",
+        "sing-box-manager-sync.service",
+        "sing-box-manager-sync.path",
+    ]
     assert "update_nginx_site_text" in commands[-1]
     assert "nginx -t" in commands[-1]
 

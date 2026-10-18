@@ -21,6 +21,8 @@ from sing_box_manager.provision import (
 from sing_box_manager.settings import Settings
 
 SERVICE_NAME = "sing-box-manager-control-plane.service"
+SYNC_SERVICE_NAME = "sing-box-manager-sync.service"
+SYNC_PATH_NAME = "sing-box-manager-sync.path"
 NGINX_BEGIN_MARKER = "    # BEGIN sbm-control-plane"
 NGINX_END_MARKER = "    # END sbm-control-plane"
 
@@ -87,6 +89,7 @@ def nginx_route_script(
 
 
 def service_unit(remote_root: str) -> str:
+    generated_dir = shlex.quote(str(Path(remote_root) / "config/generated"))
     return _sbm_unit(
         description="Private service administration",
         after="network-online.target postgresql.service",
@@ -100,6 +103,7 @@ def service_unit(remote_root: str) -> str:
         "UMask=0077\n"
         "NoNewPrivileges=true\n"
         "ProtectSystem=strict\n"
+        f"ReadWritePaths={generated_dir}\n"
         "ProtectHome=true\n"
         "PrivateTmp=true\n"
         "ProtectKernelTunables=true\n"
@@ -108,6 +112,35 @@ def service_unit(remote_root: str) -> str:
         "RestrictSUIDSGID=true\n"
         "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n"
         "Environment=PYTHONDONTWRITEBYTECODE=1\n"
+    )
+
+
+def sync_service_unit(remote_root: str) -> str:
+    python = Path(remote_root) / REMOTE_PIXI_PYTHON_RELATIVE_PATH
+    config = Path(remote_root) / "config/inventory/runtime.yaml"
+    return (
+        "[Unit]\n"
+        "Description=Sync sing-box node config from PostgreSQL\n"
+        "After=postgresql.service\n"
+        "\n[Service]\n"
+        "Type=oneshot\n"
+        f"WorkingDirectory={remote_root}\n"
+        "Environment=PYTHONDONTWRITEBYTECODE=1\n"
+        f"ExecStart={python} -m sing_box_manager --config {config} "
+        "control-plane --action sync-node\n"
+    )
+
+
+def sync_path_unit(remote_root: str) -> str:
+    trigger = Path(remote_root) / "config/generated/node-sync.trigger"
+    return (
+        "[Unit]\n"
+        "Description=Watch for control-plane node sync requests\n"
+        "\n[Path]\n"
+        f"PathChanged={trigger}\n"
+        f"Unit={SYNC_SERVICE_NAME}\n"
+        "\n[Install]\n"
+        "WantedBy=multi-user.target\n"
     )
 
 
@@ -159,6 +192,8 @@ def deploy(
             f"if [ -f {site} ] && grep -q '# BEGIN sbm-control-plane' {site}; then "
             f"sudo sed -i '/# BEGIN sbm-control-plane/,/# END sbm-control-plane/d' {site} && "
             "sudo nginx -t && sudo systemctl reload nginx; fi && "
+            f"if sudo systemctl cat {SYNC_PATH_NAME} >/dev/null 2>&1; then "
+            f"sudo systemctl disable --now {SYNC_PATH_NAME}; fi && "
             f"if sudo systemctl cat {SERVICE_NAME} >/dev/null 2>&1; then "
             f"sudo systemctl disable --now {SERVICE_NAME}; fi",
             "Failed to disable the control-plane service. The database is retained.",
@@ -247,6 +282,24 @@ def deploy(
         dry_run=dry_run,
     )
     if control.authoritative:
+        _install_unit(
+            hostname,
+            sync_service_unit(remote_root),
+            SYNC_SERVICE_NAME,
+            dry_run=dry_run,
+        )
+        _install_unit(
+            hostname,
+            sync_path_unit(remote_root),
+            SYNC_PATH_NAME,
+            dry_run=dry_run,
+        )
+        _ssh(
+            hostname,
+            f"sudo systemctl daemon-reload && sudo systemctl enable --now {SYNC_PATH_NAME}",
+            "Failed to enable the control-plane node sync watcher.",
+            dry_run=dry_run,
+        )
         _ssh(
             hostname,
             management_command(remote_root, "sync-node", service_user=False),
