@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import os
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from django.http import (
     HttpResponseNotFound,
     JsonResponse,
 )
+from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
 from sing_box_manager.control_plane.models import Account
@@ -52,14 +52,26 @@ class LoopbackAdminMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path.startswith("/admin/"):
-            host = request.get_host().split(":", 1)[0].strip("[]").lower()
-            if host not in LOOPBACK_HOSTS or any(
+        # Validate hosts for every route, including 404s and static requests.
+        host = request.get_host().split(":", 1)[0].strip("[]").lower()
+        if (request.path == "/admin" or request.path.startswith("/admin/")) and (
+            host not in LOOPBACK_HOSTS
+            or any(
                 header in request.META
-                for header in ("HTTP_X_FORWARDED_FOR", "HTTP_X_REAL_IP")
-            ):
-                return HttpResponseNotFound()
-        return self.get_response(request)
+                for header in (
+                    "HTTP_X_FORWARDED_FOR",
+                    "HTTP_X_REAL_IP",
+                    "HTTP_X_FORWARDED_PROTO",
+                )
+            )
+        ):
+            return HttpResponseNotFound()
+        response = self.get_response(request)
+        if not request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "private, no-store"
+            if not request.path.startswith("/admin/"):
+                response.headers["Referrer-Policy"] = "no-referrer"
+        return response
 
 
 def _runtime() -> Settings:
@@ -161,8 +173,13 @@ def health(_request):
     try:
         executor = MigrationExecutor(connection)
         pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
-        if pending or not staticfiles_storage.exists(
-            staticfiles_storage.stored_name("admin/css/base.css")
+        if pending or not all(
+            staticfiles_storage.exists(staticfiles_storage.stored_name(name))
+            for name in (
+                "admin/css/base.css",
+                "portal/styles.css",
+                "portal/traffic.css",
+            )
         ):
             return JsonResponse({"status": "not-ready"}, status=503)
     except (DatabaseError, ValueError):
@@ -212,46 +229,31 @@ def subscription_page(request, token: str):
     if not held:
         return HttpResponseNotFound()
 
+    from sing_box_manager.control_plane.portal import user_usage
+
+    origin = public_origin(request)
+    return render(
+        request,
+        "control_plane/subscription.html",
+        {
+            "account": account,
+            "subscription_url": f"{origin}/sub/{token}",
+            "origin": origin,
+            "protocols": ", ".join(held),
+            "mobile_protocols": held,
+            "traffic_timezone": runtime.traffic_stats.timezone,
+            **user_usage(runtime, str(account.username)),
+        },
+    )
+
+
+def public_origin(request) -> str:
     scheme = (
         "https"
         if request.is_secure() or request.headers.get("X-Forwarded-Proto") == "https"
         else request.scheme
     )
-    origin = f"{scheme}://{request.get_host()}"
-    sub_url = html.escape(f"{origin}/sub/{token}")
-    unix_cmd = html.escape(f"curl -fsSL {origin}/install.sh | sh")
-    win_cmd = html.escape(f"& ([scriptblock]::Create((irm {origin}/install.ps1)))")
-    username = html.escape(str(account.username))
-    protocols_text = html.escape(", ".join(held))
-    usage = _usage_header(runtime, str(account.username))
-    usage_line = (
-        f"<p><strong>Usage:</strong> <code>{html.escape(usage)}</code></p>"
-        if usage
-        else ""
-    )
-    page = (
-        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Subscription</title>"
-        "<style>body{font-family:system-ui,sans-serif;max-width:44rem;margin:2rem auto;padding:0 1rem;line-height:1.5}"
-        "pre,code{background:#f4f4f5;padding:.2rem .4rem;border-radius:4px;overflow-x:auto}"
-        "pre{padding:.75rem}</style></head><body>"
-        f"<h1>Account: {username}</h1>"
-        f"<p><strong>Protocols:</strong> {protocols_text}</p>"
-        f"{usage_line}"
-        f"<h2>Subscription URL</h2><pre>{sub_url}</pre>"
-        f"<h2>Linux / macOS install</h2><pre>{unix_cmd}</pre>"
-        f"<h2>Windows PowerShell install</h2><pre>{win_cmd}</pre>"
-        "</body></html>"
-    )
-    return HttpResponse(
-        page,
-        content_type="text/html; charset=utf-8",
-        headers={
-            "Referrer-Policy": "no-referrer",
-            "Cache-Control": "private, no-store",
-        },
-    )
+    return f"{scheme}://{request.get_host()}"
 
 
 @require_safe

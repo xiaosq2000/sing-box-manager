@@ -9,12 +9,13 @@ from tests.test_control_plane_integration import (
     ROOT,
     cli,
     config,
-    postgres as postgres_fixture,
     provision_sql,
     psql,
     python,
 )
-
+from tests.test_control_plane_integration import (
+    postgres as postgres_fixture,
+)
 
 postgres = postgres_fixture
 
@@ -144,7 +145,7 @@ Credential.objects.filter(account=account).update(secret='fixture-admin-edited-s
 Account.objects.create(username='db_only', portal_password_hash=account.portal_password_hash)
 before = list(Account.objects.values()), list(Credential.objects.values())
 runtime.control_plane.authoritative = True
-with patch.object(services, 'ResetCounters', side_effect=AssertionError('must not read SQLite')):
+with patch.object(services, 'read_legacy_reset_counters', side_effect=AssertionError('must not read SQLite')):
     try:
         services.import_inventory(runtime)
     except services.ControlPlaneError as error:
@@ -222,7 +223,7 @@ with patch.object(account_admin, 'request_node_sync') as sync:
     assert response.status_code == 302, response.content.decode()
     sync.assert_called_once()
 new = Account.objects.get(username='new_user')
-assert new.portal_password_hash.startswith('$argon2id$')
+assert new.portal_password_hash == ''
 assert new.credentials.count() == 3
 assert len({c.secret for c in new.credentials.all()}) == 3
 before = list(new.credentials.values('protocol', 'secret', 'enabled'))

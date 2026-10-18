@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -64,22 +65,11 @@ def check_authoritative_node(settings, config, env):
     package = ROOT / "fixture-server"
     node = Path("/usr/local/etc/sing-box/config.json")
     command(
-        "apt-get update -qq && apt-get install -y -qq nginx openssl && "
         f"cp -a {ROOT}/scripts {package} && "
         f"cp {SOURCE}/.cache/sing-box-manager/bin/sing-box {package}/sing-box && "
         f"openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost "
         f"-keyout {ROOT}/config/generated/node.key -out {ROOT}/config/generated/node.crt "
         ">/dev/null 2>&1"
-    )
-    local_write(
-        "fixture-local",
-        deployment.NGINX_SITE_PATH,
-        "server {\n    listen 127.0.0.1:48080;\n    server_name localhost;\n"
-        "    access_log off;\n    location / {\n        return 418;\n    }\n}\n",
-    )
-    command(
-        f"ln -s {deployment.NGINX_SITE_PATH} /etc/nginx/sites-enabled/sbm-smoke && "
-        "nginx -t && systemctl restart nginx"
     )
     command(deployment.management_command(str(ROOT), "import-inventory"))
     subprocess.run(
@@ -127,7 +117,12 @@ services.sync_node_config(runtime, restart_service=False)
     ]
     for _ in range(2):
         deployment.pause_node_sync("fixture-local")
+        started = time.monotonic()
         command(install)
+        if time.monotonic() - started >= 60:
+            raise RuntimeError(
+                "Node installation exceeded the 60-second acceptance limit"
+            )
         pid = subprocess.check_output(pid_command, text=True).strip()
         deployment.deploy("fixture-local", str(ROOT), settings)
         if pid == "0" or subprocess.check_output(pid_command, text=True).strip() != pid:
@@ -173,7 +168,7 @@ else:
     command(f"! grep -q native_only {node}")
     command(f"! systemctl is-active --quiet {deployment.SYNC_PATH_NAME}")
     command(
-        'test "$(curl --noproxy "*" -s -o /dev/null -w "%{http_code}" http://127.0.0.1:48080/install.sh)" = 418'
+        'test "$(curl --noproxy "*" -s -o /dev/null -w "%{http_code}" http://127.0.0.1:48080/install.sh)" = 200'
     )
     subprocess.run(
         env,
@@ -208,19 +203,13 @@ def fixture_settings(config):
     return settings
 
 
-def main() -> None:
-    if (
-        os.environ.get("GITHUB_ACTIONS") != "true"
-        or os.environ.get("SBM_CP_NATIVE_E2E") != "1"
-    ):
-        raise RuntimeError(
-            "This test requires an explicitly enabled disposable GitHub runner"
-        )
-    if ROOT.exists():
-        raise RuntimeError("Refusing to reuse an existing native smoke-test directory")
-    sys.path.insert(0, str(SOURCE))
+def prepare_runtime():
     from sing_box_manager.control_plane import deployment
-    from sing_box_manager.provision import _create_service_user_and_root
+    from sing_box_manager.provision import (
+        NGINX_LOG_CONF_PATH,
+        NGINX_LOG_CONFIG,
+        _create_service_user_and_root,
+    )
 
     pixi = shutil.which("pixi")
     if pixi is None:
@@ -272,6 +261,42 @@ def main() -> None:
     command(
         f"sudo chown -R root:sbm {ROOT} && sudo chmod -R u+rwX,g+rX,g-w,o-rwx {ROOT}"
     )
+    command("apt-get update -qq && apt-get install -y -qq nginx openssl")
+    local_write("fixture-local", NGINX_LOG_CONF_PATH, NGINX_LOG_CONFIG)
+    local_write(
+        "fixture-local",
+        deployment.NGINX_SITE_PATH,
+        "server {\n    listen 127.0.0.1:48080;\n    server_name localhost;\n"
+        "    access_log off;\n    location / {\n        return 418;\n    }\n}\n",
+    )
+    local_write(
+        "fixture-local",
+        "/etc/systemd/system/sing-box-manager-web.service",
+        "[Unit]\nDescription=Retired portal fixture\n[Service]\nExecStart=/bin/sleep infinity\n"
+        "[Install]\nWantedBy=multi-user.target\n",
+    )
+    command(
+        f"ln -s {deployment.NGINX_SITE_PATH} /etc/nginx/sites-enabled/sbm-smoke && "
+        "nginx -t && systemctl restart nginx && systemctl daemon-reload && "
+        "systemctl enable --now sing-box-manager-web.service"
+    )
+    return config, settings
+
+
+def main() -> None:
+    if (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("SBM_CP_NATIVE_E2E") != "1"
+    ):
+        raise RuntimeError(
+            "This test requires an explicitly enabled disposable GitHub runner"
+        )
+    if ROOT.exists():
+        raise RuntimeError("Refusing to reuse an existing native smoke-test directory")
+    sys.path.insert(0, str(SOURCE))
+    from sing_box_manager.control_plane import deployment
+
+    config, settings = prepare_runtime()
     try:
         with (
             patch.multiple(
@@ -285,6 +310,12 @@ def main() -> None:
             ),
         ):
             deployment.deploy("fixture-local", str(ROOT), settings)
+            command(
+                "! systemctl is-active --quiet sing-box-manager-web.service && ! systemctl is-enabled --quiet sing-box-manager-web.service"
+            )
+            command(
+                'test "$(curl --noproxy "*" -s -o /dev/null -w "%{http_code}" http://127.0.0.1:48080/admin/)" = 404'
+            )
             python = ROOT / ".pixi/envs/default/bin/python"
             env = [
                 "sudo",
@@ -334,6 +365,9 @@ def main() -> None:
             )
             if state.returncode == 0:
                 raise RuntimeError("Disablement left the control-plane service active")
+            command(
+                'test "$(curl --noproxy "*" -s -o /dev/null -w "%{http_code}" http://127.0.0.1:48080/install.sh)" = 503'
+            )
     finally:
         for unit in (
             deployment.SYNC_PATH_NAME,

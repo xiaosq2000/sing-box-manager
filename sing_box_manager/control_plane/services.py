@@ -40,7 +40,7 @@ from sing_box_manager.subscription import (
     ENVELOPE_VERSION,
     PROTOCOLS,
     TOKEN_PATTERN,
-    ResetCounters,
+    read_legacy_reset_counters,
     subscription_token,
     user_protocols,
 )
@@ -200,7 +200,7 @@ def import_inventory(runtime: Settings) -> dict[str, int]:
         )
     _ = runtime.deployment
     source = runtime
-    sqlite_counters = ResetCounters(runtime.web.subscription_database_path).current()
+    sqlite_counters = read_legacy_reset_counters(runtime.web.subscription_database_path)
 
     portal_by_user = {u.username: u for u in source.web_portal.users}
     protocol_by_user: dict[str, dict[str, ProtocolUser]] = {
@@ -308,9 +308,7 @@ def find_db_subscriber(secret: str, token: str) -> Account | None:
     if TOKEN_PATTERN.fullmatch(token) is None:
         return None
     matched: Account | None = None
-    for account in Account.objects.filter(enabled=True, portal_enabled=True).exclude(
-        portal_password_hash=""
-    ):
+    for account in Account.objects.filter(enabled=True, portal_enabled=True):
         expected = subscription_token(
             secret, account.username, account.subscription_counter
         )

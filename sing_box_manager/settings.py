@@ -1,14 +1,11 @@
-"""Unified, strict Pydantic configuration, inventory and auth snapshots."""
+"""Unified, strict Pydantic configuration and initial-import inventory."""
 
 from __future__ import annotations
 
 import ipaddress
-import json
 import math
-import os
 import re
 import subprocess
-import tempfile
 from base64 import b64decode, b64encode
 from collections.abc import Sequence
 from pathlib import Path
@@ -331,8 +328,9 @@ def _text(value: str, context: str) -> str:
 
 
 class WebSettings(StrictModel):
-    port: int = Field(default=47070, ge=1, le=65535)
-    host: str = "127.0.0.1"
+    # Accept legacy input, but use control_plane.port and loopback for serving.
+    port: int = Field(default=47070, ge=1, le=65535, exclude=True)
+    host: str = Field(default="127.0.0.1", exclude=True)
     allowed_hosts: list[str] = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
     session_secret: str | None = Field(default=None, repr=False)
     subscription_secret: str | None = Field(default=None, repr=False)
@@ -357,7 +355,7 @@ class WebSettings(StrictModel):
 
 
 class ControlPlaneSettings(StrictModel):
-    """Private, opt-in Django service with a local PostgreSQL database."""
+    """Django portal and control plane with a local PostgreSQL database."""
 
     enabled: bool = Field(default=False, strict=True)
     authoritative: bool = Field(default=False, strict=True)
@@ -584,7 +582,7 @@ class Settings(StrictModel):
     def validate_control_plane_port(self) -> Self:
         if not self.control_plane.enabled:
             return self
-        ports = {self.web.port, self.control_plane.database_port}
+        ports = {self.control_plane.database_port}
         if self.traffic_stats.enabled:
             ports.update(
                 split_listen_address(address)[1]
@@ -663,9 +661,16 @@ class Settings(StrictModel):
             raise ValueError("A config path is required for this operation")
         return self.config_path
 
-    @property
-    def auth_snapshot_path(self) -> Path:
-        return self.generated_root / "auth-users.json"
+    def without_accounts(self) -> Self:
+        """Keep infrastructure settings without copying inventory account records."""
+        return self.model_copy(
+            update={
+                "web_portal_data": WebPortalInventory(users=[]),
+                "trojan_data": TrojanInventory(users=[]),
+                "hysteria2_data": self.hysteria2.model_copy(update={"users": []}),
+                "naive_data": NaiveInventory(users=[]),
+            }
+        )
 
     @property
     def release_info_path(self) -> Path:
@@ -674,14 +679,6 @@ class Settings(StrictModel):
     @property
     def deployment_info_path(self) -> Path:
         return self.generated_root / "deployment-info.json"
-
-    @property
-    def web_port(self) -> int:
-        return self.web.port
-
-    @property
-    def web_host(self) -> str:
-        return self.web.host
 
     @property
     def allowed_hosts(self) -> list[str]:
@@ -702,19 +699,6 @@ class Settings(StrictModel):
 
 # Existing type names refer to the same root model, not a second validation path.
 RuntimeInventory = Settings
-
-
-class AuthSnapshotUser(WebPortalUser):
-    pass
-
-
-class AuthSnapshot(StrictModel):
-    users: list[AuthSnapshotUser]
-
-    @model_validator(mode="after")
-    def validate_unique_usernames(self) -> Self:
-        _validate_unique_usernames(self.users)
-        return self
 
 
 def load_config_text(path: Path) -> str:
@@ -743,37 +727,3 @@ def load_runtime_inventory(path: Path) -> RuntimeInventory:
     # Accessing this property rejects settings-only files before an operation.
     _ = inventory.deployment
     return inventory
-
-
-def write_auth_snapshot(path: Path, users: AuthSnapshot | list[WebPortalUser]) -> None:
-    snapshot = (
-        users
-        if isinstance(users, AuthSnapshot)
-        else AuthSnapshot(
-            users=[AuthSnapshotUser.model_validate(user.model_dump()) for user in users]
-        )
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as file:
-            file.write(snapshot.model_dump_json(indent=2) + "\n")
-            file.flush()
-            temporary = Path(file.name)
-        os.replace(temporary, path)
-    except Exception:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-        raise
-
-
-def load_auth_snapshot(path: Path) -> dict[str, AuthSnapshotUser]:
-    snapshot = AuthSnapshot.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    return {user.username: user for user in snapshot.users if user.enabled}

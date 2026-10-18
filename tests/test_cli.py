@@ -8,8 +8,8 @@ from typing import get_args
 import pytest
 
 from sing_box_manager.cli import (
-    StatsCollectCommand,
     ServeCommand,
+    StatsCollectCommand,
     _run_serve,
     _run_stats_collect,
     main,
@@ -32,81 +32,20 @@ def _build_settings() -> Settings:
     )
 
 
-def test_run_serve_uses_settings_host_when_cli_host_is_unset(
-    monkeypatch,
-) -> None:
-    import sing_box_manager.web.app as web_app_module
-
-    captured: dict[str, object] = {}
-    app = object()
-
-    monkeypatch.setattr(web_app_module, "create_app", lambda settings: app)
-
-    def fake_run(
-        application,
-        *,
-        host: str,
-        port: int,
-        proxy_headers: bool,
-        forwarded_allow_ips: str,
-    ) -> None:
-        captured.update(
-            {
-                "application": application,
-                "host": host,
-                "port": port,
-                "proxy_headers": proxy_headers,
-                "forwarded_allow_ips": forwarded_allow_ips,
-            }
-        )
-
-    monkeypatch.setattr("sing_box_manager.cli.uvicorn.run", fake_run)
-
-    _run_serve(ServeCommand(), _build_settings())
-
-    assert captured == {
-        "application": app,
-        "host": "0.0.0.0",
-        "port": 8080,
-        "proxy_headers": True,
-        "forwarded_allow_ips": "127.0.0.1",
-    }
+@pytest.mark.parametrize("port", [None, 9090])
+def test_serve_delegates_to_the_single_django_service(monkeypatch, port):
+    calls = []
+    monkeypatch.setattr("sing_box_manager.control_plane.runner.run", lambda *args: calls.append(args))
+    runtime = _build_settings()
+    _run_serve(ServeCommand(port=port), runtime)
+    action, served = calls[0]
+    assert action == "serve"
+    assert served.control_plane.port == (port or runtime.control_plane.port)
 
 
-def test_run_serve_prefers_cli_host_override(monkeypatch) -> None:
-    import sing_box_manager.web.app as web_app_module
-
-    captured: dict[str, object] = {}
-
-    monkeypatch.setattr(web_app_module, "create_app", lambda settings: object())
-
-    def fake_run(
-        application,
-        *,
-        host: str,
-        port: int,
-        proxy_headers: bool,
-        forwarded_allow_ips: str,
-    ) -> None:
-        captured.update(
-            {
-                "host": host,
-                "port": port,
-                "proxy_headers": proxy_headers,
-                "forwarded_allow_ips": forwarded_allow_ips,
-            }
-        )
-
-    monkeypatch.setattr("sing_box_manager.cli.uvicorn.run", fake_run)
-
-    _run_serve(ServeCommand(host="127.0.0.1", port=9090), _build_settings())
-
-    assert captured == {
-        "host": "127.0.0.1",
-        "port": 9090,
-        "proxy_headers": True,
-        "forwarded_allow_ips": "127.0.0.1",
-    }
+def test_serve_rejects_public_admin_binding():
+    with pytest.raises(SystemExit, match="127.0.0.1"):
+        _run_serve(ServeCommand(host="0.0.0.0"), _build_settings())
 
 
 def test_run_stats_collect_reports_success(monkeypatch, capsys) -> None:
@@ -176,32 +115,13 @@ def test_run_serve_keeps_request_urls_out_of_the_log(monkeypatch) -> None:
     """httpx logs each request URL at INFO, and KiwiVM URLs carry the API key."""
     import logging
 
-    import sing_box_manager.web.app as web_app_module
-
-    monkeypatch.setattr(web_app_module, "create_app", lambda settings: object())
-    monkeypatch.setattr("sing_box_manager.cli.uvicorn.run", lambda *a, **k: None)
+    monkeypatch.setattr("sing_box_manager.control_plane.runner.run", lambda *a, **k: None)
     httpx_logger = logging.getLogger("httpx")
     monkeypatch.setattr(httpx_logger, "level", logging.NOTSET)
 
     _run_serve(ServeCommand(), _build_settings())
 
     assert httpx_logger.level >= logging.WARNING
-
-
-def test_run_serve_redacts_subscription_tokens_from_access_logs(monkeypatch) -> None:
-    import logging
-
-    import sing_box_manager.web.app as web_app_module
-    from sing_box_manager.subscription import TokenRedactingFilter
-
-    monkeypatch.setattr(web_app_module, "create_app", lambda settings: object())
-    monkeypatch.setattr("sing_box_manager.cli.uvicorn.run", lambda *a, **k: None)
-    access_logger = logging.getLogger("uvicorn.access")
-    monkeypatch.setattr(access_logger, "filters", [])
-
-    _run_serve(ServeCommand(), _build_settings())
-
-    assert any(isinstance(f, TokenRedactingFilter) for f in access_logger.filters)
 
 
 @pytest.mark.parametrize("action", get_args(Action))

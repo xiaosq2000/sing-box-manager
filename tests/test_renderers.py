@@ -5,6 +5,19 @@ from pathlib import Path
 
 import pytest
 
+from sing_box_manager.release.platforms import MIXED_PROFILE, MOBILE_TUN_PROFILE
+from sing_box_manager.release.profiles import build_server_config, client_base_config
+from sing_box_manager.release.renderers import (
+    ADGUARD_RULE_SET_TAG,
+    AI_ANTHROPIC_RULE_SET_TAG,
+    AI_GEOSITE_RULE_SET_TAG,
+    AI_RULE_SET_URLS,
+    ai_rule_sets,
+    apply_desktop_route_strategy,
+    render_hysteria2_client_config,
+    render_naive_client_config,
+    render_trojan_client_config,
+)
 from sing_box_manager.settings import (
     DeploymentConfig,
     Hysteria2Inventory,
@@ -18,22 +31,6 @@ from sing_box_manager.settings import (
     WebPortalInventory,
     WebPortalUser,
 )
-from sing_box_manager.release.platforms import MIXED_PROFILE, MOBILE_TUN_PROFILE
-from sing_box_manager.release.profiles import build_server_config, client_base_config
-from sing_box_manager.release.renderers import (
-    ADGUARD_RULE_SET_TAG,
-    AI_ANTHROPIC_RULE_SET_TAG,
-    AI_GEOSITE_RULE_SET_TAG,
-    AI_RULE_SET_URLS,
-    API_SERVICE_TAG,
-    ai_rule_sets,
-    apply_desktop_route_strategy,
-    render_auth_snapshot,
-    render_hysteria2_client_config,
-    render_naive_client_config,
-    render_trojan_client_config,
-)
-from sing_box_manager.settings import TrafficStatsSettings
 
 VALID_PASSWORD_HASH = (
     "$argon2id$v=19$m=65536,t=3,p=4$"
@@ -729,32 +726,6 @@ class TestSharedRendererBehavior:
                 inventory.trojan.users[0],
                 set_system_proxy=None,
             )
-
-    def test_render_auth_snapshot_uses_only_web_portal_users(self):
-        inventory = _build_inventory()
-
-        snapshot = render_auth_snapshot(inventory.web_portal)
-        dumped = snapshot.model_dump()
-
-        assert dumped == {
-            "users": [
-                {
-                    "username": "alice",
-                    "password_hash": VALID_PASSWORD_HASH,
-                    "enabled": True,
-                    "admin": False,
-                },
-                {
-                    "username": "carol",
-                    "password_hash": VALID_PASSWORD_HASH,
-                    "enabled": False,
-                    "admin": False,
-                },
-            ]
-        }
-        assert 'password": "alice-trojan-secret"' not in str(dumped)
-        assert 'password": "bob-hysteria2-secret"' not in str(dumped)
-        assert 'password": "alice-naive-secret"' not in str(dumped)
 
     def test_renderers_do_not_mutate_templates(self):
         inventory = _build_inventory()

@@ -1,0 +1,30 @@
+{% load portal %} {% if summary %}
+<section class="card module">
+  <h2>本期流量</h2>
+  <p>
+    {{ summary.cycle_start|date:'Y-m-d' }} ~ {{ summary.cycle_end|date:'Y-m-d' }}
+    ({{ summary.timezone }})
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>上传</th>
+        <th>下载</th>
+        <th>总计</th>
+        <th>套餐占用</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ summary.upload_bytes|bytes }}</td>
+        <td>{{ summary.download_bytes|bytes }}</td>
+        <td>{{ summary.total_bytes|bytes }}</td>
+        <td>{{ plan_usage|default:'—' }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    最近更新：{{ summary.updated_at|date:'Y-m-d H:i:s'|default:'尚未采集' }}
+  </p>
+</section>
+{% endif %}

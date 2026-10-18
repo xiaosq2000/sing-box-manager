@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Checked on 2026-10-18.
+
 This repo builds `sing-box` releases, serves authenticated downloads, and deploys
 the code and an already-built release directory to a VPS. Use Pixi and Python 3.12.
 
@@ -27,7 +29,7 @@ surrounding context.
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CLI or settings                                 | [README.md](README.md)                                                                                                                                                                                                                                                                                |
 | Inventory, credentials, TLS, config rendering   | [SECRET_HANDLING.md](docs/SECRET_HANDLING.md)                                                                                                                                                                                                                                                         |
-| Release, portal, client configs, traffic stats  | [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md)                                                                                                                                                                                                                                                   |
+| Release, portal, client configs, traffic stats  | [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md), [CONTROL_PLANE.md](docs/CONTROL_PLANE.md)                                                                                                                                                                                                        |
 | Deploy, provisioning, SSH, server installers    | [VPS_DEPLOYMENT.md](docs/VPS_DEPLOYMENT.md), [REMOTE_DEPLOYMENT.md](docs/REMOTE_DEPLOYMENT.md)                                                                                                                                                                                                        |
 | Unix installer and legacy migration             | [README_SBC.md](docs/README_SBC.md#unix-installation-and-migration), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#subscription-links)                                                                                                                                                           |
 | Linux TUN                                       | [REFACTOR_SPEC.md](docs/REFACTOR_SPEC.md#m1b-linux-tun), [README_SBC.md](docs/README_SBC.md#linux-tun)                                                                                                                                                                                                |

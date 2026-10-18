@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import pytest
@@ -32,11 +33,10 @@ class _FakeKiwiVm:
     failing: bool = False
     calls: int = 0
 
-    async def fetch(self, veid: str, api_key: str) -> dict:
+    def fetch(self, veid: str, api_key: str) -> dict:
         self.calls += 1
-        # Yield the loop so concurrent callers get a chance to pile up behind
-        # an in-flight fetch, which is the case worth testing.
-        await asyncio.sleep(0)
+        # Let threads queue behind an in-flight refresh.
+        time.sleep(0.01)
         if self.failing:
             raise kiwivm.KiwiVmError("KiwiVM is down")
         return self.payload
@@ -45,7 +45,7 @@ class _FakeKiwiVm:
 def _provider(
     monkeypatch: pytest.MonkeyPatch, api: _FakeKiwiVm, **kwargs: int
 ) -> VpsInfoProvider:
-    monkeypatch.setattr(kiwivm, "fetch_service_info_async", api.fetch)
+    monkeypatch.setattr(kiwivm, "fetch_service_info", api.fetch)
     return VpsInfoProvider("veid", "key", timezone_name="Asia/Shanghai", **kwargs)
 
 
@@ -127,10 +127,7 @@ def test_a_failed_fetch_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     api = _FakeKiwiVm(SERVICE_INFO, failing=True)
     provider = _provider(monkeypatch, api)
 
-    async def twice() -> tuple:
-        return await provider.get_info(), await provider.get_info()
-
-    first, second = asyncio.run(twice())
+    first, second = provider.get_info(), provider.get_info()
 
     assert first.error == "unavailable"
     assert second.error == "unavailable"
@@ -144,12 +141,9 @@ def test_a_cached_failure_is_retried_once_it_expires(
     api = _FakeKiwiVm(SERVICE_INFO, failing=True)
     provider = _provider(monkeypatch, api, error_cache_ttl=0)
 
-    async def fail_then_recover() -> tuple:
-        failed = await provider.get_info()
-        api.failing = False
-        return failed, await provider.get_info()
-
-    failed, recovered = asyncio.run(fail_then_recover())
+    failed = provider.get_info()
+    api.failing = False
+    recovered = provider.get_info()
 
     assert failed.error == "unavailable"
     assert recovered.location == "JP, Tokyo"
@@ -163,12 +157,9 @@ def test_an_outage_keeps_serving_the_last_good_reading(
     api = _FakeKiwiVm(SERVICE_INFO)
     provider = _provider(monkeypatch, api, cache_ttl=0)
 
-    async def succeed_then_fail() -> tuple:
-        good = await provider.get_info()
-        api.failing = True
-        return good, await provider.get_info()
-
-    good, stale = asyncio.run(succeed_then_fail())
+    good = provider.get_info()
+    api.failing = True
+    stale = provider.get_info()
 
     assert good.location == "JP, Tokyo"
     assert stale.error is None
@@ -184,13 +175,19 @@ def test_concurrent_callers_share_one_fetch(monkeypatch: pytest.MonkeyPatch) -> 
     api = _FakeKiwiVm(SERVICE_INFO)
     provider = _provider(monkeypatch, api)
 
-    async def race() -> list:
-        return await asyncio.gather(*(provider.get_info() for _ in range(5)))
-
-    results = asyncio.run(race())
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        results = list(pool.map(lambda _: provider.get_info(), range(5)))
 
     assert api.calls == 1
     assert all(info.location == "JP, Tokyo" for info in results)
+
+
+def test_malformed_provider_data_is_cached_as_unavailable(monkeypatch):
+    api = _FakeKiwiVm({'data_counter': 'invalid'})
+    provider = _provider(monkeypatch, api)
+    assert provider.get_info().error == 'unavailable'
+    assert provider.get_info().error == 'unavailable'
+    assert api.calls == 1
 
 
 def test_create_provider_threads_the_timezone_through() -> None:

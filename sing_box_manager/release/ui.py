@@ -76,19 +76,7 @@ class PlainReleaseReporter:
         print(f"Building sing-box v{plan.version} release", file=self._stdout)
         print(f"Release directory: {plan.release_dir}", file=self._stdout)
         print(f"Config: {plan.config_path}", file=self._stdout)
-        print(f"Auth snapshot: {plan.auth_snapshot_path}", file=self._stdout)
-        print(
-            (
-                "Plan: "
-                f"{plan.enabled_release_users} release users, "
-                f"{plan.enabled_portal_users} portal users, "
-                f"default {plan.default_protocol}, "
-                f"{len(plan.platforms)} platforms, "
-                f"{len(plan.protocols)} protocols, "
-                f"{plan.total_expected_archives} archives"
-            ),
-            file=self._stdout,
-        )
+        print(f"Platforms: {', '.join(plan.platforms)}", file=self._stdout)
 
     def start_stage(self, key: str, title: str, total: int | None = None) -> None:
         self._stage_titles[key] = title
@@ -113,14 +101,7 @@ class PlainReleaseReporter:
         if result.reused_existing_release:
             print("Nothing changed; reused the existing release.", file=self._stdout)
         print(f"Release id: {result.release_id}", file=self._stdout)
-        print(f"User archives: {result.user_archive_count}", file=self._stdout)
-        print(
-            f"Shared payloads: {result.prefixes_built} built, "
-            f"{result.prefixes_reused} reused",
-            file=self._stdout,
-        )
         print(f"Release directory: {result.release_dir}", file=self._stdout)
-        print(f"Auth snapshot: {result.auth_snapshot_path}", file=self._stdout)
         print(f"Server package: {result.server_package_dir}", file=self._stdout)
         print(f"Elapsed: {result.elapsed_seconds:.1f}s", file=self._stdout)
 
@@ -158,29 +139,7 @@ class RichReleaseReporter:
         plan_table.add_row("Release", f"sing-box v{plan.version}")
         plan_table.add_row("Output", self._format_path(plan.release_dir))
         plan_table.add_row("Config", self._format_path(plan.config_path))
-        plan_table.add_row("Auth", self._format_path(plan.auth_snapshot_path))
-        plan_table.add_row(
-            "Users",
-            (
-                f"{plan.enabled_release_users} release / "
-                f"{plan.enabled_portal_users} portal"
-            ),
-        )
-        plan_table.add_row(
-            "Default",
-            plan.default_protocol,
-        )
-        plan_table.add_row(
-            "Protocols",
-            (
-                f"{', '.join(plan.protocols)} "
-                f"({plan.enabled_trojan_users} trojan, "
-                f"{plan.enabled_hysteria2_users} hysteria2, "
-                f"{plan.enabled_naive_users} naive)"
-            ),
-        )
         plan_table.add_row("Platforms", ", ".join(plan.platforms))
-        plan_table.add_row("Packages", str(plan.total_expected_archives))
         self._console.print(
             Panel.fit(plan_table, title="Release Plan", border_style="cyan")
         )
@@ -213,15 +172,7 @@ class RichReleaseReporter:
         result_table.add_column(style="bold green")
         result_table.add_column()
         result_table.add_row("Release id", result.release_id)
-        result_table.add_row("User archives", str(result.user_archive_count))
-        result_table.add_row(
-            "Shared payloads",
-            f"{result.prefixes_built} built, {result.prefixes_reused} reused",
-        )
         result_table.add_row("Release dir", self._format_path(result.release_dir))
-        result_table.add_row(
-            "Auth snapshot", self._format_path(result.auth_snapshot_path)
-        )
         result_table.add_row(
             "Server package", self._format_path(result.server_package_dir)
         )

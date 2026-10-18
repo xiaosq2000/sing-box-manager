@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from sing_box_manager.settings import RuntimeInventory
+from sing_box_manager.control_plane.deployment import service_unit
 from sing_box_manager.deploy import DeploymentError
 from sing_box_manager.provision import (
     REMOTE_INVENTORY_FILENAME,
@@ -18,12 +18,12 @@ from sing_box_manager.provision import (
     _traffic_stats_service_unit,
     _traffic_stats_stream_unit,
     _traffic_stats_timer_unit,
-    _web_service_unit,
     install_managed_units,
     provision_remote,
 )
 from sing_box_manager.settings import (
     ClientUpgradeSettings,
+    RuntimeInventory,
     Settings,
     TrafficStatsSettings,
     WebSettings,
@@ -193,9 +193,11 @@ class TestDeriveRemoteConfig:
         config = yaml.safe_load(_derive_remote_config(_settings(), _inventory()))
         assert "vpn.example.com" in config["web"]["allowed_hosts"]
 
-    def test_web_binds_to_loopback(self):
+    def test_retired_web_listener_is_not_published(self):
         config = yaml.safe_load(_derive_remote_config(_settings(), _inventory()))
-        assert config["web"]["host"] == "127.0.0.1"
+        assert "host" not in config["web"]
+        assert "port" not in config["web"]
+        assert config["control_plane"]["port"] == 47071
 
     def test_carries_traffic_stats_settings(self):
         config = yaml.safe_load(_derive_remote_config(_settings(), _inventory()))
@@ -275,8 +277,8 @@ class TestDeriveRemoteConfig:
 
 
 class TestSystemdUnits:
-    def test_web_service_uses_remote_root(self):
-        unit = _web_service_unit("/srv/sbm")
+    def test_django_service_uses_remote_root(self):
+        unit = service_unit("/srv/sbm")
         assert "WorkingDirectory=/srv/sbm" in unit
         assert f"User={SERVICE_USER}" in unit
 
@@ -293,7 +295,7 @@ class TestSystemdUnits:
         not take the traffic history with it.
         """
         for unit in (
-            _web_service_unit("/opt/sing-box-manager"),
+            service_unit("/opt/sing-box-manager"),
             _traffic_stats_service_unit("/opt/sing-box-manager"),
             _traffic_stats_stream_unit("/opt/sing-box-manager"),
         ):
@@ -576,7 +578,7 @@ class TestProvisionRemote:
 
 
 class TestInstallManagedUnits:
-    def test_installs_web_service(self, monkeypatch):
+    def test_does_not_reinstall_retired_web_service(self, monkeypatch):
         recorder = _Recorder()
         monkeypatch.setattr("sing_box_manager.provision.subprocess.run", recorder)
 
@@ -587,7 +589,7 @@ class TestInstallManagedUnits:
         )
 
         tee_commands = [cmd for cmd in recorder.ssh_commands if "tee" in cmd]
-        assert any("sing-box-manager-web.service" in cmd for cmd in tee_commands)
+        assert not any("sing-box-manager-web.service" in cmd for cmd in tee_commands)
 
     def test_installs_traffic_stats_when_enabled(self, monkeypatch):
         recorder = _Recorder()
@@ -666,7 +668,7 @@ class TestInstallManagedUnits:
             cmd for cmd in recorder.ssh_commands if "systemctl enable --now" in cmd
         ]
         enabled_units = " ".join(enable_commands)
-        assert "sing-box-manager-web.service" in enabled_units
+        assert "sing-box-manager-web.service" not in enabled_units
         assert "certbot-renew.timer" in enabled_units
 
     def test_reloads_systemd_daemon(self, monkeypatch):
@@ -685,7 +687,7 @@ class TestInstallManagedUnits:
 @pytest.mark.parametrize(
     "filename,render",
     [
-        ("sing-box-manager-web.service", _web_service_unit),
+
         ("sing-box-manager-traffic-stats.service", _traffic_stats_service_unit),
         ("sing-box-manager-traffic-stream.service", _traffic_stats_stream_unit),
     ],
@@ -755,7 +757,7 @@ def test_ssh_allow_falls_back_to_port_22(tmp_path):
 @pytest.mark.parametrize(
     "render",
     [
-        _web_service_unit,
+        service_unit,
         _traffic_stats_service_unit,
         _traffic_stats_stream_unit,
     ],

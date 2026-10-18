@@ -19,13 +19,13 @@ It assumes:
 - `4443/udp`: Hysteria2 (base listen port)
 - `20000:50000/udp`: Hysteria2 port-hopping range (only if enabled — see below)
 - `9443/tcp`: Naive
-- `47070/tcp`: local FastAPI service bound to `127.0.0.1`
-- `47071/tcp`: optional Django service, bound to `127.0.0.1`
+- `47071/tcp`: Django portal and control plane, bound to `127.0.0.1`
 
-The [control plane](CONTROL_PLANE.md) is opt-in. It adds OS-managed PostgreSQL and
-a hardened Django service. With `authoritative: true`, PostgreSQL supplies the node's
-user roster, and Nginx forwards `/sub/` and `/install*` to Django. Admin remains tunnel-only.
-Returning to non-authoritative mode restores inventory-backed serving.
+Enable the [control plane](CONTROL_PLANE.md) for portal service. It uses OS-managed
+PostgreSQL and one hardened Django service. Nginx forwards the portal to Django,
+except for Admin and health routes. Admin remains tunnel-only.
+With `authoritative: true`, PostgreSQL also supplies the node's user roster.
+Returning to non-authoritative mode changes node configuration only, not portal authentication.
 Read the [mode-transition warnings](CONTROL_PLANE.md#disable-without-removing-data) first.
 Do not open the Django or database ports in ufw.
 
@@ -132,11 +132,12 @@ pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-h
    for renewal notifications, or omit to register without email)
 8. **Syncs** project code and runs `pixi install --locked`
 9. **Syncs** release artifacts and installs one `sing-box.service` with all packaged protocol inbounds
-10. **Installs and enables** `sing-box-manager-web.service`,
-    `sing-box-manager-traffic-stats.timer` (if traffic stats are enabled), and
+10. **Installs and enables** `sing-box-manager-traffic-stats.timer` when enabled and
     `certbot-renew.timer` for automatic certificate renewal
-11. **Switches** the nginx site to an access log that records `/sub/[token]` in
-    place of subscription tokens, as every later deploy also checks
+11. **Installs** Django and PostgreSQL when `control_plane.enabled` is true; migrates
+    the database, collects static files, checks readiness, and routes Nginx to Django.
+    It disables the retired Web service. Public Admin requests return 404
+12. **Configures** Nginx token-redacted logs and compatibility-endpoint rate limits
 
 Bootstrap can be rerun after a failure, but it reapplies configuration and runs
 installation and service operations again. Inspect the failed step and remote
@@ -150,19 +151,28 @@ Deploy derives the server's `config/inventory/runtime.yaml` from your local sett
 and encrypted inventory. The server never needs SOPS or your age key. Every ordinary
 deploy stages, validates, and atomically publishes the derived file, so settings such
 as `vps_info` and every `traffic_stats` key reach an already-bootstrapped server. The publisher retains the server's
-current `web.session_secret` and `web.subscription_secret`, so browser sessions,
-installer machine tokens and subscription links stay valid.
+current `web.session_secret`, `web.subscription_secret`, and Django secret key,
+so legacy installer tokens, subscription links, and operator sessions stay valid.
+Authoritative deployment omits legacy inventory user lists from this derived file.
 
-To allow an operator account to see all collected users' traffic totals, set
-`web_portal.users[].admin: true` for that account in the runtime inventory and open
-`/admin` after logging in.
+Enable Django in infrastructure settings:
 
-`web.session_secret` signs browser sessions and installer machine tokens, and
-`sbm serve` refuses to start without it. If the inventory leaves it unset, bootstrap
+```yaml
+control_plane:
+  enabled: true
+  authoritative: false # set true only after initial account import
+```
+
+Follow [account setup](CONTROL_PLANE.md#account-import-admin-management-and-node-sync) for database migration and import.
+The portal uses PostgreSQL accounts even before node authority is enabled.
+Grant Django staff `control_plane.view_traffic` to see all users' traffic at
+`/admin/traffic/` through an SSH tunnel. The inventory `admin` flag grants no permissions.
+
+`web.session_secret` signs legacy installer machine tokens. If the inventory leaves it unset, bootstrap
 generates one for the server. Every later deploy keeps the server's value, even when
 the inventory sets a different one. To rotate it, delete `web.session_secret` from the
-server's `runtime.yaml`, set the new value in the inventory, and deploy. Rotation signs
-out every browser and invalidates saved installer tokens, such as
+server's `runtime.yaml`, set the new value in the inventory, and deploy. Rotation
+invalidates saved installer tokens, such as
 `${XDG_CONFIG_HOME:-$HOME/.config}/sing-box/portal-token`.
 
 `web.subscription_secret` keys subscription links. If the inventory leaves it unset,
@@ -181,8 +191,7 @@ client_upgrade:
 warning in every new shell until the client is upgraded, but remains non-blocking.
 Neither shell notice prints the message; `proxy check update` reports it so new shells
 stay quiet. The policy, message, release build ID, commit, and successful-deploy
-timestamp are published without authentication at `/api/client-update` and in the
-portal footer. A release that carries `sbc` reports the `sbc` build, so a policy other
+timestamp are published without authentication at `/api/client-update`. A release that carries `sbc` reports the `sbc` build, so a policy other
 than `off` asks every bash client to run `proxy upgrade`, which moves it to `sbc`.
 
 Edit the runtime inventory with `sops` on your **local machine**. See
@@ -190,8 +199,8 @@ Edit the runtime inventory with `sops` on your **local machine**. See
 workflow. Bootstrap and subsequent deploys decrypt and ship a plaintext copy to the
 server. The remote file is owned by `root:sbm` with mode `0640`.
 
-`deployment.host` is the canonical hostname for the Nginx `server_name`, FastAPI
-trusted hosts, and CA-signed sing-box `tls.server_name`.
+`deployment.host` is the canonical hostname for the Nginx `server_name`, Django
+allowed hosts, and CA-signed sing-box `tls.server_name`.
 
 ## 3. Subsequent Deploys
 
@@ -225,12 +234,9 @@ stats are enabled, deploy then runs the collector once and fails if that collect
 does not succeed, so a collector that cannot reach its database or its APIs stops the
 deploy instead of failing quietly every five minutes afterwards.
 
-After the web service restart and health check succeed, deploy atomically publishes
-`config/generated/deployment-info.json`. The portal uses this marker for “last
-updated”; a failed or interrupted deploy cannot advance the timestamp. Times are stored
-as UTC and rendered in the visitor's local timezone in the browser. If the marker does
-not match the currently served release ID, the portal omits the time instead of showing
-stale deployment metadata.
+After service checks succeed, deploy atomically publishes
+`config/generated/deployment-info.json`. `/api/client-update` reads this marker;
+a failed deploy cannot advance the timestamp. Mismatched release IDs hide the timestamp.
 
 ## Manual Steps (for reference)
 
@@ -275,22 +281,11 @@ sing-box restart.
 
 ### Install the Web Service
 
-Install the generic web unit:
-
-```sh
-sudo cp /opt/sing-box-manager/docs/examples/systemd/sing-box-manager-web.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now sing-box-manager-web.service
-```
-
-The example unit assumes:
-
-- repo root: `/opt/sing-box-manager`, owned by `root:sbm` and not writable by `sbm`
-- service user: `sbm`
-- interpreter: `/opt/sing-box-manager/.pixi/envs/default/bin/python`, created by
-  `pixi install`
-
-Edit the unit before enabling it if your host layout differs.
+Use `sbm deploy` to install `sing-box-manager-control-plane.service` together with
+PostgreSQL permissions, static assets, and the sync trigger. The unit generator is
+`control_plane.deployment.service_unit()`. It uses the deployed Python interpreter,
+loopback, and the unprivileged `sbm` identity with systemd hardening.
+Do not enable the retired `sing-box-manager-web.service`.
 
 ### Install the Traffic Stats Collector
 
@@ -323,25 +318,17 @@ if you edit these units.
 
 ### Install the Nginx Reverse Proxy
 
-Copy the example site config and replace `vpn.example.com` with your actual
-`deployment.host`:
+Bootstrap creates the HTTP site for `deployment.host`. Deployment then updates the
+managed portal block and `/etc/nginx/conf.d/sing-box-manager-log.conf`.
+The generators are in `provision.py` and `control_plane/deployment.py`.
 
-```sh
-sudo cp /opt/sing-box-manager/docs/examples/nginx/sing-box-manager.conf /etc/nginx/sites-available/sing-box-manager.conf
-sudo editor /etc/nginx/sites-available/sing-box-manager.conf
-sudo ln -sf /etc/nginx/sites-available/sing-box-manager.conf /etc/nginx/sites-enabled/sing-box-manager.conf
-sudo nginx -t
-sudo systemctl reload nginx
-```
+The final proxy targets `127.0.0.1:47071` by default. It sets forwarded headers,
+returns 404 for public Admin and health requests, redacts subscription tokens from
+access logs, and applies a shared rate limit to `/auth`, `/api/token`, and `/api/sub`.
+Use `sudo nginx -t` before reloading any manual change. Deployment replaces managed blocks.
 
-The example proxy forwards to `http://127.0.0.1:47070` and preserves the forwarded
-headers that the FastAPI app needs for HTTPS-aware cookies.
-
-The Windows hosted installer also depends on `POST /api/token` working through the
-same reverse proxy. If one-line installs succeed but do not write
-`%LOCALAPPDATA%\sing-box\config\portal-token`, verify `/api/token` with a real portal
-username and password instead of checking only `/auth` or `/download`. The Linux and
-macOS one-liner installs `sbc` from the user's subscription link and needs neither.
+Legacy Unix and Windows installers exchange saved credentials through `POST /api/sub`.
+Keep this endpoint reachable. New `sbc` installs use a subscription URL, not portal login.
 
 ### Obtain the CA-Signed Certificate
 
@@ -365,20 +352,24 @@ layout under `/etc/letsencrypt/live/<deployment.host>/`.
 Check the local web service:
 
 ```sh
-curl -fsS -o /dev/null -H 'Host: vpn.example.com' http://127.0.0.1:47070/
+curl -fsS http://127.0.0.1:47071/health/
 ```
 
 Check the public HTTPS portal:
 
 ```sh
-curl -fsS -o /dev/null https://vpn.example.com/
+curl -fsS -o /dev/null https://vpn.example.com/install.sh
+curl -sS -o /dev/null -w '%{http_code}\n' https://vpn.example.com/admin/
 ```
+
+The Admin request must return 404. Test an existing subscription privately; do not
+put the token in shared logs or shell history.
 
 Check the systemd services:
 
 ```sh
 sudo systemctl status sing-box.service
-sudo systemctl status sing-box-manager-web.service
+sudo systemctl status sing-box-manager-control-plane.service
 sudo systemctl status sing-box-manager-traffic-stats.timer
 ```
 

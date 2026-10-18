@@ -9,14 +9,11 @@ from pathlib import Path
 from sing_box_manager.release.platforms import ROUTE_STRATEGIES, canonical_route
 from sing_box_manager.release.rule_sets import snapshot_filename
 from sing_box_manager.settings import (
-    AuthSnapshot,
-    AuthSnapshotUser,
     DeploymentConfig,
     Hysteria2Inventory,
     Hysteria2User,
     NaiveUser,
     TrojanUser,
-    WebPortalInventory,
     split_listen_address,
 )
 
@@ -561,18 +558,3 @@ def render_naive_client_config(
     apply_tls_settings(tls, deployment, include_server_paths=False)
 
     return apply_direct_exceptions(rendered, deployment)
-
-
-def render_auth_snapshot(web_portal: WebPortalInventory) -> AuthSnapshot:
-    """Build the auth snapshot payload from runtime inventory."""
-    return AuthSnapshot(
-        users=[
-            AuthSnapshotUser(
-                username=user.username,
-                password_hash=user.password_hash,
-                enabled=user.enabled,
-                admin=user.admin,
-            )
-            for user in web_portal.users
-        ]
-    )

@@ -17,14 +17,8 @@ For the encrypted inventory and secret-handling rules, read
    [the SOPS setup instructions](SECRET_HANDLING.md#age-and-sops-setup).
    Copying the example to a `.sops.yaml` filename does not encrypt it.
 
-1. Generate `web_portal.users[].password_hash` values with Argon2id when needed:
-
-   ```sh
-   pixi run python -c 'from getpass import getpass; from argon2 import PasswordHasher; print(PasswordHasher().hash(getpass("Portal password: ")))'
-   ```
-
-   Set `web_portal.users[].admin: true` only for portal users who should be able to
-   view all users' traffic stats at `/admin`.
+1. Manage accounts in Django Admin. Inventory account records are initial-import inputs,
+   not a second live roster. New accounts do not need portal passwords.
 
 1. Update the config file if you need a different sing-box version, web port, or allowed hosts.
    - `upstream_cache_root` defaults to `.cache/sing-box-manager/upstream`
@@ -122,24 +116,25 @@ series, as declared in `pixi.toml`.
 
 After a successful build, the main generated outputs are:
 
-- `config/generated/auth-users.json`
 - `config/generated/release-info.json`
 - release artifacts under `releases/`, including `server/config.json` (which resolves
   hostnames through local DNS first, pins UDP associations with `udp_connect`, and
   rejects private and reserved IPv4/IPv6 ranges) and one `server/sing-box.service`
 
-Before refreshing authentication or publishing the release, the builder runs
-`sing-box check` on every mobile profile, every user's desktop config on Linux,
-macOS and Windows, and the single server config. Any failed check aborts the build.
+Before publishing, the builder runs `sing-box check` on mobile profiles, desktop
+configs for Linux, macOS and Windows, and the server config. Client validation uses
+synthetic credentials rather than the inventory roster. Any failed check aborts the build.
 Server CA certificate paths usually exist only on the VPS: when absent locally,
 the check uses an ephemeral ECDSA certificate in a private copy. Inline self-signed
 material is checked as rendered. The installer checks the real node certificate
 and key before stopping any running service. Checker output is not logged because
 it can contain credentials.
 
-The release packs a per-user archive for Android only. Linux, macOS and Windows
-install `sbc`, which fetches its config from the portal, and their sing-box downloads
-stay for `sbc`.
+Releases contain shared artifacts, not per-user archives or authentication snapshots.
+In authoritative mode, the packaged server config has no inventory users. Deployment
+preserves the live config and then applies PostgreSQL accounts.
+Linux, macOS and Windows install `sbc`. Android and iOS use remote subscription
+profiles or current JSON downloads from the subscription page.
 
 With `client_signing_key` set, the release also builds the downloads the `sbc`
 client installs, under `client/` in the release directory. Without it, the build
@@ -159,12 +154,11 @@ unchanged tree builds the same bytes and signs the same manifest, so the release
 its id. The store holds each sing-box archive once, about 110 MB for the four
 platforms, and `sbm gc` treats them like the server binary.
 
-The metadata's deterministic build ID covers client archives, which now
-means the Android archive, and deploy records it. `/api/client-update` reports the
-`sbc` manifest's hash instead whenever the release carries `sbc` downloads.
+`/api/client-update` reports the signed client manifest's hash as the build ID.
+Existing releases remain readable. The shared store and `sbm gc` retain support
+for old manifest references until those releases are deliberately removed.
 
-The Android archive contains one `<protocol>-tun-client.json` mobile profile for
-each authorized protocol. The config `sbc` fetches offers `direct`, `ai-only`,
+The subscription page offers a current mobile profile for each enabled protocol. The config `sbc` fetches offers `direct`, `ai-only`,
 `gfw-proxy`, `china-direct` and `global` as modes. `ai`, `gfw` and `china` remain
 alias modes so stored selections survive refreshes. The default is `china-direct`.
 See [route strategies](README_SBC.md#route-strategies) for their meanings.
@@ -238,8 +232,7 @@ The rule sets ship as binary snapshots under `sing-box/rules/`, with a
 
 Every release build resolves each rule repository and branch to a commit, then
 downloads all required files from that commit. The build validates every snapshot
-with the target Linux sing-box binary before refreshing portal authentication or
-publishing the release. A failed download or invalid rule file fails the build;
+with the target Linux sing-box binary before publishing the release. A failed download or invalid rule file fails the build;
 there is no fallback to files from an earlier build. This requires access to the
 GitHub API and GitHub Raw even when the upstream binary archives are cached.
 `GITHUB_TOKEN` authenticates API requests only.
@@ -260,15 +253,13 @@ before shutdown may need another lookup after restart.
 
 ## Start the Portal
 
-The optional [Django/PostgreSQL control plane](CONTROL_PLANE.md) runs separately.
-Its admin manages operators and proxy accounts. In authoritative mode, Django serves
-`/sub/` and `/install*`, and PostgreSQL supplies node credentials. Release artifacts,
-legacy FastAPI login, and traffic storage remain separate. The collector uses
-PostgreSQL accounts in authoritative mode. Admin changes do not update the FastAPI
-auth snapshot. See the control-plane guide for account and import rules.
+The [Django/PostgreSQL control plane](CONTROL_PLANE.md) is the only portal.
+It serves subscriptions, signed downloads, installers, and legacy-client compatibility APIs.
+PostgreSQL supplies all portal accounts and subscription counters. There is no runtime
+inventory authentication or generated user snapshot.
 
-Run the web service only after `config/generated/auth-users.json` and
-`config/generated/release-info.json` exist, typically after a successful release build.
+Enable the control plane, migrate PostgreSQL, and collect static files before starting it.
+A built release is needed for signed binary downloads, not for account management.
 
 ```sh
 pixi run sbm --config config/inventory/runtime.sops.yaml serve
@@ -312,15 +303,12 @@ When the derived day changes, the collector recomputes `monthly_usage` from `dai
 once, inside a single transaction, so the window the portal shows and the rows it sums
 never disagree.
 
-The portal reads that SQLite database and shows each logged-in user their current-cycle
-upload, download, total, plan share, and last update time. Portal users with `admin: true` can open
-`/admin` for current-cycle totals across all collected users, a ranked comparison, a
-daily trend, and the split across protocols; each row links to `/admin/users/<username>`
-for that user's own trend, protocol table, and cycle-over-cycle history. The trend window
+The subscription page reads SQLite and shows the account's current-cycle upload,
+download, total, plan share, and last update time. Operators with `control_plane.view_traffic`
+can open `/admin/traffic/` through an SSH tunnel for totals, rankings, trends, and protocols.
+Each row links to `/admin/traffic/users/<username>/` for detailed history. The trend window
 is chosen with the `7 天` / `30 天` / `90 天` links, which reload the page — the portal
-ships no JavaScript for this, and the charts are server-rendered SVG. The login card's
-bandwidth reset date also renders in `traffic_stats.timezone` rather than UTC, so it
-agrees with the cycle end shown beside it.
+ships no JavaScript for this, and the charts are server-rendered SVG. Dates use `traffic_stats.timezone`, including the billing-cycle boundary.
 
 Daily buckets only start accumulating when this version is deployed; the monthly totals
 and the protocol split work retroactively, because both read data already collected.
@@ -455,9 +443,9 @@ crafted name cannot break the admin page that charts the row.
 
 ### What the portal shows
 
-`/admin` gains a domain ranking chart and a table of the top destinations across all
-users. Each `/admin/users/<username>` page gains the same breakdown for one user, plus a
-table of top destination IPs. `/admin/connections` is a live view of open connections for
+`/admin/traffic/` shows a domain ranking chart and top destinations across all
+users. Each `/admin/traffic/users/<username>/` page shows one user's breakdown, plus a
+table of top destination IPs. `/admin/traffic/connections/` is a private live view of open connections for
 debugging. It refreshes itself with a meta tag because the portal ships no JavaScript.
 A subscription ending clears that service's live view while preserving replay
 checkpoints. Clean daemon shutdown clears the view, and snapshots older than three
@@ -499,8 +487,8 @@ User
   Last updated  2026-09-09 14:30
 ```
 
-The portal shows the same projection, as a `套餐占用` row on the file list, on `/admin`
-over the summed totals, and on each `/admin/users/<username>` page. A user who never runs
+The portal shows the same projection on subscription pages, `/admin/traffic/`,
+and `/admin/traffic/users/<username>/`. A user who never runs
 the client would otherwise read the measured total against the plan quota and conclude
 they have used about half of what the host has charged them. The row is omitted when it
 would say nothing the `Total` beside it does not: at a multiplier of 1 with no plan total
@@ -512,7 +500,7 @@ The same figures reach API clients as `billed_bytes`, `relay_multiplier`, and
 working and simply omits the new row.
 
 `plan_total_bytes` is the allowance as KiwiVM reported it, not the two-decimal gigabyte
-figure the login card shows, so the percentage divides two exact byte counts. The portal
+display figure, so the percentage divides two exact byte counts. The portal
 caches KiwiVM readings, failures included, and keeps serving the last good one while the
 API is unreachable. When it has none, `plan_total_bytes` is absent and both clients print
 the projected total and the multiplier without a plan share, rather than guessing a
@@ -536,16 +524,10 @@ Users absent from that source do not enter the per-user query.
 
 ## Download a Release
 
-Use HTTP Basic auth with an exact platform name on `/download?platform=...`.
-
-```sh
-curl -u alice -OJ "https://vpn.example.com/download?platform=android-arm64"
-```
-
-The example prompts for the password.
-
-A release packs archives for `android-arm64`. Linux, macOS and Windows
-install `sbc` instead; see [One-Liner Install](#one-liner-install).
+Open `/sub/<token>/` with the link provided by an operator.
+Use `sbc` on Linux, macOS and Windows. Use a remote profile or download the current
+protocol JSON on Android and iOS. Public password login, `/files`, and `/download`
+are retired. Existing installed clients retain their proxy credentials.
 
 ## One-Liner Install
 
@@ -581,9 +563,7 @@ hands over the port and any desktop proxy owned by the old client. See
 `/install/windows.ps1` serves `install.ps1` too, which migrates legacy PowerShell client
 installs to `sbc`.
 
-The login page renders both one-liners and preselects the visitor's platform in the
-browser; without JavaScript it shows both, each labelled. The files page shows
-both commands under the user's subscription link.
+The subscription page shows both installation commands under the account's link.
 
 Installed bash clients check the public `/api/client-update` endpoint at most once
 per day and compare its `client_build_id` with the build they run. A release that
@@ -600,24 +580,25 @@ see [the Windows guide](README_WIN.md).
 ## Subscription Links
 
 `GET /sub/<token>?format=sbc&os=<os>&sing-box=<version>` returns the config the `sbc`
-client runs. It needs `web.subscription_secret`; without it, `sbm serve` turns the
-endpoint off and logs a warning.
+client runs. It needs `web.subscription_secret`; without it, requests return 404.
 
 A token is the first 16 bytes of an HMAC-SHA256 of the username and a reset counter,
 keyed by `web.subscription_secret` and written in URL-safe base64. The portal keeps
 only the counters and recomputes each enabled portal user's token to identify the account.
-Django stores counters in PostgreSQL. The legacy portal uses `web.subscription_database_path`
-(`/var/lib/sing-box-manager/subscriptions.sqlite3` by default).
+Django stores counters in PostgreSQL. `web.subscription_database_path` is only a
+read-only input for the initial import of legacy counters.
 A user needs subscription access and at least one enabled protocol.
 
-The files page shows a signed-in user's link with a copy button, and a button that
-replaces it. A replacement advances the counter, so the old link stops working at
-once. `POST /api/sub` with a machine token or portal credentials returns
+Operators reset links through Django Admin. This advances the PostgreSQL counter
+and rejects old links. Users cannot reset links from subscription pages.
+`POST /api/sub` with a machine token or legacy portal credentials returns
 `{"url": ..., "username": ...}`, which lets an installed client move to its link
 without a paste; a user without a protocol gets `404`.
 
 Django renders each subscription from PostgreSQL accounts and runtime infrastructure settings.
-The legacy portal renders subscriptions from inventory in `runtime.yaml`.
+Compatibility endpoints also query PostgreSQL. `/auth`, `/api/token`, `/api/usage`,
+and authenticated `/api/vps-info` remain for legacy clients. Public `/api/client-update`
+retains its line-oriented response. Nginx limits password/exchange endpoints across workers.
 The JSON response holds:
 
 | Field                               | Contents                                                                                                      |
@@ -633,7 +614,8 @@ Responses carry an `ETag`, and a matching `If-None-Match` gets `304`.
 traffic stats are enabled, and `sbc status` shows the count from its last refresh. A
 client older than the pinned minor release, 1.14.0 for
 1.14.2, gets `409` with `sing_box_minimum`. An unknown token, or a user without a
-protocol, gets `404`. A missing or unsupported `format`, `os` or `sing-box` gets `400`.
+protocol, gets `404`. Without `format`, the endpoint serves a mobile profile.
+Unsupported formats or invalid `sbc` platform/version parameters get `400`.
 
 `GET /sub/<token>/files/<path>` serves a file the release's client manifest lists, such
 as `manifest.json` or `sbc/linux-amd64/sbc`, to a valid link, and `404` for anything

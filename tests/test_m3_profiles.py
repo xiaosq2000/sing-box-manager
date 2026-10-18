@@ -14,10 +14,6 @@ from sing_box_manager.release.platforms import (
     MOBILE_TUN_PROFILE,
     MIXED_PROFILE,
     ROUTE_STRATEGIES,
-    Platform,
-    Protocol,
-    client_config_filename,
-    route_client_config_filename,
 )
 from sing_box_manager.release.renderers import apply_desktop_route_strategy
 from sing_box_manager.release.validation import check_config
@@ -79,53 +75,6 @@ def golden_profiles() -> dict[str, dict]:
 @pytest.mark.parametrize("name", list(golden_profiles()))
 def test_profile_matches_golden_output(name: str) -> None:
     assert golden_profiles()[name] == json.loads((GOLDENS / f"{name}.json").read_text())
-
-
-@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-def test_production_client_profiles_match_goldens(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, protocol: str
-) -> None:
-    from sing_box_manager.release import builder as builder_module
-    from sing_box_manager.release.artifacts import ReleaseInfo
-
-    monkeypatch.setattr(
-        builder_module,
-        "build_release_info",
-        lambda version, project_root: ReleaseInfo(
-            release_dir_name="fixture",
-            commit_sha="fixture",
-            dirty=False,
-            date="2026-10-04T00:00:00Z",
-            upstream_version=version,
-        ),
-    )
-    inventory = profile_inventory()
-    builder = builder_module.ReleaseBuilder(inventory, project_root=tmp_path)
-    builder._inventory = inventory
-    checked = []
-    monkeypatch.setattr(
-        builder, "_check_config", lambda config, label: checked.append(config)
-    )
-    platform = Platform(
-        name="linux-amd64",
-        url_filename="unused",
-        client_profiles=(MIXED_PROFILE, MOBILE_TUN_PROFILE),
-    )
-    user = builder._collect_release_users(inventory)[0]
-    profiles = builder._customize_protocol_config(
-        user, inventory.deployment, platform, Protocol(name=protocol)
-    )
-    expected = {
-        route_client_config_filename(protocol, route): json.loads(
-            (GOLDENS / f"mixed-{protocol}-{route}.json").read_text()
-        )
-        for route in ROUTE_STRATEGIES
-    }
-    expected[client_config_filename(protocol, MOBILE_TUN_PROFILE)] = json.loads(
-        (GOLDENS / f"mobile-{protocol}.json").read_text()
-    )
-    assert {filename: json.loads(payload) for filename, payload in profiles} == expected
-    assert len(checked) == len(expected)
 
 
 def test_server_keeps_wire_credentials_and_qualifies_only_auth_labels() -> None:

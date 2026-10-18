@@ -10,10 +10,10 @@ The primary deployment target is a single VPS that runs:
 - the authenticated download portal behind `nginx`
 - `certbot-nginx` for CA-signed certificates
 
-An opt-in Django/PostgreSQL control plane runs beside the portal. It manages
-Django operators, proxy accounts (`Account`), and protocol credentials
-(`Credential`), serves subscriptions and signed client downloads, and syncs the
-single-node `sing-box` config.
+One Django/PostgreSQL service provides the portal and control plane. It manages
+operators, proxy accounts (`Account`), and protocol credentials (`Credential`).
+Users open their subscription pages. Operators manage accounts and traffic through
+SSH-tunnelled Django Admin. There is no separate public password-login portal.
 See [the control-plane guide](docs/CONTROL_PLANE.md) for enablement and recovery.
 
 ## Public source and private operations
@@ -74,9 +74,10 @@ config shape. Select infrastructure settings and legacy inventory with `--config
 or `SBM_CONFIG`. In authoritative mode, PostgreSQL owns proxy accounts and credentials.
 Manage them in Django Admin, not in the inventory.
 
-`sbm serve` refuses to start without `web.session_secret`, which signs browser
-sessions and installer machine tokens. Any value works for local development. For a
-deployed portal, see [server configuration](docs/VPS_DEPLOYMENT.md#2-server-configuration).
+`sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
+It requires `control_plane.enabled` and `control_plane.secret_key`.
+Retain `web.session_secret` for installed legacy clients' machine tokens.
+See [server configuration](docs/VPS_DEPLOYMENT.md#2-server-configuration).
 
 `web.subscription_secret` keys the subscription links the `sbc` client fetches its
 config from. Without it, `sbm serve` turns those links off.
@@ -89,7 +90,7 @@ credentials, obfs secrets, or TLS values.
 `default_protocol` controls which protocol a new client install starts with when
 no protocol is chosen. The server installer enables all packaged protocol inbounds
 by default. A Naive inbound is omitted when its roster is empty or entirely disabled.
-`sbm release` requires every release user to have access to that default protocol.
+Subscriptions fall back to an enabled protocol when the account lacks the configured default.
 
 If `traffic_stats.enabled` is turned on in the config file, `sbm release` builds a
 custom Linux server `sing-box` binary from the upstream source tag with
@@ -133,7 +134,7 @@ or check out config state with git.
 - [`docs/WEBRTC.md`](docs/WEBRTC.md): cross-platform `sbc webrtc` behavior and browser cleanup
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
 - [`docs/REMOTE_DEPLOYMENT.md`](docs/REMOTE_DEPLOYMENT.md): sync the active release artifacts to a remote host and install them
-- [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md): opt-in Django/PostgreSQL foundation, private admin, and recovery
+- [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md): Django portal, PostgreSQL accounts, private admin, and recovery
 - [`docs/REFACTOR_SPEC.md`](docs/REFACTOR_SPEC.md): target architecture and refactoring milestones
 
 ## Common Commands
@@ -152,7 +153,7 @@ Build release artifacts:
 pixi run sbm --config config/inventory/runtime.sops.yaml release
 ```
 
-Start the authenticated download portal after a successful release build:
+Start Django after database migration and static-file collection:
 
 ```sh
 pixi run sbm --config config/inventory/runtime.sops.yaml serve
@@ -171,9 +172,9 @@ runs until stopped, because sing-box drops connection events while nobody is lis
 pixi run sbm --config config/inventory/runtime.sops.yaml stats-stream
 ```
 
-Portal users marked with `web_portal.users[].admin: true` can open `/admin` after login
-to view all collected users' current billing-cycle traffic totals and top destinations,
-and `/admin/connections` for a live view of open connections.
+Django operators with `control_plane.view_traffic` can open `/admin/traffic/`
+and `/admin/traffic/connections/` through an SSH tunnel. This permission does not
+permit account edits. The legacy inventory `admin` flag grants no Django permissions.
 
 After building a release, deploy to a fresh VPS. Replace `vpn-host` with your SSH
 host alias:

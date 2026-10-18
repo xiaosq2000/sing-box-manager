@@ -2,10 +2,12 @@
 
 Checked on 2026-10-18.
 
-The opt-in Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
+The Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
 accounts, proxy user accounts (`Account`), per-protocol credentials (`Credential`),
 subscriptions (`/sub/<token>`), signed client downloads (`/sub/<token>/files/<path>`),
-and single-node `sing-box` configuration sync.
+traffic pages, legacy client migration APIs, and single-node `sing-box` configuration sync.
+It is the only Web service. Public password login and per-user release archives are retired.
+Existing proxy credentials, subscription tokens, and signed download contracts remain unchanged.
 
 ## Layout
 
@@ -49,10 +51,12 @@ Set `control_plane.authoritative: true` after importing accounts. Deployments wi
 `--skip-code` run `control-plane sync-node` (applying PostgreSQL-managed
 accounts to `sing-box.service`), enables `sing-box-manager-sync.path` (so saving or
 deleting accounts in Django Admin requests a `sing-box` config sync after transaction commit),
-and routes Nginx `/sub/` and `/install*` requests to the control plane.
+and routes the portal through Django. Nginx rejects public `/admin` and `/admin/` requests.
+Deployment checks Django and reloads Nginx before it disables the retired FastAPI service.
+A failed Nginx check or reload attempts to restore the previous site.
 When creating a new `Account` in Django Admin (`http://127.0.0.1:47071/admin/`),
-leaving `Credentials` and `New portal password` blank automatically generates strong
-random credentials for all three protocols (`trojan`, `hysteria2`, `naive`) and a
+leaving `Credentials` blank generates random credentials for all three protocols
+(`trojan`, `hysteria2`, `naive`) and a
 ready-to-share `https://<host>/sub/<token>/` user page URL.
 
 `secret_key` is optional for release and deploy. Deploy generates it when absent
@@ -123,20 +127,20 @@ accounts that exist only in PostgreSQL. Deploy never imports accounts automatica
 In Django Admin (`/admin/`), **Operators** manages dashboard access. **Accounts**
 manages proxy users and inline `Credential` rows (`trojan`, `hysteria2`, `naive`):
 
-| Switch                   | Effect                                                                      |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `Account.enabled`        | Master switch for subscriptions, downloads, and all protocol credentials    |
-| `Account.portal_enabled` | Allows subscription access when the account also has a portal password hash |
-| `Credential.enabled`     | Enables one protocol when its account is enabled                            |
+| Switch                   | Effect                                                                   |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `Account.enabled`        | Master switch for subscriptions, downloads, and all protocol credentials |
+| `Account.portal_enabled` | Allows subscription access without requiring a portal password           |
+| `Credential.enabled`     | Enables one protocol when its account is enabled                         |
 
 Re-enabling an account retains its individual protocol settings and secrets.
 Disabling subscription access does not revoke credentials already held by a client.
 Account disablement removes those credentials from the node after a successful sync.
 A changed config requires a sing-box restart, which interrupts existing connections on this single node.
-The separate FastAPI portal still uses its generated authentication snapshot.
+All portal entry points query PostgreSQL. There is no inventory or authentication-snapshot fallback.
 
-- Enter a plaintext password in **New portal password** to hash it with Argon2id, or
-  leave it blank to preserve the existing hash.
+- **New portal password** is optional legacy-client authentication. Blank preserves
+  an existing hash. New accounts need no portal password or generated hash.
 - New accounts with no supplied credentials receive three random protocol secrets.
   Deleting every credential from an existing account does not generate replacements.
 - Use **Reset subscription links for selected accounts** to advance the read-only
@@ -167,6 +171,25 @@ Recovery failure returns an error. Inspect the service before retrying. If no pr
 config exists, sync removes the failed candidate. Checker output is not logged because
 it can contain credentials. Database edits remain saved even when node sync fails.
 
+## User pages and private traffic views
+
+Users open `/sub/<token>/` to read their subscription link, installation commands,
+current usage, and mobile configuration downloads. They cannot change credentials or reset links there.
+The link grants access. A user who loses it must request it from an operator.
+`traffic_stats.show_user_domains` controls personal domain visibility in both the page and `/api/usage`.
+
+Django staff need `control_plane.view_traffic` for these tunnel-only routes:
+
+| Route                              | View                                                               |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| `/admin/traffic/`                  | All accounts, billing-cycle totals, trends, protocols, and domains |
+| `/admin/traffic/users/<username>/` | One account's history, protocols, domains, and destination IPs     |
+| `/admin/traffic/connections/`      | Up to 100 active connections, refreshed every 10 seconds           |
+
+Superusers have this permission. Grant it to other operators through Django permissions or groups.
+It does not grant account-edit permission. `Account.is_portal_admin` is retained for initial-import parity only.
+It does not authorize an operator or a traffic view. Historical traffic remains visible after account removal.
+
 ## Traffic collection
 
 In authoritative mode, the traffic collector reads accounts and enabled credentials from
@@ -177,6 +200,13 @@ Non-authoritative mode continues to read inventory users. Usage history remains 
 Deployment checks traffic collection after the final node sync.
 
 ## Schema upgrade
+
+Migration `0004_traffic_permission` adds the operator traffic permission.
+It does not change proxy credentials, passwords, counters, or operator grants.
+Back up PostgreSQL, infrastructure secrets, release metadata, and SQLite history before the authorized portal cutover.
+Keep the deployed source and environment for rollback. Do not delete old service files or backups during the cutover.
+The acceptance limit is less than 60 seconds of proxy interruption, measured on the target.
+Native CI times node installation. Production acceptance must still verify the actual service interruption.
 
 Back up the database and infrastructure configuration before an authorized upgrade.
 Migration `0003_account_portal_enabled` preserves effective access, secrets, and counters:
@@ -259,11 +289,11 @@ signing key; keep a protected backup of infrastructure configuration too.
 An ordinary deployment uses the incoming `authoritative` setting. `--skip-code` uses
 the deployed setting and cannot switch modes.
 
-| Incoming mode              | Node configuration                                                        | Public routes and watcher                                       |
-| -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Authoritative              | Preserve the live config during binary installation, then sync PostgreSQL | Route subscriptions/installers to Django and enable the watcher |
-| Enabled, not authoritative | Install the selected release config                                       | Remove Django routes and disable the watcher; keep Admin        |
-| Disabled                   | Install the selected release config                                       | Remove Django routes and disable the watcher and Django service |
+| Incoming mode              | Node configuration                                                        | Public routes and watcher                                   |
+| -------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Authoritative              | Preserve the live config during binary installation, then sync PostgreSQL | Route the portal to Django and enable the watcher           |
+| Enabled, not authoritative | Install the selected release config                                       | Keep Django portal and Admin; disable the watcher           |
+| Disabled                   | Install the selected release config                                       | Return 503 publicly; disable the watcher and Django service |
 
 Before leaving authoritative mode, build and review the intended inventory-backed release.
 **Database-only accounts and Admin credential changes do not transfer back to inventory.**
@@ -276,6 +306,7 @@ Authoritative deployment enables the watcher again before the final sync.
 If deployment fails while the watcher is paused, resolve the failure and repeat deployment.
 Until then, Admin saves do not automatically apply to the node.
 
+Portal authentication never returns to inventory, even when node authority is disabled.
 Set both `control_plane.enabled` and `control_plane.authoritative` to `false` to disable Django.
 Deployment retains PostgreSQL, database records, and the signing key. It does not reverse
 migrations. Do not assume an older application revision can read the current schema.
@@ -283,7 +314,7 @@ migrations. Do not assume an older application revision can read the current sch
 ## Verification
 
 ```sh
-pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py tests/test_server_install.py
+pixi run -e control-plane-test test tests/test_routes.py tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py tests/test_server_install.py
 ```
 
 The test environment supplies PostgreSQL 17. Tests start an isolated cluster with
@@ -295,5 +326,6 @@ retention. They do not contact a live VPS.
 CI requires these real-database checks. It also runs a native systemd deployment
 smoke test on a disposable GitHub runner. That test checks peer authentication,
 read-only assets, real node installation, watcher-driven account switches, no-op sync,
-Nginx authority transitions, repeat deployment, and disablement.
+whole-portal Nginx routing, retirement of the old service, authority transitions,
+repeat deployment, and fail-closed disablement.
 See [Development](DEVELOPMENT.md).

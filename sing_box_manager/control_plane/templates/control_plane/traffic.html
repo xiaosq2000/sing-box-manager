@@ -1,0 +1,145 @@
+{% extends 'admin/base_site.html' %}
+{% load static portal %}
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'portal/traffic.css' %}" />
+{% if live %}<meta http-equiv="refresh" content="10" />{% endif %}
+{% endblock %}
+{% block content %}
+<nav>
+  <a href="{% url 'admin:index' %}">账号管理</a> ·
+  <a href="{% url 'traffic' %}">流量统计</a> ·
+  <a href="{% url 'connections' %}">活动连接</a>
+</nav>
+{% if not traffic_enabled %}
+<p>流量采集未启用。</p>
+{% endif %} {% if live %}
+<p>每 10 秒刷新。最多显示 100 条活动连接。此页面用于调试，不用于计费。</p>
+<div class="traffic-table">
+  <table>
+    <thead>
+      <tr>
+        <th>用户</th>
+        <th>协议</th>
+        <th>网络</th>
+        <th>来源</th>
+        <th>目的地</th>
+        <th>出口</th>
+        <th>上传</th>
+        <th>下载</th>
+        <th>开始时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in connections %}
+      <tr>
+        <td>{{ row.username }}</td>
+        <td>{{ row.service_name }}</td>
+        <td>{{ row.network }}</td>
+        <td>{{ row.source }}</td>
+        <td>{{ row.destination }}</td>
+        <td>{{ row.outbound }}</td>
+        <td>{{ row.upload_bytes|bytes }}</td>
+        <td>{{ row.download_bytes|bytes }}</td>
+        <td>{{ row.created_at|date:'H:i:s' }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="9">暂无活动连接</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>
+  {% for range in ranges %}
+  <a href="?days={{ range }}" {% if range == days %}aria-current="page"{% endif %}>{{ range }} 天</a>
+  {% endfor %}
+</p>
+{% include 'control_plane/usage.html' %} {% if summaries %}
+<h2>本期流量</h2>
+<p>上传 {{ upload|bytes }} · 下载 {{ download|bytes }} · {{ plan_usage }}</p>
+<table>
+  <thead>
+    <tr>
+      <th>用户</th>
+      <th>周期</th>
+      <th>上传</th>
+      <th>下载</th>
+      <th>总计</th>
+      <th>最近更新</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in summaries %}
+    <tr>
+      <td>
+        <a href="{% url 'traffic_user' row.username %}">{{ row.username }}</a>
+      </td>
+      <td>
+        {{ row.cycle_start|date:'Y-m-d' }} ~ {{ row.cycle_end|date:'Y-m-d' }}
+      </td>
+      <td>{{ row.upload_bytes|bytes }}</td>
+      <td>{{ row.download_bytes|bytes }}</td>
+      <td>{{ row.total_bytes|bytes }}</td>
+      <td>{{ row.updated_at|date:'Y-m-d H:i:s'|default:'尚未采集' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<div class="traffic-charts">
+  {{ ranking_chart|safe }}
+  {{ trend_chart|safe }}
+  {{ protocol_chart|safe }}
+  {{ month_chart|safe }}
+  {{ domain_chart|safe }}
+</div>
+{% if protocols %}
+<h2>协议流量</h2>
+<table>
+  <thead>
+    <tr>
+      <th>协议</th>
+      <th>上传</th>
+      <th>下载</th>
+      <th>总计</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in protocols %}
+    <tr>
+      <td>{{ row.protocol }}</td>
+      <td>{{ row.upload_bytes|bytes }}</td>
+      <td>{{ row.download_bytes|bytes }}</td>
+      <td>{{ row.total_bytes|bytes }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %} {% include 'control_plane/domains.html' %} {% if destinations %}
+<h2>目的 IP</h2>
+<table>
+  <thead>
+    <tr>
+      <th>地址</th>
+      <th>上传</th>
+      <th>下载</th>
+      <th>总计</th>
+      <th>连接数</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in destinations %}
+    <tr>
+      <td>{{ row.destination_ip }}</td>
+      <td>{{ row.upload_bytes|bytes }}</td>
+      <td>{{ row.download_bytes|bytes }}</td>
+      <td>{{ row.total_bytes|bytes }}</td>
+      <td>{{ row.connection_count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %} {% endif %} {% endblock %}

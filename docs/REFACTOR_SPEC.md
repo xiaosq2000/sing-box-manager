@@ -153,7 +153,7 @@ current location.
 | Windows            | Launch the hosted installer with `& ([scriptblock]::Create((irm URL)))`. Use an S4U task with `ExecutionTimeLimit=PT0S`, limited run level and an Interactive fallback. Refuse to run elevated. Set WinINet as one `host:port`, separate bypass entries with `;`, refresh with InternetSetOption 39 then 95. Stop the task before replacing the exe | `internal/service/`, `internal/winsettings/`, `web/client/install.ps1`      |
 | macOS              | Run `launchctl bootout` before `bootstrap` and poll after start. Clear the quarantine attribute. Read the login shell with `dscl`. Pick the `networksetup` service from the default-route interface                                                                                                                                                 | `internal/service/`, `internal/desktop/`; login-shell detection requirement |
 | Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin                                                                                                                                                                                                                                                   | M1b requirements                                                            |
-| Downloads in China | No CDN-hosted page assets. PowerShell `irm` needs `text/plain`. Send auth headers up front, since PowerShell 5.1 and wget wait for a challenge otherwise                                                                                                                                                                                            | `web/routes.py`, `web/client/install.ps1`                                   |
+| Downloads in China | No CDN-hosted page assets. PowerShell `irm` needs `text/plain`. Send auth headers up front, since PowerShell 5.1 and wget wait for a challenge otherwise                                                                                                                                                                                            | `control_plane/views.py`, `web/client/install.ps1`                          |
 
 ## Milestones
 
@@ -172,14 +172,17 @@ current location.
 
 ### Delivery order
 
-1. **PR 1: control-plane reliability.** Deliver the current fixes and migration.
-   Require isolated PostgreSQL tests, real sing-box checks, and native systemd CI.
-   Production rollout needs separate authorization, a current backup, and account,
-   subscription, connectivity, disable/re-enable, and traffic acceptance checks.
-2. **PR 2: portal and account-source consolidation.** After PR 1 acceptance, move
-   remaining required portal behavior to Django. Remove replaced FastAPI account
-   and authentication paths only when supported clients no longer need them.
-   Retain signed downloads, the shared store, traffic history, and required migration APIs.
+1. **PR 1: control-plane reliability.** Merged and deployed as `4f1c115`.
+   Isolated PostgreSQL, real sing-box, native systemd, and cross-platform CI passed.
+   Production acceptance verified existing subscriptions and a database-only account's
+   connectivity, disable/re-enable, and traffic accounting. The test account was removed.
+   Protected pre/post-deployment backups and verified encrypted off-host copies are retained.
+2. **PR 2: portal and account-source consolidation.** Implemented for review; not deployed.
+   One Django service provides subscription pages, private operational views, and
+   PostgreSQL-backed legacy-client migration. Public password login, FastAPI, runtime
+   authentication snapshots, and new per-user archives are removed. Signed downloads,
+   the shared store, SQLite traffic history, and installer compatibility remain.
+   Production deployment needs separate authorization and measured proxy interruption below 60 seconds.
 3. **M1b: Linux TUN.** A user now needs native Linux TUN. This is the highest-priority
    feature after those two delivery steps. Define activation, DNS, routing, privilege,
    and recovery behavior before implementation. Do not restore the legacy Bash client.
@@ -191,16 +194,16 @@ Keep the systemd sync path while it meets the single-node requirement.
 
 Fix the current code. Each item gets a regression test.
 
-| Item | Change                                                                                             | Where                                                  |
-| ---- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| S1   | Client mixed inbounds listen on `127.0.0.1` instead of `::` without authentication                 | `config/templates/client/*-client.json`                |
-| S2   | Deploy stops running or installing, as root, files that the portal account can write               | `deploy.py` near line 678, `scripts/server-install.sh` |
-| S3   | Remove the CORS middleware, which allows any origin with credentials                               | `web/app.py` near line 107                             |
-| S4   | Keep the KiwiVM API key out of logs: httpx logs full URLs at INFO, and error text includes the URL | `kiwivm.py`, `web/vps_info.py`                         |
-| S5   | Bootstrap allows the real sshd port before enabling ufw, instead of only 22                        | `provision.py` near line 387                           |
-| S6   | `/files` and `/files/{name}` reject users removed from the inventory                               | `web/routes.py` near lines 1061 and 1089               |
-| S7   | Run argon2 checks off the event loop, and bound the login rate limiter's memory                    | `web/routes.py` near line 1015, `web/auth.py`          |
-| S8   | The portal refuses to start without `web.session_secret` instead of generating a random one        | `settings.py`                                          |
+| Item | Change                                                                                             | Where                                                    |
+| ---- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| S1   | Client mixed inbounds use loopback unless authenticated sharing is enabled                         | `desktop_config.py`                                      |
+| S2   | Deploy stops running or installing, as root, files that the portal account can write               | `deploy.py` near line 678, `scripts/server-install.sh`   |
+| S3   | Do not allow credentialed cross-origin access                                                      | `control_plane/django_settings.py`                       |
+| S4   | Keep the KiwiVM API key out of logs: httpx logs full URLs at INFO, and error text includes the URL | `kiwivm.py`, `web/vps_info.py`                           |
+| S5   | Bootstrap allows the real sshd port before enabling ufw, instead of only 22                        | `provision.py` near line 387                             |
+| S6   | Downloads reject disabled or removed accounts                                                      | `control_plane/services.py`                              |
+| S7   | Bound password-authentication attempts and limiter memory                                          | `control_plane/compat.py`, `web/auth.py`, `provision.py` |
+| S8   | Reject legacy machine-token authentication without the configured signing key                      | `control_plane/compat.py`                                |
 
 Done when all items are fixed, tested, released and deployed.
 
@@ -240,9 +243,9 @@ Portal:
   `gfw-proxy`, `china-direct` and `global`. Alias modes retain saved `ai`, `gfw` and
   `china` selections. Every rendered config passes `sing-box check` in CI.
 - A token is an HMAC-SHA256 of the username and a reset counter, keyed by a new
-  `web.subscription_secret`. The portal's SQLite database stores only the counters.
-  After a password login, the portal shows the link and can issue a new one, which
-  cuts off the old link.
+  `web.subscription_secret`. PostgreSQL stores the counters.
+  Operators issue and reset links through private Django Admin. Subscription pages
+  are read-only; a user who loses the link must request it from an operator.
 - `POST /api/sub` exchanges a machine token for the subscription URL, so migration
   needs no paste.
 - nginx logs `/sub/` requests without the token, and the portal sends
@@ -514,7 +517,7 @@ unimplemented, so M4b is not complete under its original acceptance criteria.
 The items below describe current implementation, not authorization for a live rollout.
 
 1. **Deployable foundation.** Implemented and deployed on the single VPS.
-   Opt-in Django/PostgreSQL runs beside the existing portal. Private admin access
+   Django/PostgreSQL provides the only portal in PR 2. Private admin access
    uses an SSH tunnel. Deploy provisions the database, applies migrations, collects
    root-owned static files, and checks readiness. Repeat operations retain data.
    See [the control-plane guide](CONTROL_PLANE.md).
@@ -527,15 +530,15 @@ The items below describe current implementation, not authorization for a live ro
 3. **Admin management, subscription serving, and node sync.** Implemented in
    `sing_box_manager/control_plane/`. Operators manage `Account` and inline
    `Credential` rows in Django Admin (restricted to direct loopback/SSH tunnel), hash
-   new portal passwords, and reset subscription links. Django serves `/sub/<token>`
+   optional legacy-client passwords, and reset subscription links. Django serves `/sub/<token>`
    (both `sbc` envelopes and mobile remote profiles with `subscription-userinfo`),
    `/sub/<token>/` (browser user page), `/sub/<token>/files/<path>`, `/install.sh`,
    and `/install.ps1`. `control-plane --action sync-node` (and `sbm deploy` when
    `control_plane.authoritative: true`) renders the server config from PostgreSQL,
    checks it with `sing-box check`, and applies it to `sing-box.service`.
-   The local reliability pass adds transaction-safe sync requests, config preservation,
+   The deployed reliability changes include transaction-safe sync requests, config preservation,
    shared locking, service recovery, and database-backed traffic collection.
-   It also adds migration `0003_account_portal_enabled`. These changes are not deployed.
+   Migration `0003_account_portal_enabled` is applied. Production acceptance passed.
    Operational details belong in [the control-plane guide](CONTROL_PLANE.md).
 4. **Device management: deferred.** Require a concrete need for independent device
    credentials, revocation, or enrollment limits before designing enrollment.
@@ -545,12 +548,12 @@ The single-node service uses a systemd path unit for credential sync. Keep it un
 an approved requirement needs a node agent. Do not add quota fields without defined
 suspension, manual-disable, reset, and reactivation rules.
 
-After the reliability rollout, the next proposed scope is portal consolidation and
-removal of duplicate account sources. Remove replaced authentication and per-user
-archive code only after confirming that no supported client depends on it.
-Retain the shared store, signed manifests, hosted installers, and `sbm gc` while
-client downloads or server binaries use them. Do not delete the entire store as part
-of per-user archive cleanup.
+PR 2 consolidates portal routes and account state. `/api/sub` and machine-token
+compatibility remain because hosted installers use them. Mobile clients use remote
+profiles or current JSON downloads, not new per-user release archives.
+Traffic operators need a separate Django permission; old portal-admin flags grant nothing.
+Keep the shared store, signed manifests, hosted installers, `sbm gc`, and historical data.
+The next feature after consolidation acceptance is native Linux TUN.
 
 ### M5: Node agent, traffic and budget enforcement
 
@@ -574,10 +577,11 @@ The removal list below applies only after each replacement passes acceptance che
   are root-owned.
 
 Removes the V2Ray poller, the custom sing-box build and its Go toolchain use, the
-reconciliation tables, the SQLite store, the stats units, the FastAPI portal with its
-templates, CSS and fonts, portal passwords, machine tokens and `POST /api/sub`, the
-server install and uninstall scripts with `scripts/lib/ui.sh`, and most of
-`deploy.py` and `provision.py`.
+reconciliation tables, the SQLite store, and the stats units only if their replacements
+meet the accounting and recovery requirements. Retire legacy passwords, machine tokens,
+and `POST /api/sub` only after supported installers no longer use them.
+Replace server scripts or deployment code only where the agent assumes their duties.
+Keep portal templates, styles, fonts, and shared downloads.
 
 Done when the VPS runs sing-box, the agent, and the control plane without the old
 portal or collectors. Usage must match the old counters within an accepted gap.

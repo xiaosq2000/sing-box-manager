@@ -1,4 +1,4 @@
-"""Opt-in, additive deployment of the private control-plane service."""
+"""Deploy the Django portal and its private administration service."""
 
 import re
 import shlex
@@ -31,7 +31,12 @@ NGINX_END_MARKER = "    # END sbm-control-plane"
 def control_plane_nginx_block(port: int) -> str:
     return (
         f"{NGINX_BEGIN_MARKER}\n"
-        "    location ~ ^/(sub/|install\\.sh$|install\\.ps1$|install/) {\n"
+        "    location = /admin { return 404; }\n"
+        "    location ^~ /admin/ { return 404; }\n"
+        "    location = /health/ { return 404; }\n"
+        "    location ~ ^/(api/(sub|token)|auth)$ {\n"
+        "        limit_req zone=sbm_auth burst=5 nodelay;\n"
+        "        limit_req_status 429;\n"
         f"        proxy_pass http://127.0.0.1:{port};\n"
         "        proxy_http_version 1.1;\n"
         "        proxy_set_header Host $host;\n"
@@ -44,20 +49,34 @@ def control_plane_nginx_block(port: int) -> str:
 
 
 def update_nginx_site_text(content: str, port: int | None) -> str:
-    """Insert, update, or remove the control-plane location block before location /."""
+    """Route the whole portal to Django, or fail closed when it is disabled."""
     cleaned = re.sub(
         r"[ \t]*# BEGIN sbm-control-plane\n.*?# END sbm-control-plane\n\n?",
         "",
         content,
         flags=re.DOTALL,
     )
+    pattern = r"    location / \{[^{}]*\}"
+    if len(re.findall(pattern, cleaned)) != 1:
+        raise ValueError("nginx site must have one 'location / {' block")
     if port is None:
-        return cleaned
-    target = "    location / {\n"
-    if target not in cleaned:
-        raise ValueError("nginx site is missing 'location / {' block")
-    block = control_plane_nginx_block(port)
-    return cleaned.replace(target, f"{block}\n\n{target}")
+        block = "    location / { return 503; }"
+    else:
+        block = (
+            control_plane_nginx_block(port)
+            + "\n\n"
+            + (
+                "    location / {\n"
+                f"        proxy_pass http://127.0.0.1:{port};\n"
+                "        proxy_http_version 1.1;\n"
+                "        proxy_set_header Host $host;\n"
+                "        proxy_set_header X-Real-IP $remote_addr;\n"
+                "        proxy_set_header X-Forwarded-For $remote_addr;\n"
+                "        proxy_set_header X-Forwarded-Proto $scheme;\n"
+                "    }"
+            )
+        )
+    return re.sub(pattern, lambda _: block, cleaned)
 
 
 def nginx_route_script(
@@ -92,7 +111,7 @@ def nginx_route_script(
 def service_unit(remote_root: str) -> str:
     generated_dir = shlex.quote(str(Path(remote_root) / "config/generated"))
     return _sbm_unit(
-        description="Private service administration",
+        description="Subscriptions and private service administration",
         after="network-online.target postgresql.service",
         remote_root=remote_root,
         subcommand="control-plane --action serve",
@@ -229,15 +248,13 @@ def deploy(
     control = settings.control_plane
     if not control.authoritative:
         pause_node_sync(hostname, dry_run=dry_run)
-        site = shlex.quote(NGINX_SITE_PATH)
+    if not control.enabled:
         _ssh(
             hostname,
-            f"if [ -f {site} ] && grep -q '# BEGIN sbm-control-plane' {site}; then "
-            f"sudo sh -c {shlex.quote(nginx_route_script(remote_root))}; fi",
-            "Failed to restore legacy subscription routes. Check nginx on the server.",
+            f"sudo sh -c {shlex.quote(nginx_route_script(remote_root))}",
+            "Failed to disable public portal routes. Check nginx on the server.",
             dry_run=dry_run,
         )
-    if not control.enabled:
         _ssh(
             hostname,
             f"if sudo systemctl cat {SERVICE_NAME} >/dev/null 2>&1; then "
@@ -245,6 +262,7 @@ def deploy(
             "Failed to disable the control-plane service. The database is retained.",
             dry_run=dry_run,
         )
+        _disable_legacy_portal(hostname, dry_run=dry_run)
         return
 
     static_root = validate_deployment(remote_root, settings)
@@ -357,9 +375,21 @@ def deploy(
             "Failed to sync sing-box node config from PostgreSQL.",
             dry_run=dry_run,
         )
-        _ssh(
-            hostname,
-            f"sudo sh -c {shlex.quote(nginx_route_script(remote_root, NGINX_SITE_PATH, control.port))}",
-            "Failed to switch nginx subscription routes. Check nginx on the server.",
-            dry_run=dry_run,
-        )
+    _ssh(
+        hostname,
+        f"sudo sh -c {shlex.quote(nginx_route_script(remote_root, NGINX_SITE_PATH, control.port))}",
+        "Failed to switch nginx portal routes. Check nginx on the server.",
+        dry_run=dry_run,
+    )
+    # Disable the retired service only after Django is healthy and Nginx switched.
+    _disable_legacy_portal(hostname, dry_run=dry_run)
+
+
+def _disable_legacy_portal(hostname: str, *, dry_run: bool) -> None:
+    _ssh(
+        hostname,
+        "if sudo systemctl cat sing-box-manager-web.service >/dev/null 2>&1; then "
+        "sudo systemctl disable --now sing-box-manager-web.service; fi",
+        "Failed to disable the retired web service.",
+        dry_run=dry_run,
+    )

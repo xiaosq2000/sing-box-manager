@@ -62,7 +62,6 @@ SUPPORTED_PROTOCOLS = ("trojan", "hysteria2", "naive")
 # The account the portal and the collectors run as. It reads the deployed tree
 # through its group and writes only its systemd StateDirectory.
 SERVICE_USER = "sbm"
-WEB_SERVICE_NAME = "sing-box-manager-web.service"
 TRAFFIC_STATS_SERVICE_NAME = "sing-box-manager-traffic-stats.service"
 TRAFFIC_STREAM_SERVICE_NAME = "sing-box-manager-traffic-stream.service"
 RSYNC_PROGRESS_PATTERN = re.compile(r"(?<!\d)(\d{1,3})%(?!\d)")
@@ -140,7 +139,6 @@ class _Remote:
     store_dir: str
     server_dir: str
     generated_dir: str
-    auth_snapshot: str
     release_info: str
     deployment_info: str
     version_file: str
@@ -169,7 +167,6 @@ def deploy_release(
     protocol_description = ", ".join(normalized_protocols) or "all packaged inbounds"
     normalized_remote_root = _normalize_remote_root(remote_root)
 
-    auth_snapshot_path = _resolve_local_project_path(settings.auth_snapshot_path)
     release_info_path = artifacts.resolve_release_info_path(settings)
     release_info = _load_release_info(release_info_path)
     releases_root = _resolve_local_project_path(settings.releases_root)
@@ -177,7 +174,6 @@ def deploy_release(
     store_dir = releases_root / STORE_DIR_NAME
 
     _require_local_artifacts(
-        auth_snapshot_path=auth_snapshot_path,
         release_dir=release_dir,
         store_dir=store_dir,
     )
@@ -281,7 +277,7 @@ def deploy_release(
         )
 
         print("Uploading generated portal metadata...")
-        _upload_metadata(remote, options, auth_snapshot_path, release_info_path)
+        _upload_metadata(remote, options, release_info_path)
 
         # Before anything below runs code or installs a binary from the tree.
         print("Locking down the deployed tree...")
@@ -310,7 +306,6 @@ def deploy_release(
 
         _install_nginx_log_redaction(normalized_hostname, options)
 
-        _restart_web_service(remote, options)
         _verify_services(remote, settings, options)
         _publish_deployment_info(remote, options, release_info)
 
@@ -334,9 +329,6 @@ def _build_remote(
 
         validate_deployment(remote_root, settings)
     releases_root = _resolve_remote_project_path(remote_root, settings.releases_root)
-    auth_snapshot = _resolve_remote_project_path(
-        remote_root, settings.auth_snapshot_path
-    )
     release_dir = os.fspath(Path(releases_root) / release_dir_name)
     return _Remote(
         hostname=hostname,
@@ -345,8 +337,9 @@ def _build_remote(
         release_dir=release_dir,
         store_dir=os.fspath(Path(releases_root) / STORE_DIR_NAME),
         server_dir=os.fspath(Path(release_dir) / SERVER_DIR_NAME),
-        generated_dir=os.fspath(Path(auth_snapshot).parent),
-        auth_snapshot=auth_snapshot,
+        generated_dir=_resolve_remote_project_path(
+            remote_root, settings.generated_root
+        ),
         release_info=_resolve_remote_project_path(
             remote_root, settings.release_info_path
         ),
@@ -359,14 +352,9 @@ def _build_remote(
 
 def _require_local_artifacts(
     *,
-    auth_snapshot_path: Path,
     release_dir: Path,
     store_dir: Path,
 ) -> None:
-    _require_file(
-        auth_snapshot_path,
-        "Portal auth snapshot not found. Run `sbm release` first.",
-    )
     _require_directory(
         release_dir,
         f"Release directory not found: {release_dir}. Run `sbm release` first.",
@@ -584,7 +572,6 @@ def _ensure_manifest_compatibility(remote: _Remote, options: DeployOptions) -> N
 def _upload_metadata(
     remote: _Remote,
     options: DeployOptions,
-    auth_snapshot_path: Path,
     release_info_path: Path,
 ) -> None:
     """Stage metadata beside its final path, to be published only on success."""
@@ -593,7 +580,6 @@ def _upload_metadata(
         version_path = Path(staging) / VERSION_FILENAME
         version_path.write_text(_version_file_contents(release_info), encoding="utf-8")
         uploads = (
-            (auth_snapshot_path, remote.auth_snapshot, "auth snapshot"),
             (release_info_path, remote.release_info, "release metadata"),
             (version_path, remote.version_file, "version marker"),
         )
@@ -786,7 +772,7 @@ def _install_services(
 def _publish_metadata(remote: _Remote, options: DeployOptions) -> None:
     moves = " && ".join(
         f"mv -f {shlex.quote(f'{path}.tmp')} {shlex.quote(path)}"
-        for path in (remote.auth_snapshot, remote.release_info, remote.version_file)
+        for path in (remote.release_info, remote.version_file)
     )
     _run_remote_command(
         remote.hostname,
@@ -866,23 +852,6 @@ def _install_nginx_log_redaction(hostname: str, options: DeployOptions) -> None:
     from sing_box_manager.provision import install_nginx_log_redaction
 
     install_nginx_log_redaction(hostname, dry_run=options.dry_run)
-
-
-def _restart_web_service(remote: _Remote, options: DeployOptions) -> None:
-    if options.dry_run or not _remote_unit_exists(remote.hostname, WEB_SERVICE_NAME):
-        return
-
-    print(f"Restarting {WEB_SERVICE_NAME}...")
-    _run_remote_command(
-        remote.hostname,
-        f"sudo systemctl restart {shlex.quote(WEB_SERVICE_NAME)}",
-        f"Failed to restart {WEB_SERVICE_NAME} on {remote.hostname}.",
-    )
-    _run_remote_command(
-        remote.hostname,
-        f"sudo systemctl is-active --quiet {shlex.quote(WEB_SERVICE_NAME)}",
-        f"{WEB_SERVICE_NAME} is not active after deployment on {remote.hostname}.",
-    )
 
 
 def _verify_traffic_stats_collector(

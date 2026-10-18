@@ -1,0 +1,74 @@
+#content {
+  --highlight-med: var(--hairline-color);
+  --muted: var(--body-quiet-color);
+  --text: var(--body-fg);
+  --surface: var(--body-bg);
+  --foam: #56949f;
+  --iris: #907aa9;
+  --gold: #ea9d34;
+  --love: #b4637a;
+}
+.traffic-table {
+  overflow-x: auto;
+}
+.traffic-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+  gap: 1rem;
+}
+.sbm-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.sbm-chart .background,
+.sbm-chart .plot_background {
+  fill: transparent !important;
+}
+.sbm-chart .axis .line,
+.sbm-chart .axis .guide.line,
+.sbm-chart .guide.line {
+  stroke: var(--highlight-med) !important;
+}
+.sbm-chart .axis text,
+.sbm-chart .legends .legend text,
+.sbm-chart .titles .title {
+  fill: var(--muted) !important;
+}
+.sbm-chart .text-overlay text,
+.sbm-chart text.value {
+  fill: var(--text) !important;
+  stroke: var(--surface) !important;
+  stroke-width: 3px !important;
+  paint-order: stroke fill !important;
+}
+.sbm-chart .color-0,
+.sbm-chart .color-0 a:visited {
+  stroke: var(--foam) !important;
+  fill: var(--foam) !important;
+}
+.sbm-chart .color-1,
+.sbm-chart .color-1 a:visited {
+  stroke: var(--iris) !important;
+  fill: var(--iris) !important;
+}
+.sbm-chart .color-2,
+.sbm-chart .color-2 a:visited {
+  stroke: var(--gold) !important;
+  fill: var(--gold) !important;
+}
+.sbm-chart .color-3,
+.sbm-chart .color-3 a:visited {
+  stroke: var(--love) !important;
+  fill: var(--love) !important;
+}
+.sbm-chart .tooltip {
+  display: none;
+}
+.sbm-chart--empty {
+  min-height: 6rem;
+}
+.sbm-chart-empty-label {
+  fill: var(--muted);
+  font-size: 14px;
+}

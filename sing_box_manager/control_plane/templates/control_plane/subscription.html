@@ -1,0 +1,38 @@
+{% load static portal tz %}
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Subscription · {{ account.username }}</title>
+    <link rel="stylesheet" href="{% static 'portal/styles.css' %}" />
+  </head>
+  <body>
+    <main class="page-shell page-shell--wide">
+      <h1>Account: {{ account.username }}</h1>
+      <section class="card">
+        <h2>订阅链接</h2>
+        <p>链接就是凭据，不要分享。请保存此页面。丢失链接时，请联系管理员。</p>
+        <pre>{{ subscription_url }}</pre>
+        <p>Protocols: {{ protocols }}</p>
+        <h3>Linux / macOS install</h3>
+        <pre>curl -fsSL "{{ origin }}/install.sh" | sh</pre>
+        <h3>Windows PowerShell install</h3>
+        <pre>&amp; ([scriptblock]::Create((irm '{{ origin }}/install.ps1')))</pre>
+        <p>按提示粘贴订阅链接。安装器也支持从旧版客户端迁移。</p>
+        <h3>Android / iOS</h3>
+        <p>在 sing-box 客户端中添加远程配置，使用上面的订阅链接。</p>
+        <p>需要离线导入时，可下载当前协议配置：</p>
+        {% for protocol in mobile_protocols %}
+        <a
+          href="{{ subscription_url }}?format=mobile&amp;protocol={{ protocol }}"
+          download="{{ protocol }}-client.json"
+          >{{ protocol }}</a
+        >
+        {% endfor %}
+      </section>
+      {% timezone traffic_timezone %} {% include 'control_plane/usage.html' %}
+      {% include 'control_plane/domains.html' %} {% endtimezone %}
+    </main>
+  </body>
+</html>

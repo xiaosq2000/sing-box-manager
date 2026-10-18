@@ -13,9 +13,7 @@ from sing_box_manager.settings import (
     Hysteria2Inventory,
     Hysteria2User,
     TlsConfig,
-    load_auth_snapshot,
     load_runtime_inventory,
-    write_auth_snapshot,
 )
 
 VALID_PASSWORD_HASH = (
@@ -525,88 +523,6 @@ class TestLoadRuntimeInventory:
             match="trojan_port|hysteria2_port|naive_port",
         ):
             load_runtime_inventory(inventory_file)
-
-
-class TestAuthSnapshot:
-    def test_auth_snapshot_round_trip_returns_only_enabled_users(self, tmp_path: Path):
-        inventory_file = tmp_path / "runtime.yaml"
-        _write_inventory(
-            inventory_file,
-            "    - username: alice\n"
-            f"      password_hash: {VALID_PASSWORD_HASH}\n"
-            "      enabled: true\n"
-            "      admin: true\n"
-            "    - username: bob\n"
-            f"      password_hash: {VALID_PASSWORD_HASH}\n"
-            "      enabled: false\n",
-            "    - username: alice\n"
-            "      password: alice-trojan-secret\n"
-            "      enabled: true\n",
-            "    - username: bob\n"
-            "      password: bob-hysteria2-secret\n"
-            "      enabled: true\n",
-        )
-        inventory = load_runtime_inventory(inventory_file)
-        snapshot_file = tmp_path / "auth-users.json"
-
-        write_auth_snapshot(snapshot_file, inventory.web_portal.users)
-        snapshot_users = load_auth_snapshot(snapshot_file)
-
-        assert list(snapshot_users) == ["alice"]
-        assert snapshot_users["alice"].username == "alice"
-        assert snapshot_users["alice"].password_hash == VALID_PASSWORD_HASH
-        assert snapshot_users["alice"].enabled is True
-        assert snapshot_users["alice"].admin is True
-
-    def test_load_auth_snapshot_rejects_unknown_keys(self, tmp_path: Path):
-        snapshot_file = tmp_path / "auth-users.json"
-        snapshot_file.write_text(
-            "{\n"
-            '  "users": [\n'
-            "    {\n"
-            '      "username": "alice",\n'
-            f'      "password_hash": "{VALID_PASSWORD_HASH}",\n'
-            '      "enabled": true,\n'
-            '      "unexpected": "nope"\n'
-            "    }\n"
-            "  ]\n"
-            "}\n",
-            encoding="utf-8",
-        )
-
-        with pytest.raises(ValidationError, match="unexpected"):
-            load_auth_snapshot(snapshot_file)
-
-    def test_write_auth_snapshot_keeps_existing_file_if_replace_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        inventory_file = tmp_path / "runtime.yaml"
-        _write_inventory(
-            inventory_file,
-            "    - username: alice\n"
-            f"      password_hash: {VALID_PASSWORD_HASH}\n"
-            "      enabled: true\n",
-            "    - username: alice\n"
-            "      password: alice-trojan-secret\n"
-            "      enabled: true\n",
-            "    - username: bob\n"
-            "      password: bob-hysteria2-secret\n"
-            "      enabled: true\n",
-        )
-        inventory = load_runtime_inventory(inventory_file)
-        snapshot_file = tmp_path / "auth-users.json"
-        original_content = '{"users": []}\n'
-        snapshot_file.write_text(original_content, encoding="utf-8")
-
-        def fake_replace(src: str, dst: str) -> None:
-            raise RuntimeError("replace failed")
-
-        monkeypatch.setattr(settings.os, "replace", fake_replace)
-
-        with pytest.raises(RuntimeError, match="replace failed"):
-            write_auth_snapshot(snapshot_file, inventory.web_portal.users)
-
-        assert snapshot_file.read_text(encoding="utf-8") == original_content
 
 
 def _deployment(**overrides):
