@@ -27,6 +27,20 @@ def test_native_harness_refuses_non_ci_execution(harness, monkeypatch):
         harness.main()
 
 
+def test_native_fixture_roundtrips_through_runtime_validation(harness, tmp_path):
+    from sing_box_manager.settings import Settings
+
+    config = tmp_path / "runtime.yaml"
+    settings = harness.fixture_settings(config)
+    loaded = Settings.from_dict(
+        settings.model_dump(mode="json", by_alias=True, exclude={"config_path"}),
+        config_path=config,
+    )
+    assert loaded.deployment.host == loaded.deployment.tls.server_name == "localhost"
+    assert loaded.control_plane.enabled
+    assert not loaded.traffic_stats.enabled
+
+
 def test_native_transport_uses_root_shell_for_input_redirection(harness, monkeypatch):
     calls = []
     monkeypatch.setattr(

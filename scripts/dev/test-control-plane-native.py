@@ -201,6 +201,7 @@ def fixture_settings(config):
     settings.traffic_stats.enabled = False  # This job uses the official server binary.
     settings.web.subscription_secret = secrets.token_hex(32)
     settings.deployment.host = "localhost"
+    settings.deployment.tls.server_name = "localhost"
     settings.deployment.ip = "127.0.0.1"
     settings.deployment.tls.key_path = str(ROOT / "config/generated/node.key")
     settings.deployment.tls.certificate_path = str(ROOT / "config/generated/node.crt")
