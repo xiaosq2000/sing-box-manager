@@ -182,6 +182,24 @@ def _build_service_targets(
 
 def _load_inventory(settings: Settings) -> RuntimeInventory:
     load_local_env()
+    if settings.control_plane.authoritative:
+        import django
+
+        try:
+            os.environ["SBM_CONFIG"] = str(settings.require_config_path())
+            os.environ["DJANGO_SETTINGS_MODULE"] = (
+                "sing_box_manager.control_plane.django_settings"
+            )
+            django.setup()
+            from sing_box_manager.control_plane.services import (
+                _build_inventory_as_db_user,
+            )
+
+            return _build_inventory_as_db_user(settings)
+        except Exception as exc:
+            raise TrafficStatsError(
+                "Cannot load PostgreSQL traffic accounts. Check the control-plane database."
+            ) from exc
     return load_runtime_inventory(_resolve_project_path(settings.require_config_path()))
 
 

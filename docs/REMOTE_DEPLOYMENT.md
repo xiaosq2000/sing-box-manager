@@ -92,10 +92,18 @@ appear on stderr.
 1. locks down the remote root: deletes bytecode caches under `sing_box_manager/`,
    makes everything `root:sbm`, and removes group and other write access, so the
    service account can read the tree but not change what root later runs from it
+1. when code sync is enabled, pauses the node sync watcher and waits for an existing
+   sync to finish. A 60-second timeout stops deployment without killing the sync
 1. runs `./server-install.sh` once from `releases/rel-<id>/server/`, with repeated
    `-p <protocol>` flags only for an explicitly selected inbound set, and checks `sing-box.service`
    is active. The installer checks the real TLS files before stopping services and
    restores the prior installation if startup fails
+   Ordinary deploys select the mode from incoming settings. `--skip-code` reads the
+   deployed mode and fails if those settings are unreadable.
+   In authoritative mode, the current code's installer preserves the existing node
+   config while updating the binary and unit. Missing live config or an explicit
+   `--protocol` selection fails without changing node services.
+   An older deployed installer that lacks this mode fails rather than using old users.
 1. publishes the staged metadata with an atomic `mv`
 1. derives `config/inventory/runtime.yaml` from the local encrypted config, stages it,
    and atomically publishes it as `root:sbm` mode `0640` after preserving the server's
@@ -109,17 +117,16 @@ appear on stderr.
    if `nginx -t` passes, and otherwise restores both files and fails the deploy
 1. restarts `sing-box-manager-web.service` if that unit exists and verifies it is
    active
+1. when code sync is enabled, deploys or disables the control plane and checks readiness.
+   Authoritative deployment enables the watcher, syncs PostgreSQL accounts, and routes
+   subscriptions to Django. Other modes disable the watcher and remove those routes.
+   It retains the database. See [mode transitions](CONTROL_PLANE.md#disable-without-removing-data)
 1. runs `sing-box-manager-traffic-stats.service` once when traffic stats are enabled,
-   and fails the deploy if the collection does not succeed
+   after the final node sync. A collection failure stops deployment
 1. restarts `sing-box-manager-traffic-stream.service` and confirms it is still active
    a few seconds later. A long-running unit that crashes on startup is restarted
    forever by systemd without ever failing a deploy, so the domain breakdown would
    otherwise stop filling while everything else looked healthy
-1. when code sync is enabled, deploys the opt-in Django/PostgreSQL foundation and
-   checks readiness, or disables its service when configured off. When enabled,
-   this step also installs `/usr/local/bin/sbm` with the selected deployment root
-   and a default `SBM_CONFIG` for server-local commands. Database data remains
-   intact. See [the control-plane guide](CONTROL_PLANE.md)
 1. only after those health checks, atomically publishes
    `config/generated/deployment-info.json` with the release identity and current UTC
    timestamp
@@ -177,7 +184,8 @@ relative path only if you want the database back inside the deploy root.
 
 PostgreSQL stores the optional control plane's database in its OS-managed data
 directory, outside the deploy root. Deploy never synchronizes or removes it.
-`--skip-code` leaves the control plane unchanged.
+`--skip-code` leaves the control-plane code and database unchanged. The binary installer
+still checks the deployed authority setting and preserves its current node config.
 
 `config/generated/` holds the optional root-owned Django static files. Metadata
 files are published individually. This directory is never a `--delete` target.
@@ -188,9 +196,9 @@ from the encrypted local source of truth. Deploy transfers it to a temporary mod
 uses an atomic replacement. Credentials are never placed in SSH command arguments.
 `--skip-code` leaves this file alone along with the remote code tree.
 
-Ordinary deploys do not replace TLS files or configure the Nginx site.
-`--bootstrap` configures Nginx and obtains certificates. Both flows install the
-managed renewal units; neither builds a release.
+Ordinary deploys do not replace TLS files. They manage Nginx log redaction and,
+when authoritative, the control-plane subscription routes. `--bootstrap` creates
+the site and obtains certificates. Both flows install renewal units. Neither builds a release.
 
 ## Reclaiming Space
 

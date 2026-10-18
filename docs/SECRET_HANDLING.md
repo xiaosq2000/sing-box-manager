@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-13.
+Checked on 2026-10-18.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -19,9 +19,11 @@ The current layout separates those jobs:
 
 - `sing_box_manager/release/profiles.py`, `release/renderers.py` and
   `desktop_config.py` build configurations in code; no JSON templates are loaded
-- an operator-owned `*.sops.yaml` inventory is the encrypted source of truth for
-  deploy facts, portal auth, and protocol credentials; it is not tracked in this
-  public repository
+- an operator-owned `*.sops.yaml` inventory holds infrastructure settings and legacy
+  portal/protocol records. It is not tracked in this public repository
+- with `control_plane.authoritative: true`, PostgreSQL owns proxy accounts, credentials,
+  and subscription counters. Inventory import is blocked. Admin changes do not update
+  the legacy FastAPI auth snapshot
 - `config/generated/auth-users.json` is a generated auth snapshot for the web portal
 - `sbm serve` verifies portal credentials against the generated auth snapshot;
   it also loads app settings from the file selected by `--config` or `SBM_CONFIG`
@@ -170,7 +172,8 @@ If you forget the plaintext portal password, you cannot recover it from
   generates it when the service is enabled and keeps the server's value on later
   deployments, including disable/re-enable. Keep it in protected infrastructure
   configuration. PostgreSQL stores separate Django operator password hashes and
-  sessions; current portal and proxy credentials remain inventory-managed.
+  sessions. It also stores proxy accounts, portal hashes, protocol credentials, and
+  subscription counters. Back up these records after cutover and after later changes.
   Local database access uses Unix-socket peer authentication as `sbm`, not a
   database password. Keep database files and backup dumps outside public source.
   See [control-plane recovery](CONTROL_PLANE.md#back-up-and-test-recovery).

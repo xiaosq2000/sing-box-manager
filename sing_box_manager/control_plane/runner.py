@@ -27,6 +27,10 @@ Action = Literal[CanonicalAction, "createsuperuser", "import", "sync"]
 MIGRATION_LOCK = 1396854083
 
 
+class ControlPlaneError(RuntimeError):
+    """An operator-facing error that contains no credentials or backend output."""
+
+
 def normalize_action(action: Action) -> CanonicalAction:
     if action == "createsuperuser":
         return "create-admin"

@@ -20,10 +20,12 @@ web:
   allowed_hosts:
     - localhost
     - 127.0.0.1
-# Private Django/PostgreSQL foundation. Inventory still owns proxy users.
-# See docs/CONTROL_PLANE.md. Deploy generates and retains the Django signing key.
+# Optional Django/PostgreSQL control plane. Import accounts before making it
+# authoritative. See docs/CONTROL_PLANE.md for access rules and mode transitions.
+# Deploy generates and retains the Django signing key.
 control_plane:
   enabled: false
+  authoritative: false
   port: 47071
   database_name: sbm_control_plane
   database_socket_dir: /var/run/postgresql

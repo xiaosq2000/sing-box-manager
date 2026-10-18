@@ -80,6 +80,7 @@ elif verb == 'disable':
 elif verb == 'enable':
     state['enabled'] = sorted(set(state['enabled'] + [unit]))
 elif verb == 'restart':
+    state.setdefault('configs', []).append((Path(os.environ['SBM_SERVER_ROOT']) / 'usr/local/etc/sing-box/config.json').read_text())
     if (unit == 'sing-box.service' and os.environ.get('START_FAIL') == '1') or (unit != 'sing-box.service' and os.environ.get('ROLLBACK_FAIL') == '1'):
         status = 1
     else:
@@ -203,6 +204,160 @@ def test_explicit_missing_naive_selection_fails_before_changing_services(
     assert (root / "usr/local/bin/sing-box").read_text() == "old-binary"
     assert (root / "usr/local/etc/sing-box/config.json").read_text() == "old-config"
     assert all((root / "etc/systemd/system" / unit).is_file() for unit in LEGACY)
+
+
+@pytest.mark.parametrize("incoming,live", [(True, False), (True, True), (None, True)])
+def test_deploy_preserves_database_config_even_with_an_old_release(
+    server_fixture, incoming, live, tmp_path
+):
+    from sing_box_manager.deploy import node_install_command
+
+    root, package, state, env = server_fixture
+    deploy_root = tmp_path / "deployed root"
+    interpreter = deploy_root / ".pixi/envs/default/bin/python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    scripts = deploy_root / "scripts"
+    shutil.copytree(package, scripts)
+    # An old release's installer does not support config preservation.
+    (package / "server-install.sh").write_text("#!/bin/sh\nexit 99\n")
+    runtime = deploy_root / "config/inventory/runtime.yaml"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text(
+        f"sing_box_version: 1.14.2\ncontrol_plane:\n  enabled: true\n  authoritative: {str(live).lower()}\n"
+    )
+    config = root / "usr/local/etc/sing-box/config.json"
+    expected = {
+        "inbounds": [
+            {
+                "type": "trojan",
+                "users": [{"name": "db_only", "password": "fixture-db-secret"}],
+            }
+        ]
+    }
+    config.write_text(json.dumps(expected))
+    command = node_install_command(
+        str(deploy_root), str(package), [], authoritative=incoming
+    )
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", "-c", command],
+            env={**env, "PYTHONPATH": str(ROOT)},
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(config.read_text()) == expected
+    restarted_configs = json.loads(state.read_text())["configs"]
+    assert all(json.loads(value) == expected for value in restarted_configs)
+
+
+@pytest.mark.parametrize("incoming,live", [(False, True), (False, False), (None, False)])
+def test_inventory_mode_installs_release_roster(server_fixture, incoming, live, tmp_path):
+    from sing_box_manager.deploy import node_install_command
+
+    root, package, state, env = server_fixture
+    deployed = tmp_path / "deployed"
+    interpreter = deployed / ".pixi/envs/default/bin/python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    runtime = deployed / "config/inventory/runtime.yaml"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text(
+        f"sing_box_version: 1.14.2\ncontrol_plane:\n  enabled: true\n  authoritative: {str(live).lower()}\n"
+    )
+    command = node_install_command(str(deployed), str(package), [], authoritative=incoming)
+    result = subprocess.run(
+        ["bash", "-c", command], env={**env, "PYTHONPATH": str(ROOT)}, text=True, capture_output=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads((root / "usr/local/etc/sing-box/config.json").read_text()) == json.loads((package / "config.json").read_text())
+
+
+def test_skip_code_refuses_unreadable_deployed_mode(server_fixture, tmp_path):
+    from sing_box_manager.deploy import node_install_command
+
+    root, package, state, env = server_fixture
+    deployed = tmp_path / "deployed"
+    interpreter = deployed / ".pixi/envs/default/bin/python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    command = node_install_command(str(deployed), str(package), [], authoritative=None)
+    result = subprocess.run(
+        ["bash", "-c", command], env={**env, "PYTHONPATH": str(ROOT)}, text=True, capture_output=True
+    )
+    assert result.returncode != 0
+    assert "Cannot read deployed settings" in result.stderr
+    assert json.loads(state.read_text())["calls"] == []
+    assert (root / "usr/local/etc/sing-box/config.json").read_text() == "old-config"
+
+
+@pytest.mark.parametrize("args", [[], ["-p", "trojan"]])
+def test_preservation_never_falls_back_to_packaged_users(server_fixture, args):
+    root, package, state, env = server_fixture
+    config = root / "usr/local/etc/sing-box/config.json"
+    config.unlink()
+    result = run_installer(server_fixture, "--preserve-config", *args)
+    assert result.returncode != 0
+    assert not config.exists()
+    assert json.loads(state.read_text())["calls"] == []
+
+
+def test_preservation_check_failure_leaves_live_config_and_service_unchanged(
+    server_fixture,
+):
+    root, package, state, env = server_fixture
+    config = root / "usr/local/etc/sing-box/config.json"
+    expected = {"inbounds": [{"type": "trojan", "users": []}]}
+    config.write_text(json.dumps(expected))
+    result = run_installer(server_fixture, "--preserve-config", CHECK_FAIL="1")
+    assert result.returncode != 0
+    assert json.loads(config.read_text()) == expected
+    assert json.loads(state.read_text())["calls"] == []
+
+
+def test_installer_waits_for_node_sync_lock(server_fixture):
+    import fcntl
+    import time
+
+    root, package, state, env = server_fixture
+    config = root / "usr/local/etc/sing-box/config.json"
+    tools = Path(env["PATH"].split(":")[0])
+    ready = tools / "waiting"
+    real_flock = shutil.which("flock")
+    (tools / "flock").write_text(
+        f'#!/bin/sh\ntouch "{ready}"\nexec "{real_flock}" "$@"\n'
+    )
+    (tools / "flock").chmod(0o755)
+    with (config.parent / ".sync.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        process = subprocess.Popen(
+            ["bash", str(package / "server-install.sh"), "--preserve-config"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while (
+                not ready.exists()
+                and process.poll() is None
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            assert ready.exists()
+            assert json.loads(state.read_text())["calls"] == []
+            updated = {"inbounds": [{"type": "trojan", "users": []}]}
+            config.write_text(json.dumps(updated))
+            fcntl.flock(lock, fcntl.LOCK_UN)
+            _, errors = process.communicate(timeout=15)
+            assert process.returncode == 0, errors
+            assert json.loads(config.read_text()) == updated
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
 
 
 def test_installer_selects_exactly_the_requested_protocol_set(server_fixture) -> None:

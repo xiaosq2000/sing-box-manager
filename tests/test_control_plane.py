@@ -113,6 +113,25 @@ def test_runner_normalizes_actions_before_django_dispatch(monkeypatch, action):
     assert calls == [(normalize_action(action), settings)]
 
 
+@pytest.mark.parametrize("safe", [True, False])
+def test_cli_reports_safe_sync_errors_but_hides_backend_details(tmp_path, monkeypatch, capsys, safe):
+    path = tmp_path / "runtime.yaml"
+    path.write_text("sing_box_version: 1.14.2\ncontrol_plane:\n  enabled: true\n")
+    message = "Node start and service recovery failed." if safe else "fixture-backend-secret"
+
+    def fail(*_):
+        raise (runner.ControlPlaneError if safe else RuntimeError)(message)
+
+    monkeypatch.setattr(runner, "run", fail)
+    with pytest.raises(SystemExit) as result:
+        main(["--config", str(path), "control-plane", "sync"])
+    assert result.value.code == 1
+    errors = capsys.readouterr().err
+    assert (message in errors) == safe
+    if not safe:
+        assert "Check the configuration and local database" in errors
+
+
 def test_remote_config_generates_and_preserves_separate_key(tmp_path, monkeypatch):
     inventory = load_runtime_inventory(
         Path(__file__).parents[1] / "config/inventory/example.yaml"
@@ -179,9 +198,11 @@ def test_enabled_deployment_provisions_migrates_starts_and_checks(monkeypatch):
     assert wrapper[2] == deployment.wrapper_script("/opt/sing-box-manager")
     assert wrapper[3] == {"mode": "0755", "dry_run": False}
     commands = [event[1] for event in events if event[0] == "command"]
-    assert "postgresql-client" in commands[0]
-    assert "ON_ERROR_STOP=1" in commands[1]
-    assert "sudo -u sbm" in commands[2]
+    assert "disable --now sing-box-manager-sync.path" in commands[0]
+    assert "update_nginx_site_text" in commands[1]
+    assert "postgresql-client" in commands[2]
+    assert "ON_ERROR_STOP=1" in commands[3]
+    assert "sudo -u sbm" in commands[4]
     actions = [
         command.split("--action ", 1)[1].split()[0]
         for command in commands
@@ -240,12 +261,82 @@ def test_update_nginx_site_text_is_idempotent_and_reversible():
     assert reverted == original
 
 
+@pytest.mark.parametrize("port", [None, 47071])
+@pytest.mark.parametrize("failure", [None, "check", "reload"])
+def test_nginx_route_changes_restore_site_on_check_or_reload_failure(tmp_path, port, failure):
+    python = tmp_path / deployment.REMOTE_PIXI_PYTHON_RELATIVE_PATH
+    python.parent.mkdir(parents=True)
+    python.symlink_to(sys.executable)
+    site = tmp_path / "nginx-site"
+    original = "server {\n    location / {\n    }\n}\n"
+    if port is None:
+        original = deployment.update_nginx_site_text(original, 47071)
+    site.write_text(original)
+    site.chmod(0o640)
+    for name, phase in (("nginx", "check"), ("systemctl", "reload")):
+        script = tmp_path / name
+        script.write_text(
+            "#!/bin/sh\n"
+            f'if [ "$FAIL_PHASE" = {phase} ] && [ ! -f "$FAILED_ONCE" ]; then\n'
+            '  touch "$FAILED_ONCE"; exit 1\nfi\nexit 0\n'
+        )
+        script.chmod(0o755)
+    result = subprocess.run(
+        ["sh", "-c", deployment.nginx_route_script(str(tmp_path), str(site), port)],
+        env={
+            "PATH": f"{tmp_path}:{os.defpath}",
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+            "FAIL_PHASE": failure or "",
+            "FAILED_ONCE": str(tmp_path / "failed"),
+        },
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == (1 if failure else 0), result.stderr
+    assert site.read_text() == (original if failure else deployment.update_nginx_site_text(original, port))
+    assert site.stat().st_mode & 0o777 == 0o640
+
+
+def test_pause_node_sync_disables_watcher_and_waits_without_killing_sync(tmp_path, monkeypatch):
+    events = record_deployment(monkeypatch)
+    deployment.pause_node_sync("fixture-host")
+    command = events[0][1]
+    assert "timeout 60" in command
+    assert f"stop {deployment.SYNC_SERVICE_NAME}" not in command
+    for name, content in {
+        "sudo": 'exec "$@"',
+        "sleep": "exit 0",
+        "systemctl": (
+            'echo "$*" >> "$CALLS"\n'
+            'if [ "$1" = show ]; then\n'
+            '  if [ -f "$WAITED" ]; then echo inactive; else touch "$WAITED"; echo activating; fi\n'
+            "fi"
+        ),
+    }.items():
+        path = tmp_path / name
+        path.write_text(f"#!/bin/sh\n{content}\n")
+        path.chmod(0o755)
+    calls = tmp_path / "calls"
+    result = subprocess.run(
+        ["sh", "-c", command],
+        env={"PATH": f"{tmp_path}:{os.defpath}", "CALLS": str(calls), "WAITED": str(tmp_path / "waited")},
+        capture_output=True, text=True, check=False, timeout=5,
+    )
+    assert result.returncode == 0, result.stderr
+    lines = calls.read_text().splitlines()
+    assert lines.index(f"disable --now {deployment.SYNC_PATH_NAME}") < lines.index(f"show -p ActiveState --value {deployment.SYNC_SERVICE_NAME}")
+    assert lines.count(f"show -p ActiveState --value {deployment.SYNC_SERVICE_NAME}") == 2
+
+
 def test_disabled_deployment_only_disables_its_unit_and_retains_database(monkeypatch):
     events = record_deployment(monkeypatch)
     deployment.deploy("fixture-host", "/opt/sing-box-manager", Settings())
-    assert len(events) == 1
-    assert "disable --now sing-box-manager-control-plane.service" in events[0][1]
-    assert "postgres" not in events[0][1]
+    commands = [event[1] for event in events]
+    assert len(commands) == 3
+    assert "disable --now sing-box-manager-sync.path" in commands[0]
+    assert "update_nginx_site_text" in commands[1]
+    assert "nginx -t" in commands[1]
+    assert "disable --now sing-box-manager-control-plane.service" in commands[2]
+    assert all("postgres" not in command for command in commands)
 
 
 def test_failed_migration_never_starts_control_plane(monkeypatch):

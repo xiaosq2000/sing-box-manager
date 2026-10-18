@@ -212,6 +212,9 @@ assert client.get('/health/', HTTP_HOST='attacker.example.com').status_code == 4
 ordinary = User.objects.create_user('fixture_nonstaff')
 client.force_login(ordinary)
 assert client.get('/admin/').status_code == 302
+from sing_box_manager.control_plane.models import Account, Credential
+proxy = Account.objects.create(username='fixture_proxy', enabled=False, portal_enabled=True, subscription_counter=4)
+Credential.objects.create(account=proxy, protocol='trojan', secret='fixture-backup-secret')
 print('ok')
 """,
     )
@@ -288,6 +291,12 @@ print('ok')
             connection.execute("SELECT count(*) FROM control_plane_user").fetchone()[0]
             == 2
         )
+        assert connection.execute(
+            "SELECT enabled, portal_enabled, subscription_counter FROM control_plane_account"
+        ).fetchone() == (False, True, 4)
+        assert connection.execute(
+            "SELECT protocol, secret, enabled FROM control_plane_credential"
+        ).fetchone() == ("trojan", "fixture-backup-secret", True)
     disabled = yaml.safe_load(path.read_text())
     disabled["control_plane"]["enabled"] = False
     path.write_text(yaml.safe_dump(disabled))
@@ -727,6 +736,7 @@ form = AccountAdminForm(
     data={
         "username": "alice",
         "enabled": True,
+        "portal_enabled": True,
         "is_portal_admin": True,
         "new_portal_password": "new-operator-set-password",
         "portal_password_hash": old_hash,
@@ -747,6 +757,7 @@ new_form = AccountAdminForm(
     data={
         "username": "frank",
         "enabled": True,
+        "portal_enabled": True,
         "is_portal_admin": False,
         "new_portal_password": "",
         "portal_password_hash": "",

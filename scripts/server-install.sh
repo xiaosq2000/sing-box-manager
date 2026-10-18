@@ -17,11 +17,13 @@ _translate_zh() {
 	esac
 }
 protocols=()
+package_dir="$script_dir"
+preserve_config=false
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	-h | --help)
-		printf '%s\n' 'Usage: ./server-install.sh [-p trojan|hysteria2|naive]... [-V]' 'Without -p, installs all packaged protocol inbounds in sing-box.service.'
+		printf '%s\n' 'Usage: ./server-install.sh [-p trojan|hysteria2|naive]... [-V] [--package-dir DIR] [--preserve-config]' 'Without -p, installs all packaged protocol inbounds in sing-box.service.' '--preserve-config requires an existing node config and rejects -p.'
 		exit 0
 		;;
 	-p | --protocol)
@@ -33,6 +35,15 @@ while [[ $# -gt 0 ]]; do
 			;;
 		esac
 		shift 2
+		;;
+	--package-dir)
+		[[ -n "${2:-}" ]] || exit 1
+		package_dir="$2"
+		shift 2
+		;;
+	--preserve-config)
+		preserve_config=true
+		shift
 		;;
 	-V | --verbose)
 		# shellcheck disable=SC2034
@@ -51,6 +62,11 @@ if [[ $EUID -ne 0 ]]; then
 fi
 command -v systemctl >/dev/null
 command -v python3 >/dev/null
+command -v flock >/dev/null
+if [[ "$preserve_config" == true && ${#protocols[@]} -gt 0 ]]; then
+	error 'Cannot select protocols while preserving a database-managed config.'
+	exit 1
+fi
 # An override confines fixture tests to a scratch filesystem.
 root="${SBM_SERVER_ROOT:-}"
 prefix="${root}/usr/local"
@@ -60,14 +76,24 @@ config_dir="${prefix}/etc/sing-box"
 binary="${prefix}/bin/sing-box"
 unit='sing-box.service'
 legacy=('sing-box-trojan.service' 'sing-box-hysteria2.service' 'sing-box-naive.service')
-for file in sing-box config.json sing-box.service; do
-	[[ -f "${script_dir}/${file}" ]] || {
+for file in sing-box sing-box.service; do
+	[[ -f "${package_dir}/${file}" ]] || {
 		error "Installation file missing: ${file}"
 		exit 1
 	}
 done
 mkdir -p "${config_dir}" "${prefix}/bin" "${units}" "${state}"
 chmod 700 "${config_dir}"
+# Serialize binary installation with control-plane sync, before reading config.
+exec 9>"${config_dir}/.sync.lock"
+chmod 600 "${config_dir}/.sync.lock"
+flock -x 9
+config_source="${package_dir}/config.json"
+if [[ "$preserve_config" == true ]]; then config_source="${config_dir}/config.json"; fi
+[[ -f "$config_source" ]] || {
+	error 'Node config missing; no services were changed.'
+	exit 1
+}
 work=$(mktemp -d "${config_dir}/.install.XXXXXXXX")
 active=()
 enabled=()
@@ -113,9 +139,9 @@ rollback() {
 trap rollback EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cp "${script_dir}/sing-box" "${work}/sing-box"
+cp "${package_dir}/sing-box" "${work}/sing-box"
 chmod 755 "${work}/sing-box"
-python3 - "${script_dir}/config.json" "${work}/config.json" "${protocols[@]}" <<'PY'
+python3 - "$config_source" "${work}/config.json" "${protocols[@]}" <<'PY'
 import json, os, sys
 with open(sys.argv[1], encoding='utf-8') as source:
     config = json.load(source)
@@ -153,7 +179,7 @@ for old in "${legacy[@]}"; do
 done
 mv -f "${work}/sing-box" "$binary"
 mv -f "${work}/config.json" "${config_dir}/config.json"
-install -m 644 "${script_dir}/sing-box.service" "${units}/${unit}"
+install -m 644 "${package_dir}/sing-box.service" "${units}/${unit}"
 # Hysteria2 keeps the same QUIC buffer tuning in the consolidated process.
 if [[ ${#protocols[@]} -eq 0 || " ${protocols[*]} " == *' hysteria2 '* ]]; then
 	mkdir -p "${root}/etc/sysctl.d"

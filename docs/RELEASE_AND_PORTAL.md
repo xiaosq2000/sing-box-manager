@@ -1,6 +1,6 @@
 # Release Build and Portal Usage
 
-Checked on 2026-10-13.
+Checked on 2026-10-18.
 
 This guide covers the local operator workflow for:
 
@@ -260,9 +260,12 @@ before shutdown may need another lookup after restart.
 
 ## Start the Portal
 
-The optional [Django/PostgreSQL foundation](CONTROL_PLANE.md) runs separately.
-Its admin manages Django operators only. Release artifacts, portal login, client
-subscriptions, and traffic accounting keep their current behavior.
+The optional [Django/PostgreSQL control plane](CONTROL_PLANE.md) runs separately.
+Its admin manages operators and proxy accounts. In authoritative mode, Django serves
+`/sub/` and `/install*`, and PostgreSQL supplies node credentials. Release artifacts,
+legacy FastAPI login, and traffic storage remain separate. The collector uses
+PostgreSQL accounts in authoritative mode. Admin changes do not update the FastAPI
+auth snapshot. See the control-plane guide for account and import rules.
 
 Run the web service only after `config/generated/auth-users.json` and
 `config/generated/release-info.json` exist, typically after a successful release build.
@@ -527,8 +530,9 @@ Expect the real ratio to sit slightly above 2. sing-box counts proxied payload w
 interface carries TCP/IP and TLS headers, ACKs, retransmissions, and handshakes, and the
 VM also carries traffic no user owns: package updates, ACME renewals, DNS, and inbound
 scan noise. If the observed ratio drifts well past about 2.1, suspect traffic that is not
-being attributed rather than overhead. Users missing from the inventory are dropped from
-the per-user query entirely, which inflates the gap without any visible error.
+being attributed rather than overhead. Collection targets come from enabled PostgreSQL
+accounts and credentials in authoritative mode, or inventory otherwise.
+Users absent from that source do not enter the per-user query.
 
 ## Download a Release
 
@@ -601,10 +605,10 @@ endpoint off and logs a warning.
 
 A token is the first 16 bytes of an HMAC-SHA256 of the username and a reset counter,
 keyed by `web.subscription_secret` and written in URL-safe base64. The portal keeps
-only the counters, in `web.subscription_database_path`
-(`/var/lib/sing-box-manager/subscriptions.sqlite3` by default), and recomputes each
-enabled portal user's token to find who a link belongs to. A user needs a portal
-account and at least one enabled protocol.
+only the counters and recomputes each enabled portal user's token to identify the account.
+Django stores counters in PostgreSQL. The legacy portal uses `web.subscription_database_path`
+(`/var/lib/sing-box-manager/subscriptions.sqlite3` by default).
+A user needs subscription access and at least one enabled protocol.
 
 The files page shows a signed-in user's link with a copy button, and a button that
 replaces it. A replacement advances the counter, so the old link stops working at
@@ -612,9 +616,9 @@ once. `POST /api/sub` with a machine token or portal credentials returns
 `{"url": ..., "username": ...}`, which lets an installed client move to its link
 without a paste; a user without a protocol gets `404`.
 
-The portal renders the config on each request from the inventory in the server's
-`runtime.yaml`, so a link carries the credentials the last deploy wrote. The JSON
-response holds:
+Django renders each subscription from PostgreSQL accounts and runtime infrastructure settings.
+The legacy portal renders subscriptions from inventory in `runtime.yaml`.
+The JSON response holds:
 
 | Field                               | Contents                                                                                                      |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |

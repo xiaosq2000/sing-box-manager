@@ -14,6 +14,7 @@ from pathlib import Path
 from django.db import transaction
 
 from sing_box_manager.control_plane.models import Account, Credential
+from sing_box_manager.control_plane.runner import ControlPlaneError
 from sing_box_manager.deploy import SERVICE_USER
 from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
 from sing_box_manager.release.platforms import MOBILE_TUN_PROFILE
@@ -57,7 +58,7 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
         WebPortalUser(
             username=account.username,
             password_hash=account.portal_password_hash,
-            enabled=account.enabled,
+            enabled=account.enabled and account.portal_enabled,
             admin=account.is_portal_admin,
         )
         for account in accounts
@@ -73,7 +74,7 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
                 TrojanUser(
                     username=account.username,
                     password=cred.secret,
-                    enabled=cred.enabled,
+                    enabled=account.enabled and cred.enabled,
                 )
             )
         if (cred := by_protocol.get("hysteria2")) is not None:
@@ -81,7 +82,7 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
                 Hysteria2User(
                     username=account.username,
                     password=cred.secret,
-                    enabled=cred.enabled,
+                    enabled=account.enabled and cred.enabled,
                 )
             )
         if (cred := by_protocol.get("naive")) is not None:
@@ -89,7 +90,7 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
                 NaiveUser(
                     username=account.username,
                     password=cred.secret,
-                    enabled=cred.enabled,
+                    enabled=account.enabled and cred.enabled,
                 )
             )
     return runtime.model_copy(
@@ -191,7 +192,12 @@ def verify_inventory_parity(
 
 
 def import_inventory(runtime: Settings) -> dict[str, int]:
-    """Idempotently import accounts and credentials from Settings into PostgreSQL."""
+    """Import inventory before PostgreSQL becomes authoritative."""
+    if runtime.control_plane.authoritative:
+        raise ControlPlaneError(
+            "Inventory import is disabled while the control plane is authoritative. "
+            "Manage accounts in Django Admin."
+        )
     _ = runtime.deployment
     source = runtime
     sqlite_counters = ResetCounters(runtime.web.subscription_database_path).current()
@@ -229,7 +235,13 @@ def import_inventory(runtime: Settings) -> dict[str, int]:
             account, _ = Account.objects.update_or_create(
                 username=username,
                 defaults={
-                    "enabled": False if portal is None else portal.enabled,
+                    "enabled": bool(portal and portal.enabled)
+                    or any(
+                        users[username].enabled
+                        for users in protocol_by_user.values()
+                        if username in users
+                    ),
+                    "portal_enabled": False if portal is None else portal.enabled,
                     "is_portal_admin": False if portal is None else portal.admin,
                     "portal_password_hash": ""
                     if portal is None
@@ -296,7 +308,7 @@ def find_db_subscriber(secret: str, token: str) -> Account | None:
     if TOKEN_PATTERN.fullmatch(token) is None:
         return None
     matched: Account | None = None
-    for account in Account.objects.filter(enabled=True).exclude(
+    for account in Account.objects.filter(enabled=True, portal_enabled=True).exclude(
         portal_password_hash=""
     ):
         expected = subscription_token(
@@ -313,6 +325,7 @@ def account_protocols(account: Account, runtime: Settings) -> UserProtocols:
     by_proto = {
         str(cred.protocol): str(cred.secret)
         for cred in account.credentials.filter(enabled=True)
+        if account.enabled
     }
     return UserProtocols(
         trojan=None
@@ -396,14 +409,16 @@ def _build_inventory_as_db_user(runtime: Settings) -> RuntimeInventory:
     egid = os.getegid()
     pw = pwd.getpwnam(SERVICE_USER)
     connections.close_all()
-    os.setegid(pw.pw_gid)
-    os.seteuid(pw.pw_uid)
     try:
+        os.setegid(pw.pw_gid)
+        os.seteuid(pw.pw_uid)
         return build_inventory_from_db(runtime)
     finally:
-        connections.close_all()
-        os.seteuid(0)
-        os.setegid(egid)
+        try:
+            connections.close_all()
+        finally:
+            os.seteuid(0)
+            os.setegid(egid)
 
 
 def sync_node_config(
@@ -414,18 +429,58 @@ def sync_node_config(
     service_name: str = DEFAULT_SING_BOX_SERVICE,
     restart_service: bool = True,
 ) -> dict[str, object]:
-    """Render server config from PostgreSQL, check with sing-box, and apply."""
+    """Serialize node updates, validate the candidate, and recover on failure."""
+    import fcntl
+
     resolved_config = config_path or Path(
         os.environ.get("SBM_SING_BOX_CONFIG", str(DEFAULT_SERVER_CONFIG_PATH))
     )
     resolved_binary = binary_path or Path(
         os.environ.get("SBM_SING_BOX_BINARY", str(DEFAULT_SING_BOX_BINARY_PATH))
     )
+    resolved_config.parent.mkdir(parents=True, exist_ok=True)
+    # The server installer uses the same lock. Acquire it before reading the DB
+    # so a waiting sync cannot apply an obsolete snapshot after a newer update.
+    with (resolved_config.parent / ".sync.lock").open("a") as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _sync_node_config_locked(
+            runtime, resolved_config, resolved_binary, service_name, restart_service
+        )
+
+
+def _restart_node_service(service_name: str) -> bool:
+    try:
+        restart = subprocess.run(
+            ["systemctl", "restart", service_name], capture_output=True, check=False
+        )
+        if restart.returncode != 0:
+            return False
+        time.sleep(1)
+        health = subprocess.run(
+            ["systemctl", "is-active", "--quiet", service_name],
+            capture_output=True,
+            check=False,
+        )
+        return health.returncode == 0
+    except OSError:
+        return False
+
+
+def _sync_node_config_locked(
+    runtime: Settings,
+    resolved_config: Path,
+    resolved_binary: Path,
+    service_name: str,
+    restart_service: bool,
+) -> dict[str, object]:
     inventory = _build_inventory_as_db_user(runtime)
     server_config = build_server_config(inventory, runtime.traffic_stats)
     rendered = json.dumps(server_config, indent=2, sort_keys=True) + "\n"
-
-    resolved_config.parent.mkdir(parents=True, exist_ok=True)
+    result: dict[str, object] = {
+        "config_path": str(resolved_config),
+        "inbounds": [inbound["tag"] for inbound in server_config["inbounds"]],
+    }
     fd, temp_name = tempfile.mkstemp(
         prefix=".config-", suffix=".json.tmp", dir=str(resolved_config.parent)
     )
@@ -443,32 +498,54 @@ def sync_node_config(
                 check=False,
             )
             if check.returncode != 0:
-                detail = (check.stderr or check.stdout).strip()
-                raise RuntimeError(f"sing-box check failed: {detail}")
+                # Checker output can contain credentials from the candidate.
+                raise ControlPlaneError(
+                    "sing-box check failed. The active config is unchanged."
+                )
         elif restart_service:
-            raise RuntimeError(f"sing-box binary not found at {resolved_binary}")
+            raise ControlPlaneError("sing-box binary is missing. Node sync stopped.")
 
         previous_bytes = (
             resolved_config.read_bytes() if resolved_config.is_file() else None
         )
-        os.replace(temp_path, resolved_config)
-        if restart_service:
-            restart = subprocess.run(
-                ["systemctl", "restart", service_name],
-                capture_output=True,
-                text=True,
-                check=False,
+        try:
+            unchanged = (
+                previous_bytes is not None
+                and json.loads(previous_bytes) == server_config
             )
-            if restart.returncode != 0:
-                if previous_bytes is not None:
-                    resolved_config.write_bytes(previous_bytes)
-                    resolved_config.chmod(0o600)
-                detail = (restart.stderr or restart.stdout).strip()
-                raise RuntimeError(f"systemctl restart {service_name} failed: {detail}")
+        except (ValueError, UnicodeDecodeError):
+            unchanged = False
+        if unchanged and (
+            not restart_service
+            or subprocess.run(
+                ["systemctl", "is-active", "--quiet", service_name],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        ):
+            return result
+        os.replace(temp_path, resolved_config)
+        if restart_service and not _restart_node_service(service_name):
+            if previous_bytes is None:
+                resolved_config.unlink()
+                raise ControlPlaneError(
+                    "Node start failed. No previous config is available."
+                )
+            # Restore atomically before attempting to recover the service.
+            with temp_path.open("xb") as handle:
+                os.fchmod(handle.fileno(), 0o600)
+                handle.write(previous_bytes)
+            os.replace(temp_path, resolved_config)
+            if not _restart_node_service(service_name):
+                raise ControlPlaneError(
+                    "Node start and service recovery failed. The previous config is restored. "
+                    "Check the node service on the server."
+                )
+            raise ControlPlaneError(
+                "Node start failed. The previous config and service are restored."
+            )
     finally:
         temp_path.unlink(missing_ok=True)
 
-    return {
-        "config_path": str(resolved_config),
-        "inbounds": [inbound["tag"] for inbound in server_config["inbounds"]],
-    }
+    return result

@@ -287,7 +287,14 @@ def deploy_release(
         print("Locking down the deployed tree...")
         _lock_down_remote_tree(remote, options)
 
-        _install_services(remote, normalized_protocols, options)
+        _install_services(
+            remote,
+            normalized_protocols,
+            options,
+            authoritative=None
+            if options.skip_code
+            else settings.control_plane.authoritative,
+        )
 
         print("Publishing generated portal metadata...")
         _publish_metadata(remote, options)
@@ -707,15 +714,64 @@ def _sync_remote_config(
     )
 
 
-def _install_services(
-    remote: _Remote, protocols: Sequence[str], options: DeployOptions
-) -> None:
-    service_name = "sing-box.service"
+def node_install_command(
+    remote_root: str,
+    server_dir: str,
+    protocols: Sequence[str],
+    *,
+    authoritative: bool | None,
+) -> str:
+    """Use incoming authority, or read deployed authority for a code-skipping deploy."""
+    python = str(Path(remote_root) / REMOTE_PIXI_PYTHON_RELATIVE_PATH)
+    runtime = str(Path(remote_root) / REMOTE_CONFIG_RELATIVE_PATH)
+    detect = """from pathlib import Path
+import sys
+from sing_box_manager.settings import load_settings
+try:
+    path = Path(sys.argv[1])
+    preserve = load_settings(path).control_plane.authoritative
+except Exception:
+    raise SystemExit('Cannot read deployed settings. Node installation stopped.')
+print('preserve' if preserve else 'release')
+"""
     flags = "".join(f" -p {shlex.quote(protocol)}" for protocol in protocols)
+    if authoritative is None:
+        probe = shlex.join([python, "-c", detect, runtime])
+        select_mode = f"mode=$(PYTHONDONTWRITEBYTECODE=1 {probe}) || exit 1; "
+    else:
+        select_mode = f"mode={'preserve' if authoritative else 'release'}; "
+    current_installer = shlex.quote(
+        str(Path(remote_root) / "scripts/server-install.sh")
+    )
+    return (
+        f"cd {shlex.quote(remote_root)} || exit 1; "
+        f"{select_mode}"
+        'if [ "$mode" = preserve ]; then '
+        f"bash {current_installer} --package-dir {shlex.quote(server_dir)} --preserve-config{flags}; "
+        'elif [ "$mode" = release ]; then '
+        f"cd {shlex.quote(server_dir)} && ./server-install.sh{flags}; "
+        "else exit 1; fi"
+    )
+
+
+def _install_services(
+    remote: _Remote,
+    protocols: Sequence[str],
+    options: DeployOptions,
+    *,
+    authoritative: bool | None = False,
+) -> None:
+    if not options.skip_code:
+        from sing_box_manager.control_plane.deployment import pause_node_sync
+
+        pause_node_sync(remote.hostname, dry_run=options.dry_run)
+    service_name = "sing-box.service"
     print("Installing single sing-box node service...")
     _run_remote_command(
         remote.hostname,
-        f"cd {shlex.quote(remote.server_dir)} && ./server-install.sh{flags}",
+        node_install_command(
+            remote.root, remote.server_dir, protocols, authoritative=authoritative
+        ),
         f"Failed to install sing-box on {remote.hostname}.",
         dry_run=options.dry_run,
     )
@@ -791,14 +847,15 @@ def _install_managed_units(
 def _verify_services(
     remote: _Remote, settings: Settings, options: DeployOptions
 ) -> None:
-    _verify_traffic_stats_collector(remote, settings, options)
-    if options.skip_code:
-        return
-    from sing_box_manager.control_plane.deployment import deploy as deploy_control_plane
+    if not options.skip_code:
+        from sing_box_manager.control_plane.deployment import (
+            deploy as deploy_control_plane,
+        )
 
-    deploy_control_plane(
-        remote.hostname, remote.root, settings, dry_run=options.dry_run
-    )
+        deploy_control_plane(
+            remote.hostname, remote.root, settings, dry_run=options.dry_run
+        )
+    _verify_traffic_stats_collector(remote, settings, options)
 
 
 def _install_nginx_log_redaction(hostname: str, options: DeployOptions) -> None:

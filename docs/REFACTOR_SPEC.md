@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-14.
+Checked on 2026-10-18.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Each milestone ships on its own and keeps the service working
@@ -26,18 +26,18 @@ complexity comes from machinery built around premises that the target design dro
 
 | Decision                                                                                          | Status                                     |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Build our own minimal control plane and node agent instead of adopting an existing panel          | Decided                                    |
+| Build a minimal Django control plane instead of adopting an existing panel                        | Decided                                    |
 | Accounts are free and invite-only first; paid plans come later                                    | Decided                                    |
 | sing-box is the only proxy core on nodes and clients                                              | Decided                                    |
 | Security fixes come first, then the client CLI                                                    | Decided                                    |
 | The control plane uses Django and Postgres                                                        | Decided                                    |
 | The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                    |
-| The node agent is written in Go                                                                   | Proposed                                   |
-| Each enrolled installation gets its own subscription token and proxy credentials from M4b         | Decided                                    |
+| Add a node agent, with Go as the proposed language                                                | Deferred until an operational need exists  |
+| Give each enrolled installation its own subscription token and proxy credentials                  | Deferred until device management is needed |
 | A client runs one config per user, with routes as Clash modes and protocols in a selector         | Decided                                    |
-| Configs are built in code and pass `sing-box check` before release                                | Proposed                                   |
+| Configs are built in code and pass `sing-box check` before release                                | Implemented                                |
 | Nodes run the official sing-box build                                                             | Proposed                                   |
-| Per-user traffic comes from the sing-box API stream only                                          | Proposed, verify in M5                     |
+| Per-user traffic comes from the sing-box API stream only                                          | Deferred; requires accounting parity       |
 | Nodes apply user changes by reloading sing-box in batches                                         | Proposed, revisit if reloads disturb users |
 | Protocols stay trojan, hysteria2 and naive; VLESS-Reality is an option for nodes without a domain | Open until M6                              |
 
@@ -45,6 +45,11 @@ sing-box 1.14.0 supports VLESS-Reality as both server and client, and `sing-box 
 accepts a server config and a client config that use it.
 
 ## Target architecture
+
+The diagram and extended schema below are future proposals, not the current build scope.
+The current system is one Django/PostgreSQL control plane and one sing-box node,
+with systemd-triggered config sync and SQLite traffic history. Node agents, device
+records, plans, and multi-node interfaces require a separate need and scope decision.
 
 ```text
 browsers, client apps, sbc
@@ -140,30 +145,47 @@ current location.
 | Client configs     | Ship rule snapshots through `initial_path` so the first start works when rule downloads fail                                                                                                                                                                                                                                                        | `release/rule_sets.py`, `release/renderers.py`                              |
 | Client configs     | `sing-box check` does not prove DNS works. Check a page request through the new proxy before accepting installation                                                                                                                                                                                                                                 | `internal/cli/cli.go`, `internal/api/api.go`                                |
 | `ai-only` route    | Direct DNS uses the systemd-resolved stub because the local transport needs CAP_NET_RAW. Use community Anthropic and AI sets for routing and DNS. Shared sign-in and captcha hosts depend on community coverage                                                                                                                                     | `release/renderers.py`, `desktop_config.py`                                 |
-| Client runtime     | Mixed mode and TUN are never active together, or traffic loops. Check TCP and UDP when picking the mixed port. Run TUN with `-c`, not `-C`                                                                                                                                                                                                          | `internal/singbox/singbox.go`; deferred M1b requirements                    |
+| Client runtime     | Mixed mode and TUN are never active together, or traffic loops. Check TCP and UDP when picking the mixed port. Run TUN with `-c`, not `-C`                                                                                                                                                                                                          | `internal/singbox/singbox.go`; M1b requirements                             |
 | System proxy       | Revert only settings that point at our port. A PAC setting belongs to someone else                                                                                                                                                                                                                                                                  | `internal/desktop/`, `internal/winsettings/`                                |
 | API stream         | `interval` is in nanoseconds. Each subscription replays live connections, so deduplicate by connection ID with byte checkpoints. UPDATE carries deltas and CLOSED carries final totals. Events without a user are DNS lookups and health checks. sing-box drops events while nobody subscribes                                                      | `connection_stats.py`, `connection_tracking.py`                             |
 | API service        | Disable its dashboard. Strip IPv6 brackets from the listen address                                                                                                                                                                                                                                                                                  | `release/renderers.py`, `settings.py`                                       |
 | Billing            | Per-user counters see one leg of relayed traffic; a host that bills both directions charges about twice that. A reset day past a short month's end moves to its last day                                                                                                                                                                            | `settings.py`, `traffic_models.py`                                          |
 | Windows            | Launch the hosted installer with `& ([scriptblock]::Create((irm URL)))`. Use an S4U task with `ExecutionTimeLimit=PT0S`, limited run level and an Interactive fallback. Refuse to run elevated. Set WinINet as one `host:port`, separate bypass entries with `;`, refresh with InternetSetOption 39 then 95. Stop the task before replacing the exe | `internal/service/`, `internal/winsettings/`, `web/client/install.ps1`      |
 | macOS              | Run `launchctl bootout` before `bootstrap` and poll after start. Clear the quarantine attribute. Read the login shell with `dscl`. Pick the `networksetup` service from the default-route interface                                                                                                                                                 | `internal/service/`, `internal/desktop/`; login-shell detection requirement |
-| Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin                                                                                                                                                                                                                                                   | Deferred M1b requirements                                                   |
+| Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin                                                                                                                                                                                                                                                   | M1b requirements                                                            |
 | Downloads in China | No CDN-hosted page assets. PowerShell `irm` needs `text/plain`. Send auth headers up front, since PowerShell 5.1 and wget wait for a challenge otherwise                                                                                                                                                                                            | `web/routes.py`, `web/client/install.ps1`                                   |
 
 ## Milestones
 
-| Milestone | Name                                       | Status      |
-| --------- | ------------------------------------------ | ----------- |
-| M0        | Security fixes                             | Done        |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done        |
-| M1b       | Linux TUN in the client CLI                | Deferred    |
-| M2        | Client CLI for Windows                     | Done        |
-| M3        | Configs in code, one server process        | Done        |
-| M4b       | Control plane, devices and subscriptions   | In progress |
-| M5        | Node agent, traffic and budget enforcement | Planned     |
-| M6        | Multiple nodes                             | Planned     |
-| M7        | Invitation self-service and reusable plans | Planned     |
-| M8        | Paid plans                                 | Planned     |
+| Milestone | Name                                       | Status                                                      |
+| --------- | ------------------------------------------ | ----------------------------------------------------------- |
+| M0        | Security fixes                             | Done                                                        |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                                        |
+| M1b       | Linux TUN in the client CLI                | Next feature after control-plane delivery and consolidation |
+| M2        | Client CLI for Windows                     | Done                                                        |
+| M3        | Configs in code, one server process        | Done                                                        |
+| M4b       | Control plane, devices and subscriptions   | In progress                                                 |
+| M5        | Node agent, traffic and budget enforcement | Deferred pending need                                       |
+| M6        | Multiple nodes                             | Deferred pending need                                       |
+| M7        | Invitation self-service and reusable plans | Deferred pending need                                       |
+| M8        | Paid plans                                 | Deferred pending need                                       |
+
+### Delivery order
+
+1. **PR 1: control-plane reliability.** Deliver the current fixes and migration.
+   Require isolated PostgreSQL tests, real sing-box checks, and native systemd CI.
+   Production rollout needs separate authorization, a current backup, and account,
+   subscription, connectivity, disable/re-enable, and traffic acceptance checks.
+2. **PR 2: portal and account-source consolidation.** After PR 1 acceptance, move
+   remaining required portal behavior to Django. Remove replaced FastAPI account
+   and authentication paths only when supported clients no longer need them.
+   Retain signed downloads, the shared store, traffic history, and required migration APIs.
+3. **M1b: Linux TUN.** A user now needs native Linux TUN. This is the highest-priority
+   feature after those two delivery steps. Define activation, DNS, routing, privilege,
+   and recovery behavior before implementation. Do not restore the legacy Bash client.
+
+Devices, node agents, and automated quotas remain deferred until a concrete need exists.
+Keep the systemd sync path while it meets the single-node requirement.
 
 ### M0: Security fixes
 
@@ -356,7 +378,7 @@ Client:
   own uninstaller and desktop library. Small fixtures cover that interface.
 - Legacy Linux TUN state blocks installation before downloads or file changes,
   even when user-scoped client files are missing. The installed client's cleanup
-  tools must remove that state first. No current invited user uses Linux TUN.
+  tools must remove that state first. Native Linux TUN support is planned in M1b.
 
 Done when CI on Linux and macOS runners installs from a test subscription, starts,
 switches route and protocol without a restart, rolls back a bad refresh and
@@ -369,9 +391,9 @@ the Docker bridge address with auth.
 
 #### M1b: Linux TUN
 
-Deferred. `sbc` supports mixed mode, not Linux TUN. The legacy implementation is
-not maintained, and no current invited user uses Linux TUN. Recheck the scope before
-starting this milestone.
+Required and prioritized after control-plane reliability and portal consolidation.
+`sbc` supports mixed mode, not Linux TUN. The legacy implementation is not maintained.
+Confirm the initial Linux environment and routing requirements before implementation.
 
 Requirements for a new implementation:
 
@@ -384,7 +406,7 @@ Requirements for a new implementation:
 
 Done when a disposable Linux runner checks activation, deactivation, failed
 activation recovery, and interrupted-operation cleanup. Keep `scripts/lib/ui.sh`
-for the server scripts until M5.
+while the server scripts use it.
 
 ### M2: Client CLI for Windows
 
@@ -486,8 +508,10 @@ successfully, and every protocol available to that client passed connection test
 
 ### M4b: Control plane, devices and subscriptions
 
-Build from current main. Reuse the config builders, signed-download contract, and
-hosted installers. Keep the service working between these incremental PRs:
+Reuse the config builders, signed-download contract, and hosted installers.
+The single-node account/credential cutover is deployed. Device management remains
+unimplemented, so M4b is not complete under its original acceptance criteria.
+The items below describe current implementation, not authorization for a live rollout.
 
 1. **Deployable foundation.** Implemented and deployed on the single VPS.
    Opt-in Django/PostgreSQL runs beside the existing portal. Private admin access
@@ -497,9 +521,10 @@ hosted installers. Keep the service working between these incremental PRs:
 2. **Accounts, credentials, and idempotent import.** Implemented in
    `sing_box_manager/control_plane/`. `Account` and `Credential` store proxy accounts,
    portal password hashes, reset counters, and per-protocol secrets.
-   `control-plane --action import-inventory` imports inventory users and SQLite
-   reset counters in one transaction and verifies server/client config parity.
-3. **Admin management, subscription serving, and node sync.** Implemented locally in
+   Import verifies config parity and preserves subscription counters.
+   See [the account guide](CONTROL_PLANE.md#account-import-admin-management-and-node-sync)
+   for access switches and import restrictions.
+3. **Admin management, subscription serving, and node sync.** Implemented in
    `sing_box_manager/control_plane/`. Operators manage `Account` and inline
    `Credential` rows in Django Admin (restricted to direct loopback/SSH tunnel), hash
    new portal passwords, and reset subscription links. Django serves `/sub/<token>`
@@ -508,23 +533,30 @@ hosted installers. Keep the service working between these incremental PRs:
    and `/install.ps1`. `control-plane --action sync-node` (and `sbm deploy` when
    `control_plane.authoritative: true`) renders the server config from PostgreSQL,
    checks it with `sing-box check`, and applies it to `sing-box.service`.
-4. **Device management and ownership cutover.** Add account-authenticated enrollment,
-   revocation, transactional slot checks, and per-user policies. Postgres becomes
-   authoritative for users, devices, and policies. Later deploys cannot overwrite
-   database-managed records from inventory. SOPS retains infrastructure secrets.
+   The local reliability pass adds transaction-safe sync requests, config preservation,
+   shared locking, service recovery, and database-backed traffic collection.
+   It also adds migration `0003_account_portal_enabled`. These changes are not deployed.
+   Operational details belong in [the control-plane guide](CONTROL_PLANE.md).
+4. **Device management: deferred.** Require a concrete need for independent device
+   credentials, revocation, or enrollment limits before designing enrollment.
+   A subscription token alone must not authorize device or policy management.
 
-Before cutover, define how credential changes reach the current node without the
-M5 agent. A subscription token alone must not authorize device or policy management.
-Model budgets in M4b; M5 adds collection and automatic suspension.
+The single-node service uses a systemd path unit for credential sync. Keep it unless
+an approved requirement needs a node agent. Do not add quota fields without defined
+suspension, manual-disable, reset, and reactivation rules.
 
-After all installations migrate, remove per-user archives, the archive store and
-its manifest, archive packing, `sbm gc`, and replaced download routes/templates.
-Keep the signed binary/rule-set manifest and working hosted installers.
-
-Done when every current installation has a device subscription, enrollment limits
-and revocation work, and the database owns user/device policy.
+After the reliability rollout, the next proposed scope is portal consolidation and
+removal of duplicate account sources. Remove replaced authentication and per-user
+archive code only after confirming that no supported client depends on it.
+Retain the shared store, signed manifests, hosted installers, and `sbm gc` while
+client downloads or server binaries use them. Do not delete the entire store as part
+of per-user archive cleanup.
 
 ### M5: Node agent, traffic and budget enforcement
+
+Deferred proposal, not the automatic next milestone. Define an operational need
+before implementing an agent, replacing collectors, or enforcing quotas.
+The removal list below applies only after each replacement passes acceptance checks.
 
 - Add `cmd/sbm-node` to the Go module. The agent fetches its config, runs
   `sing-box check`, writes the config and reloads sing-box. It reports per-user

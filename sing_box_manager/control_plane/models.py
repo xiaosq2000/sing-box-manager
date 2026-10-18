@@ -26,6 +26,7 @@ class Account(models.Model):
 
     username = models.CharField(max_length=32, unique=True)
     enabled = models.BooleanField(default=True)
+    portal_enabled = models.BooleanField(default=True)
     is_portal_admin = models.BooleanField(default=False)
     portal_password_hash = models.CharField(max_length=255, blank=True)
     subscription_counter = models.PositiveBigIntegerField(default=0)

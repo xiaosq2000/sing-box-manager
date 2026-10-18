@@ -20,11 +20,13 @@ It assumes:
 - `20000:50000/udp`: Hysteria2 port-hopping range (only if enabled — see below)
 - `9443/tcp`: Naive
 - `47070/tcp`: local FastAPI service bound to `127.0.0.1`
-- `47071/tcp`: optional private Django admin, bound to `127.0.0.1`; no public nginx route
+- `47071/tcp`: optional Django service, bound to `127.0.0.1`
 
-The [control-plane foundation](CONTROL_PLANE.md) is opt-in. It adds OS-managed
-PostgreSQL and a separate hardened Django service on fresh or existing hosts.
-Current proxy users, credentials, and subscription routes remain unchanged.
+The [control plane](CONTROL_PLANE.md) is opt-in. It adds OS-managed PostgreSQL and
+a hardened Django service. With `authoritative: true`, PostgreSQL supplies the node's
+user roster, and Nginx forwards `/sub/` and `/install*` to Django. Admin remains tunnel-only.
+Returning to non-authoritative mode restores inventory-backed serving.
+Read the [mode-transition warnings](CONTROL_PLANE.md#disable-without-removing-data) first.
 Do not open the Django or database ports in ufw.
 
 When the control plane is enabled, deployment also installs `/usr/local/bin/sbm`.
@@ -200,6 +202,10 @@ pixi run sbm --config config/inventory/runtime.sops.yaml release
 pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-host
 ```
 
+For authoritative deployments, do not pass `--protocol`.
+Read [schema upgrades](CONTROL_PLANE.md#schema-upgrade) and
+[deployment ordering](REMOTE_DEPLOYMENT.md#what-the-command-does) before deployment.
+
 A deploy carries every `ssh` and `rsync` over a single shared connection and
 retries failed connection setup up to five times. No extra `~/.ssh/config` settings
 are needed. If a deploy fails partway through, code, config, or services may already
@@ -252,6 +258,9 @@ an exact subset of packaged inbounds; omitting it installs all available ones.
 The release omits Naive when `naive.users` is empty or every entry is disabled,
 because sing-box 1.14.2 rejects a Naive inbound without users. Explicitly selecting
 an omitted inbound fails before services are changed.
+
+Do not run an old packaged installer directly on a database-managed node. Use
+`sbm deploy` and follow the [control-plane guide](CONTROL_PLANE.md).
 
 The installer stages and checks the binary and config against the node's actual
 TLS files before stopping services. It stops and disables the three managed legacy

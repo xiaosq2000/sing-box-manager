@@ -60,8 +60,11 @@ control-plane = [
 "docs/CONTROL_PLANE.md" = [
   "@control-plane",
   ".github/workflows/ci.yml",
+  "scripts/server-install.sh",
+  "tests/test_server_install.py",
   "tests/test_deploy.py",
   "tests/test_remote_config.py",
+  "sing_box_manager/traffic_stats.py",
 ]
 
 "README.md" = [

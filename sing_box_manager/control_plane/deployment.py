@@ -78,11 +78,11 @@ def nginx_route_script(
         f'cp -p {site} "$work/site" || exit 1\n'
         f"cd {shlex.quote(remote_root)} && "
         f"PYTHONDONTWRITEBYTECODE=1 {python} -c {shlex.quote(py_code)} {site}\n"
-        "if [ $? -eq 0 ] && nginx -t; then\n"
-        "    systemctl reload nginx; status=$?\n"
+        "if [ $? -eq 0 ] && nginx -t && systemctl reload nginx; then\n"
+        "    status=0\n"
         "else\n"
         "    status=1\n"
-        f'    cp -p "$work/site" {site}\n'
+        f'    cp -p "$work/site" {site} && nginx -t && systemctl reload nginx\n'
         "fi\n"
         'rm -rf "$work"\n'
         "exit $status\n"
@@ -205,19 +205,41 @@ def validate_deployment(remote_root: str, settings: Settings) -> Path:
     return Path(remote_root) / settings.generated_root / "control-plane-static"
 
 
+def pause_node_sync(hostname: str, *, dry_run: bool = False) -> None:
+    """Disable the watcher and let an existing sync finish before node installation."""
+    wait = (
+        f"while state=$(systemctl show -p ActiveState --value {SYNC_SERVICE_NAME}); do "
+        'case "$state" in activating|active|deactivating) sleep 1;; *) exit 0;; esac; '
+        "done; exit 1"
+    )
+    _ssh(
+        hostname,
+        f"if sudo systemctl cat {SYNC_PATH_NAME} >/dev/null 2>&1; then "
+        f"sudo systemctl disable --now {SYNC_PATH_NAME} || exit 1; fi; "
+        f"if sudo systemctl cat {SYNC_SERVICE_NAME} >/dev/null 2>&1; then "
+        f"sudo timeout 60 sh -c {shlex.quote(wait)}; fi",
+        "Failed to pause node sync. Node installation stopped.",
+        dry_run=dry_run,
+    )
+
+
 def deploy(
     hostname: str, remote_root: str, settings: Settings, *, dry_run: bool = False
 ) -> None:
     control = settings.control_plane
-    if not control.enabled:
+    if not control.authoritative:
+        pause_node_sync(hostname, dry_run=dry_run)
         site = shlex.quote(NGINX_SITE_PATH)
         _ssh(
             hostname,
             f"if [ -f {site} ] && grep -q '# BEGIN sbm-control-plane' {site}; then "
-            f"sudo sed -i '/# BEGIN sbm-control-plane/,/# END sbm-control-plane/d' {site} && "
-            "sudo nginx -t && sudo systemctl reload nginx; fi && "
-            f"if sudo systemctl cat {SYNC_PATH_NAME} >/dev/null 2>&1; then "
-            f"sudo systemctl disable --now {SYNC_PATH_NAME}; fi && "
+            f"sudo sh -c {shlex.quote(nginx_route_script(remote_root))}; fi",
+            "Failed to restore legacy subscription routes. Check nginx on the server.",
+            dry_run=dry_run,
+        )
+    if not control.enabled:
+        _ssh(
+            hostname,
             f"if sudo systemctl cat {SERVICE_NAME} >/dev/null 2>&1; then "
             f"sudo systemctl disable --now {SERVICE_NAME}; fi",
             "Failed to disable the control-plane service. The database is retained.",
@@ -338,6 +360,6 @@ def deploy(
         _ssh(
             hostname,
             f"sudo sh -c {shlex.quote(nginx_route_script(remote_root, NGINX_SITE_PATH, control.port))}",
-            "Failed to switch nginx subscription routes to the control plane; the site was restored.",
+            "Failed to switch nginx subscription routes. Check nginx on the server.",
             dry_run=dry_run,
         )
