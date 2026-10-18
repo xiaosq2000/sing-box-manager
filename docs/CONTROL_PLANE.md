@@ -46,7 +46,7 @@ control_plane:
 ```
 
 Set `control_plane.authoritative: true` after importing accounts so every `sbm deploy`
-automatically runs `control-plane --action sync-node` (applying PostgreSQL-managed
+automatically runs `control-plane sync-node` (applying PostgreSQL-managed
 accounts to `sing-box.service`), enables `sing-box-manager-sync.path` (so saving or
 deleting accounts in Django Admin automatically triggers a `sing-box` config reload),
 and routes Nginx `/sub/` and `/install*` requests to the control plane.
@@ -66,6 +66,46 @@ pixi run sbm --config /path/to/runtime.sops.yaml release
 pixi run sbm --config /path/to/runtime.sops.yaml deploy --hostname vpn-host
 ```
 
+## Command syntax and VPS wrapper
+
+Use `sbm control-plane ACTION`. Omitting the action runs `check`.
+The `--action ACTION` form remains supported for scripts and systemd units.
+Use one action form per command, not both.
+
+| Concise action    | Full action        |
+| ----------------- | ------------------ |
+| `createsuperuser` | `create-admin`     |
+| `import`          | `import-inventory` |
+| `sync`            | `sync-node`        |
+
+Other actions are `migrate`, `collect-static`, `serve`, `health`, and `check`.
+Both action forms accept concise and full names.
+
+When the control plane is enabled, deployment installs `/usr/local/bin/sbm` as a
+root-owned POSIX shell script with mode `0755`. The wrapper:
+
+- changes directory to the deployment root (`/opt/sing-box-manager` by default)
+- executes `<remote-root>/.pixi/envs/default/bin/python -m sing_box_manager`
+- exports `SBM_CONFIG=<remote-root>/config/inventory/runtime.yaml` only when `SBM_CONFIG` is unset
+- exports `PYTHONDONTWRITEBYTECODE=1` to prevent writes to the root-owned source tree
+- passes all command arguments unchanged
+
+A deployment with `--remote-root` writes that root into the wrapper.
+An explicit global `--config PATH` overrides `SBM_CONFIG`.
+`--skip-code` leaves the wrapper unchanged. Disabling the control plane retains
+an installed wrapper and the database.
+
+From a workstation, select your local inventory and use `--remote` to run an action
+on the VPS. Both concise and full names support `--remote-root`:
+
+```sh
+pixi run sbm --config /path/to/runtime.sops.yaml control-plane createsuperuser --remote vpn-host
+pixi run sbm --config /path/to/runtime.sops.yaml control-plane sync-node --remote vpn-host --remote-root /srv/sing-box-manager
+```
+
+Remote actions use the deployed runtime inventory. They run as `sbm`, except
+`collect-static`, `sync`, and `sync-node`, which run as root.
+
 ## Account import, admin management, and node sync
 
 To idempotently import accounts, protocol credentials, and existing SQLite reset
@@ -73,8 +113,7 @@ counters from the runtime configuration into PostgreSQL (and verify rendered
 server/client config parity in one transaction):
 
 ```sh
-sudo -u sbm .pixi/envs/default/bin/python -m sing_box_manager \
-  --config config/inventory/runtime.yaml control-plane --action import-inventory
+sudo -u sbm sbm control-plane import
 ```
 
 In Django Admin (`/admin/`), the **Accounts** view manages `Account` rows and inline
@@ -90,8 +129,7 @@ To render the server `sing-box` config from PostgreSQL accounts, validate it wit
 restart `sing-box.service`:
 
 ```sh
-sudo .pixi/envs/default/bin/python -m sing_box_manager \
-  --config config/inventory/runtime.yaml control-plane --action sync-node
+sudo sbm control-plane sync
 ```
 
 ## Create an operator and open the admin
@@ -100,7 +138,7 @@ Create the first account from an interactive terminal. The command prompts for t
 password. Do not put passwords in command arguments or environment variables.
 
 ```sh
-ssh -t vpn-host 'cd /opt/sing-box-manager && sudo -u sbm env PYTHONDONTWRITEBYTECODE=1 .pixi/envs/default/bin/python -m sing_box_manager --config config/inventory/runtime.yaml control-plane --action create-admin'
+ssh -t vpn-host 'sudo -u sbm sbm control-plane createsuperuser'
 ```
 
 Open a tunnel from your workstation:
@@ -120,12 +158,11 @@ The custom Django user model is the starting point for the later ownership cutov
 For a manual readiness check on the server:
 
 ```sh
-cd /opt/sing-box-manager
-sudo -u sbm .pixi/envs/default/bin/python -m sing_box_manager --config config/inventory/runtime.yaml control-plane --action health
+sudo -u sbm sbm control-plane health
 sudo systemctl status sing-box-manager-control-plane.service
 ```
 
-Other explicit actions are `check`, `migrate`, `collect-static`, and `serve`.
+Run database migrations as `sudo -u sbm sbm control-plane migrate`.
 Collect static files as root during deployment. The service account must not write
 those files or the deployed source tree.
 
@@ -174,7 +211,8 @@ The test environment supplies PostgreSQL 17. Tests start an isolated cluster wit
 no TCP listener and a private socket directory. Its temporary authentication rules
 are fixtures, not production configuration. Tests cover migrations, admin access,
 CSRF and host checks, static files, repeat provisioning, database privileges,
-backup restoration, and disabled-state retention. They do not contact a live VPS.
+backup restoration, action aliases, the deployed wrapper, and disabled-state
+retention. They do not contact a live VPS.
 CI requires these real-database checks. It also runs a native systemd deployment
 smoke test on a disposable GitHub runner. That test checks production peer
 authentication, read-only assets, repeat deployment, and disablement.

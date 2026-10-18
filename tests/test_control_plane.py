@@ -1,15 +1,20 @@
 """Fixture-only settings, lifecycle, and deployment checks."""
 
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
+from typing import get_args
 
 import pytest
 import yaml
 from pydantic import ValidationError
 
 from sing_box_manager.cli import main
-from sing_box_manager.control_plane import deployment
+from sing_box_manager.control_plane import deployment, runner
 from sing_box_manager.control_plane.database import provision_sql
-from sing_box_manager.control_plane.runner import run
+from sing_box_manager.control_plane.runner import Action, normalize_action, run
 from sing_box_manager.provision import _derive_remote_config
 from sing_box_manager.remote_config import publish_runtime_config
 from sing_box_manager.settings import (
@@ -61,11 +66,51 @@ def test_disabled_or_unconfigured_operations_fail_before_loading_django(settings
         run("migrate", settings)
 
 
-def test_control_plane_cli_requires_config(monkeypatch):
+@pytest.mark.parametrize("args", [["check"], ["--action", "check"]])
+def test_control_plane_cli_requires_config(monkeypatch, args):
     monkeypatch.delenv("SBM_CONFIG", raising=False)
     with pytest.raises(SystemExit) as exit:
-        main(["control-plane", "--action", "check"])
+        main(["control-plane", *args])
     assert exit.value.code == 1
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    [
+        ("createsuperuser", "create-admin"),
+        ("import", "import-inventory"),
+        ("sync", "sync-node"),
+    ],
+)
+def test_action_aliases(alias, canonical):
+    assert normalize_action(alias) == canonical
+    assert normalize_action(canonical) == canonical
+
+
+@pytest.mark.parametrize(
+    "action",
+    [action for action in get_args(Action) if action not in {"serve", "health"}],
+)
+def test_runner_normalizes_actions_before_django_dispatch(monkeypatch, action):
+    import django
+
+    calls = []
+    settings = Settings(
+        config_path=Path("/fixture/runtime.yaml"),
+        control_plane=ControlPlaneSettings(enabled=True, secret_key="fixture-key-" * 6),
+    )
+    for name in ("SBM_CONFIG", "DJANGO_SETTINGS_MODULE", "PYTHONDONTWRITEBYTECODE"):
+        monkeypatch.setenv(name, "fixture-original-value")
+    monkeypatch.setattr(django, "setup", lambda: None)
+    monkeypatch.setattr(
+        runner,
+        "_run_django_action",
+        lambda action, runtime: calls.append((action, runtime)),
+    )
+
+    run(action, settings)
+
+    assert calls == [(normalize_action(action), settings)]
 
 
 def test_remote_config_generates_and_preserves_separate_key(tmp_path, monkeypatch):
@@ -128,6 +173,11 @@ def test_enabled_deployment_provisions_migrates_starts_and_checks(monkeypatch):
         "/opt/sing-box-manager",
         Settings(control_plane=ControlPlaneSettings(enabled=True)),
     )
+    wrapper = next(
+        event for event in events if event[:2] == ("write", deployment.WRAPPER_PATH)
+    )
+    assert wrapper[2] == deployment.wrapper_script("/opt/sing-box-manager")
+    assert wrapper[3] == {"mode": "0755", "dry_run": False}
     commands = [event[1] for event in events if event[0] == "command"]
     assert "postgresql-client" in commands[0]
     assert "ON_ERROR_STOP=1" in commands[1]
@@ -222,3 +272,51 @@ def test_dry_run_marks_every_mutating_step(monkeypatch):
     for event in events:
         if event[0] != "os":
             assert event[-1]["dry_run"] is True
+
+
+@pytest.mark.parametrize(
+    "config_override", [None, "", "/fixture/alternate config.yaml"]
+)
+def test_wrapper_executes_in_deploy_root_and_preserves_config(
+    tmp_path, config_override
+):
+    root = tmp_path / 'manager \'with spaces $and "quotes"'
+    python = root / ".pixi/envs/default/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "print(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(), "
+        "'config': os.environ['SBM_CONFIG'], "
+        "'bytecode': os.environ['PYTHONDONTWRITEBYTECODE'], 'pid': os.getpid()}))\n"
+        "sys.exit(7)\n"
+    )
+    python.chmod(0o755)
+    wrapper = tmp_path / "sbm"
+    wrapper.write_text(deployment.wrapper_script(str(root)))
+    wrapper.chmod(0o755)
+    env = {"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "0"}
+    if config_override is not None:
+        env["SBM_CONFIG"] = config_override
+    args = ["control-plane", "createsuperuser", "a b", "*", "$(exit 99)"]
+
+    process = subprocess.Popen(
+        [str(wrapper), *args],
+        cwd=tmp_path,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stdout, stderr = process.communicate(timeout=10)
+
+    assert process.returncode == 7, stderr
+    assert json.loads(stdout) == {
+        "argv": ["-m", "sing_box_manager", *args],
+        "cwd": str(root),
+        "config": str(root / "config/inventory/runtime.yaml")
+        if config_override is None
+        else config_override,
+        "bytecode": "1",
+        "pid": process.pid,
+    }

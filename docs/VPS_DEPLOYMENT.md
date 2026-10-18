@@ -1,5 +1,7 @@
 # VPS Deployment
 
+Checked on 2026-10-18.
+
 This is the primary deployment path for `sing-box-manager`.
 
 It assumes:
@@ -24,6 +26,13 @@ The [control-plane foundation](CONTROL_PLANE.md) is opt-in. It adds OS-managed
 PostgreSQL and a separate hardened Django service on fresh or existing hosts.
 Current proxy users, credentials, and subscription routes remain unchanged.
 Do not open the Django or database ports in ufw.
+
+When the control plane is enabled, deployment also installs `/usr/local/bin/sbm`.
+It uses the deployed Python environment and runtime inventory from any working
+directory. For example, run `sudo -u sbm sbm control-plane createsuperuser` to
+create an operator, or `sudo sbm control-plane sync` to apply database-managed
+accounts to the node. See [command syntax and the wrapper](CONTROL_PLANE.md#command-syntax-and-vps-wrapper)
+for aliases and configuration overrides.
 
 ## Hysteria2 Port Hopping (optional)
 

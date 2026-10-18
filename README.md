@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-13.
+Checked on 2026-10-18.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -140,6 +140,10 @@ or check out config state with git.
 Every `sbm` operation requires `--config <path>` or exported `SBM_CONFIG`. Put the
 global `--config` option before the subcommand. `--help` works without a config.
 Use the same inventory for a release build and its deploy.
+When the control plane is enabled, deployment installs `/usr/local/bin/sbm` on
+the VPS. This wrapper sets `SBM_CONFIG` to the deployed runtime inventory if unset,
+changes to the deployment root, and disables Python bytecode writes.
+An explicit `--config` still overrides `SBM_CONFIG`.
 
 Build release artifacts:
 
@@ -187,6 +191,28 @@ Deploy uses `rsync` over SSH, and Pixi provides the local `rsync` binary. It shi
 the code and existing release; it does not build a release. See the
 [deploy options](docs/REMOTE_DEPLOYMENT.md#command) for protocol selection, custom
 paths, bootstrap email, and dry runs.
+
+Manage the control plane on the VPS after deployment:
+
+```sh
+sudo -u sbm sbm control-plane migrate
+sudo -u sbm sbm control-plane createsuperuser
+sudo -u sbm sbm control-plane import
+sudo sbm control-plane sync
+```
+
+The full action names `create-admin`, `import-inventory`, and `sync-node` also work.
+Other actions are `collect-static`, `serve`, `health`, and `check`.
+Omitting the action runs `check`. Existing `control-plane --action ACTION` commands
+remain supported. Use one action form per command.
+
+From a workstation, both concise and full action names support remote execution:
+
+```sh
+pixi run sbm --config /path/to/runtime.sops.yaml control-plane sync --remote vpn-host --remote-root /opt/sing-box-manager
+```
+
+See [the control-plane guide](docs/CONTROL_PLANE.md) for permissions and recovery.
 
 ## Development
 

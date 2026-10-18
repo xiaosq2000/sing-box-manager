@@ -18,6 +18,7 @@ import psycopg
 import yaml
 
 from sing_box_manager.control_plane.database import provision_sql
+from sing_box_manager.control_plane.deployment import wrapper_script
 
 ROOT = Path(__file__).parents[1]
 
@@ -136,7 +137,7 @@ def config(pg, tmp_path, database):
     return path, port, env
 
 
-def cli(path, env, action):
+def cli(path, env, action, *, legacy=False):
     return subprocess.run(
         [
             sys.executable,
@@ -145,7 +146,7 @@ def cli(path, env, action):
             "--config",
             str(path),
             "control-plane",
-            "--action",
+            *(["--action"] if legacy else []),
             action,
         ],
         cwd=ROOT,
@@ -216,7 +217,7 @@ print('ok')
     )
     assert output.strip() == "ok"
     assert psql(pg, "postgres", provision_sql("sbm_fixture")).returncode == 0
-    assert cli(path, env, "migrate").returncode == 0
+    assert cli(path, env, "migrate", legacy=True).returncode == 0
     migration_check = subprocess.run(
         [sys.executable, "-m", "django", "makemigrations", "--check", "--dry-run"],
         cwd=ROOT,
@@ -322,7 +323,6 @@ def test_real_http_service_and_collected_admin_assets(postgres, tmp_path):
                 "--config",
                 str(path),
                 "control-plane",
-                "--action",
                 "serve",
             ],
             cwd=ROOT,
@@ -407,7 +407,8 @@ def test_real_http_service_and_collected_admin_assets(postgres, tmp_path):
             with pytest.raises(urllib.error.HTTPError) as error:
                 opener.open(request)
             assert error.value.code == 400
-            assert cli(path, env, "create-admin").returncode == 1
+            assert cli(path, env, "create-admin", legacy=True).returncode == 1
+            assert cli(path, env, "createsuperuser").returncode == 1
             with psycopg.connect(
                 host=str(pg["sockets"]), user="sbm", dbname="sbm_http_fixture"
             ) as connection:
@@ -425,6 +426,56 @@ def test_real_http_service_and_collected_admin_assets(postgres, tmp_path):
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=10)
+
+
+def test_deployed_wrapper_runs_real_cli_and_migrations(postgres, tmp_path):
+    pg = postgres
+    assert psql(pg, "postgres", provision_sql("sbm_wrapper_fixture")).returncode == 0
+    path, _, _ = config(pg, tmp_path, "sbm_wrapper_fixture")
+    root = tmp_path / "deployed manager"
+    interpreter = root / ".pixi/envs/default/bin/python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    (root / "sing_box_manager").symlink_to(
+        ROOT / "sing_box_manager", target_is_directory=True
+    )
+    runtime = root / "config/inventory/runtime.yaml"
+    runtime.parent.mkdir(parents=True)
+    shutil.copyfile(path, runtime)
+    wrapper = tmp_path / "sbm"
+    wrapper.write_text(wrapper_script(str(root)))
+    wrapper.chmod(0o755)
+
+    def invoke(args, env=pg["env"]):
+        return subprocess.run(
+            [str(wrapper), *args],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    for args in (
+        ["control-plane", "migrate"],
+        ["control-plane", "--action", "migrate"],
+    ):
+        result = invoke(args)
+        assert result.returncode == 0, result.stderr
+    disabled = yaml.safe_load(path.read_text())
+    disabled["control_plane"]["enabled"] = False
+    path.write_text(yaml.safe_dump(disabled))
+    override_env = {**pg["env"], "SBM_CONFIG": str(path)}
+    assert invoke(["control-plane", "migrate"], override_env).returncode == 1
+    result = invoke(["--config", str(runtime), "control-plane", "check"], override_env)
+    assert result.returncode == 0, result.stderr
+    with psycopg.connect(
+        host=str(pg["sockets"]), user="sbm", dbname="sbm_wrapper_fixture"
+    ) as connection:
+        assert (
+            connection.execute("SELECT count(*) FROM django_migrations").fetchone()[0]
+            > 0
+        )
 
 
 def test_provisioning_refuses_other_owners_and_privileged_roles(postgres):
@@ -540,20 +591,40 @@ def test_inventory_import_subscriptions_admin_and_node_sync(postgres, tmp_path):
             },
             "trojan": {
                 "users": [
-                    {"username": "alice", "password": "alice-trojan-secret", "enabled": True},
-                    {"username": "bob", "password": "bob-trojan-secret", "enabled": True},
-                    {"username": "dave", "password": "dave-trojan-secret", "enabled": True},
+                    {
+                        "username": "alice",
+                        "password": "alice-trojan-secret",
+                        "enabled": True,
+                    },
+                    {
+                        "username": "bob",
+                        "password": "bob-trojan-secret",
+                        "enabled": True,
+                    },
+                    {
+                        "username": "dave",
+                        "password": "dave-trojan-secret",
+                        "enabled": True,
+                    },
                 ]
             },
             "hysteria2": {
                 "obfs_password": "fixture-obfs-password",
                 "users": [
-                    {"username": "alice", "password": "alice-hy2-secret", "enabled": True},
+                    {
+                        "username": "alice",
+                        "password": "alice-hy2-secret",
+                        "enabled": True,
+                    },
                 ],
             },
             "naive": {
                 "users": [
-                    {"username": "alice", "password": "alice-naive-secret", "enabled": True},
+                    {
+                        "username": "alice",
+                        "password": "alice-naive-secret",
+                        "enabled": True,
+                    },
                 ]
             },
         }
@@ -574,7 +645,7 @@ def test_inventory_import_subscriptions_admin_and_node_sync(postgres, tmp_path):
 
     # Repeat import is idempotent and never lowers subscription_counter.
     sub_db.unlink()
-    imported_again = cli(path, env, "import-inventory")
+    imported_again = cli(path, env, "import")
     assert imported_again.returncode == 0, imported_again.stderr
 
     output = python(

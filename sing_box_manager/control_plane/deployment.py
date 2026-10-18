@@ -20,6 +20,7 @@ from sing_box_manager.provision import (
 )
 from sing_box_manager.settings import Settings
 
+WRAPPER_PATH = "/usr/local/bin/sbm"
 SERVICE_NAME = "sing-box-manager-control-plane.service"
 SYNC_SERVICE_NAME = "sing-box-manager-sync.service"
 SYNC_PATH_NAME = "sing-box-manager-sync.path"
@@ -144,6 +145,29 @@ def sync_path_unit(remote_root: str) -> str:
     )
 
 
+def wrapper_script(remote_root: str) -> str:
+    python = shlex.quote(str(Path(remote_root) / REMOTE_PIXI_PYTHON_RELATIVE_PATH))
+    config = shlex.quote(str(Path(remote_root) / "config/inventory/runtime.yaml"))
+    return (
+        "#!/bin/sh\n"
+        "set -eu\n"
+        f"export SBM_CONFIG=${{SBM_CONFIG-{config}}}\n"
+        "export PYTHONDONTWRITEBYTECODE=1\n"
+        f"cd {shlex.quote(remote_root)}\n"
+        f'exec {python} -m sing_box_manager "$@"\n'
+    )
+
+
+def install_wrapper(hostname: str, remote_root: str, *, dry_run: bool = False) -> None:
+    _ssh_write(
+        hostname,
+        WRAPPER_PATH,
+        wrapper_script(remote_root),
+        mode="0755",
+        dry_run=dry_run,
+    )
+
+
 def management_command(
     remote_root: str, action: str, *, service_user: bool = True
 ) -> str:
@@ -203,6 +227,7 @@ def deploy(
 
     static_root = validate_deployment(remote_root, settings)
     _require_ubuntu_debian(hostname)
+    install_wrapper(hostname, remote_root, dry_run=dry_run)
     _ssh(
         hostname,
         "if [ \"$(dpkg-query -W -f='${Status}\\n' postgresql postgresql-client "

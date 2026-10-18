@@ -1,6 +1,6 @@
 # Remote Deployment
 
-Checked on 2026-10-12.
+Checked on 2026-10-18.
 
 `sbm deploy` ships two things in one command: the project **code** and the active
 **release artifacts**. The remote is a plain directory, not a git checkout — it needs
@@ -116,8 +116,10 @@ appear on stderr.
    forever by systemd without ever failing a deploy, so the domain breakdown would
    otherwise stop filling while everything else looked healthy
 1. when code sync is enabled, deploys the opt-in Django/PostgreSQL foundation and
-   checks readiness, or disables its service when configured off. Database data
-   remains intact. See [the control-plane guide](CONTROL_PLANE.md)
+   checks readiness, or disables its service when configured off. When enabled,
+   this step also installs `/usr/local/bin/sbm` with the selected deployment root
+   and a default `SBM_CONFIG` for server-local commands. Database data remains
+   intact. See [the control-plane guide](CONTROL_PLANE.md)
 1. only after those health checks, atomically publishes
    `config/generated/deployment-info.json` with the release identity and current UTC
    timestamp

@@ -8,9 +8,11 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any
 
 import uvicorn
+
+from sing_box_manager.control_plane.runner import Action, normalize_action
 
 tyro: Any = importlib.import_module("tyro")
 
@@ -88,17 +90,10 @@ class StatsStreamCommand:
 class ControlPlaneCommand:
     """Manage the Django control plane, account imports, and node config sync."""
 
-    action: Literal[
-        "serve",
-        "migrate",
-        "check",
-        "create-admin",
-        "createsuperuser",
-        "collect-static",
-        "health",
-        "import-inventory",
-        "sync-node",
-    ] = "check"
+    action: Annotated[Action | None, tyro.conf.Positional] = None
+    """Action to run. Defaults to check. Aliases: createsuperuser, import, sync."""
+    action_flag: Annotated[Action | None, tyro.conf.arg(name="action")] = None
+    """Compatibility form of the positional action. Do not supply both forms."""
     remote: str | None = None
     """Run this control-plane action on the remote host over SSH."""
     remote_root: str = "/opt/sing-box-manager"
@@ -284,20 +279,24 @@ def _run_stats_stream(_: StatsStreamCommand, settings: Settings) -> None:
 
 
 def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None:
+    if command.action is not None and command.action_flag is not None:
+        print("Use either a positional action or --action, not both.", file=sys.stderr)
+        raise SystemExit(2)
+    action = normalize_action(command.action_flag or command.action or "check")
     if command.remote is not None:
         from sing_box_manager.control_plane.deployment import management_command
         from sing_box_manager.deploy import DeploymentError, run_remote_command
 
-        service_user = command.action not in {"collect-static", "sync-node"}
+        service_user = action not in {"collect-static", "sync-node"}
         try:
             run_remote_command(
                 command.remote,
                 management_command(
                     command.remote_root,
-                    command.action,
+                    action,
                     service_user=service_user,
                 ),
-                f"Failed to run control-plane {command.action} on {command.remote}.",
+                f"Failed to run control-plane {action} on {command.remote}.",
             )
         except DeploymentError as exc:
             print(str(exc), file=sys.stderr)
@@ -307,7 +306,7 @@ def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None
     from sing_box_manager.control_plane.runner import run
 
     try:
-        run(command.action, settings)
+        run(action, settings)
     except Exception as exc:
         print(
             "Control-plane operation failed. Check the configuration and local database.",

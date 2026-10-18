@@ -1,30 +1,44 @@
 """Explicit management operations; ordinary release commands never touch Django."""
 
+from __future__ import annotations
+
 import json
 import os
 import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from sing_box_manager.settings import Settings
+if TYPE_CHECKING:
+    from sing_box_manager.settings import Settings
 
-Action = Literal[
+CanonicalAction = Literal[
     "serve",
     "migrate",
     "check",
     "create-admin",
-    "createsuperuser",
     "collect-static",
     "health",
     "import-inventory",
     "sync-node",
 ]
+Action = Literal[CanonicalAction, "createsuperuser", "import", "sync"]
 MIGRATION_LOCK = 1396854083
 
 
+def normalize_action(action: Action) -> CanonicalAction:
+    if action == "createsuperuser":
+        return "create-admin"
+    if action == "import":
+        return "import-inventory"
+    if action == "sync":
+        return "sync-node"
+    return action
+
+
 def run(action: Action, runtime: Settings) -> None:
+    action = normalize_action(action)
     control = runtime.control_plane
     if not control.enabled:
         raise ValueError("The control plane is disabled")
@@ -68,7 +82,7 @@ def run(action: Action, runtime: Settings) -> None:
     _run_django_action(action, runtime)
 
 
-def _run_django_action(action: Action, runtime: Settings) -> None:
+def _run_django_action(action: CanonicalAction, runtime: Settings) -> None:
     from django.core.management import call_command
     from django.db import connection
 
@@ -83,7 +97,7 @@ def _run_django_action(action: Action, runtime: Settings) -> None:
                 cursor.execute("SELECT pg_advisory_unlock(%s)", [MIGRATION_LOCK])
     elif action == "collect-static":
         call_command("collectstatic", interactive=False, verbosity=0)
-    elif action in {"create-admin", "createsuperuser"}:
+    elif action == "create-admin":
         if not sys.stdin.isatty():
             raise ValueError("create-admin requires an interactive terminal")
         call_command("createsuperuser", interactive=True)
