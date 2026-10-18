@@ -14,6 +14,7 @@ from pathlib import Path
 from django.db import transaction
 
 from sing_box_manager.control_plane.models import Account, Credential
+from sing_box_manager.deploy import SERVICE_USER
 from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
 from sing_box_manager.release.platforms import MOBILE_TUN_PROFILE
 from sing_box_manager.release.profiles import build_client_profile, build_server_config
@@ -384,6 +385,27 @@ def build_account_mobile_profile(
     )
 
 
+def _build_inventory_as_db_user(runtime: Settings) -> RuntimeInventory:
+    """Drop effective privileges to the DB peer role when invoked as root."""
+    if os.geteuid() != 0:
+        return build_inventory_from_db(runtime)
+    import pwd
+
+    from django.db import connections
+
+    egid = os.getegid()
+    pw = pwd.getpwnam(SERVICE_USER)
+    connections.close_all()
+    os.setegid(pw.pw_gid)
+    os.seteuid(pw.pw_uid)
+    try:
+        return build_inventory_from_db(runtime)
+    finally:
+        connections.close_all()
+        os.seteuid(0)
+        os.setegid(egid)
+
+
 def sync_node_config(
     runtime: Settings,
     *,
@@ -399,7 +421,7 @@ def sync_node_config(
     resolved_binary = binary_path or Path(
         os.environ.get("SBM_SING_BOX_BINARY", str(DEFAULT_SING_BOX_BINARY_PATH))
     )
-    inventory = build_inventory_from_db(runtime)
+    inventory = _build_inventory_as_db_user(runtime)
     server_config = build_server_config(inventory, runtime.traffic_stats)
     rendered = json.dumps(server_config, indent=2, sort_keys=True) + "\n"
 
