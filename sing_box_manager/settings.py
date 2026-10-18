@@ -360,11 +360,20 @@ class ControlPlaneSettings(StrictModel):
     """Private, opt-in Django service with a local PostgreSQL database."""
 
     enabled: bool = Field(default=False, strict=True)
+    authoritative: bool = Field(default=False, strict=True)
     port: int = Field(default=47071, ge=1024, le=65535, strict=True)
     secret_key: str | None = Field(default=None, min_length=50, repr=False)
     database_name: str = "sbm_control_plane"
     database_socket_dir: Path = Path("/var/run/postgresql")
     database_port: int = Field(default=5432, ge=1, le=65535, strict=True)
+
+    @model_validator(mode="after")
+    def validate_authoritative_requires_enabled(self) -> Self:
+        if self.authoritative and not self.enabled:
+            raise ValueError(
+                "control_plane.authoritative requires control_plane.enabled"
+            )
+        return self
 
     @field_validator("database_name")
     @classmethod

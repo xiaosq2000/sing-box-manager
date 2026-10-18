@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import os
 from pathlib import Path
 
@@ -14,8 +15,11 @@ from django.http import (
 )
 from django.views.decorators.http import require_safe
 
+from sing_box_manager.control_plane.models import Account
 from sing_box_manager.control_plane.services import (
+    account_protocols,
     build_account_envelope,
+    build_account_mobile_profile,
     find_db_subscriber,
 )
 from sing_box_manager.release import artifacts
@@ -28,14 +32,34 @@ from sing_box_manager.release.client_downloads import (
 from sing_box_manager.release.renderers import SUPPORTED_CLIENT_OS
 from sing_box_manager.settings import Settings, load_settings
 from sing_box_manager.subscription import (
+    PROTOCOLS,
     encode_envelope,
     minimum_sing_box_version,
     parse_version,
 )
+from sing_box_manager.traffic_stats import create_traffic_stats_provider
 
 INSTALL_SCRIPT = (
     Path(__file__).resolve().parent.parent / "web" / "client" / "install.sh"
 )
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+class LoopbackAdminMiddleware:
+    """Keep /admin/ reachable only over direct loopback or an SSH tunnel."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith("/admin/"):
+            host = request.get_host().split(":", 1)[0].strip("[]").lower()
+            if host not in LOOPBACK_HOSTS or any(
+                header in request.META
+                for header in ("HTTP_X_FORWARDED_FOR", "HTTP_X_REAL_IP")
+            ):
+                return HttpResponseNotFound()
+        return self.get_response(request)
 
 
 def _runtime() -> Settings:
@@ -57,6 +81,14 @@ def _client_downloads(runtime: Settings) -> ClientDownloads | None:
     return load_client_downloads(release_dir)
 
 
+def _usage_header(runtime: Settings, username: str) -> str | None:
+    provider = create_traffic_stats_provider(runtime)
+    if provider is None:
+        return None
+    summary = provider.get_user_summary(username)
+    return f"upload={summary.upload_bytes}; download={summary.download_bytes}"
+
+
 def _matches_etag(if_none_match: str | None, etag: str) -> bool:
     if if_none_match is None:
         return False
@@ -66,26 +98,9 @@ def _matches_etag(if_none_match: str | None, etag: str) -> bool:
     return etag in candidates or "*" in candidates
 
 
-@require_safe
-def health(_request):
-    """Report readiness without disclosing database or exception details."""
-    try:
-        executor = MigrationExecutor(connection)
-        pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
-        if pending or not staticfiles_storage.exists(
-            staticfiles_storage.stored_name("admin/css/base.css")
-        ):
-            return JsonResponse({"status": "not-ready"}, status=503)
-    except (DatabaseError, ValueError):
-        return JsonResponse({"status": "not-ready"}, status=503)
-    return JsonResponse({"status": "ok"})
-
-
-def _validate_subscription_query(
+def _validate_sbc_query(
     request, runtime: Settings
 ) -> tuple[str | None, JsonResponse | None]:
-    if request.GET.get("format") != "sbc":
-        return None, JsonResponse({"detail": "format must be sbc"}, status=400)
     os_name = request.GET.get("os")
     if os_name not in SUPPORTED_CLIENT_OS:
         return None, JsonResponse(
@@ -111,19 +126,25 @@ def _validate_subscription_query(
     return os_name, None
 
 
-@require_safe
-def subscription(request, token: str):
-    """Serve the sbc subscription config envelope from PostgreSQL accounts."""
-    runtime = _runtime()
-    secret = runtime.web.subscription_secret
-    account = find_db_subscriber(secret, token) if secret else None
-    if account is None:
-        return HttpResponseNotFound()
-
-    os_name, error_response = _validate_subscription_query(request, runtime)
+def _render_subscription_payload(
+    request, account: Account, runtime: Settings
+) -> tuple[dict | None, JsonResponse | None]:
+    output_format = request.GET.get("format")
+    if output_format in (None, "mobile"):
+        try:
+            profile = build_account_mobile_profile(
+                account, runtime, protocol=request.GET.get("protocol")
+            )
+        except ValueError as exc:
+            return None, JsonResponse({"detail": str(exc)}, status=400)
+        return profile, None
+    if output_format != "sbc":
+        return None, JsonResponse(
+            {"detail": "format must be sbc or mobile"}, status=400
+        )
+    os_name, error_response = _validate_sbc_query(request, runtime)
     if error_response is not None or os_name is None:
-        return error_response
-
+        return None, error_response
     downloads = _client_downloads(runtime)
     envelope = build_account_envelope(
         account,
@@ -131,18 +152,106 @@ def subscription(request, token: str):
         os_name=os_name,
         sbc_version=None if downloads is None else downloads.sbc_version,
     )
-    if envelope is None:
+    return envelope, None
+
+
+@require_safe
+def health(_request):
+    """Report readiness without disclosing database or exception details."""
+    try:
+        executor = MigrationExecutor(connection)
+        pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
+        if pending or not staticfiles_storage.exists(
+            staticfiles_storage.stored_name("admin/css/base.css")
+        ):
+            return JsonResponse({"status": "not-ready"}, status=503)
+    except (DatabaseError, ValueError):
+        return JsonResponse({"status": "not-ready"}, status=503)
+    return JsonResponse({"status": "ok"})
+
+
+@require_safe
+def subscription(request, token: str):
+    """Serve the sbc envelope or mobile profile from PostgreSQL accounts."""
+    runtime = _runtime()
+    secret = runtime.web.subscription_secret
+    account = find_db_subscriber(secret, token) if secret else None
+    if account is None:
         return HttpResponseNotFound()
 
-    body, etag = encode_envelope(envelope)
+    payload, error_response = _render_subscription_payload(request, account, runtime)
+    if error_response is not None:
+        return error_response
+    if payload is None:
+        return HttpResponseNotFound()
+
+    body, etag = encode_envelope(payload)
     headers = {
         "ETag": etag,
         "Referrer-Policy": "no-referrer",
         "Cache-Control": "private, no-store",
     }
+    usage = _usage_header(runtime, str(account.username))
+    if usage is not None:
+        headers["subscription-userinfo"] = usage
     if _matches_etag(request.headers.get("If-None-Match"), etag):
         return HttpResponse(status=304, headers=headers)
     return HttpResponse(body, content_type="application/json", headers=headers)
+
+
+@require_safe
+def subscription_page(request, token: str):
+    """Serve the browser user page for a valid subscription link."""
+    runtime = _runtime()
+    secret = runtime.web.subscription_secret
+    account = find_db_subscriber(secret, token) if secret else None
+    if account is None:
+        return HttpResponseNotFound()
+    protocols = account_protocols(account, runtime)
+    held = [name for name in PROTOCOLS if getattr(protocols, name) is not None]
+    if not held:
+        return HttpResponseNotFound()
+
+    scheme = (
+        "https"
+        if request.is_secure() or request.headers.get("X-Forwarded-Proto") == "https"
+        else request.scheme
+    )
+    origin = f"{scheme}://{request.get_host()}"
+    sub_url = html.escape(f"{origin}/sub/{token}")
+    unix_cmd = html.escape(f"curl -fsSL {origin}/install.sh | sh")
+    win_cmd = html.escape(f"& ([scriptblock]::Create((irm {origin}/install.ps1)))")
+    username = html.escape(str(account.username))
+    protocols_text = html.escape(", ".join(held))
+    usage = _usage_header(runtime, str(account.username))
+    usage_line = (
+        f"<p><strong>Usage:</strong> <code>{html.escape(usage)}</code></p>"
+        if usage
+        else ""
+    )
+    page = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Subscription</title>"
+        "<style>body{font-family:system-ui,sans-serif;max-width:44rem;margin:2rem auto;padding:0 1rem;line-height:1.5}"
+        "pre,code{background:#f4f4f5;padding:.2rem .4rem;border-radius:4px;overflow-x:auto}"
+        "pre{padding:.75rem}</style></head><body>"
+        f"<h1>Account: {username}</h1>"
+        f"<p><strong>Protocols:</strong> {protocols_text}</p>"
+        f"{usage_line}"
+        f"<h2>Subscription URL</h2><pre>{sub_url}</pre>"
+        f"<h2>Linux / macOS install</h2><pre>{unix_cmd}</pre>"
+        f"<h2>Windows PowerShell install</h2><pre>{win_cmd}</pre>"
+        "</body></html>"
+    )
+    return HttpResponse(
+        page,
+        content_type="text/html; charset=utf-8",
+        headers={
+            "Referrer-Policy": "no-referrer",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @require_safe

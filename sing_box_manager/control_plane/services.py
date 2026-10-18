@@ -13,7 +13,8 @@ from django.db import transaction
 
 from sing_box_manager.control_plane.models import Account, Credential
 from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
-from sing_box_manager.release.profiles import build_server_config
+from sing_box_manager.release.platforms import MOBILE_TUN_PROFILE
+from sing_box_manager.release.profiles import build_client_profile, build_server_config
 from sing_box_manager.release.renderers import SUPPORTED_CLIENT_OS
 from sing_box_manager.settings import (
     SUPPORTED_PROTOCOLS,
@@ -334,6 +335,27 @@ def build_account_envelope(
             default_route=DEFAULT_ROUTE,
         ),
     }
+
+
+def build_account_mobile_profile(
+    account: Account,
+    runtime: Settings,
+    *,
+    protocol: str | None = None,
+) -> dict | None:
+    """Build the mobile TUN sing-box config for a database Account."""
+    protocols = account_protocols(account, runtime)
+    held = [name for name in PROTOCOLS if getattr(protocols, name) is not None]
+    if not held:
+        return None
+    selected = protocol or (
+        runtime.default_protocol if runtime.default_protocol in held else held[0]
+    )
+    if selected not in held:
+        raise ValueError(f"Unsupported or unavailable protocol: {selected}")
+    return build_client_profile(
+        runtime.deployment, protocols, selected, MOBILE_TUN_PROFILE
+    )
 
 
 def sync_node_config(

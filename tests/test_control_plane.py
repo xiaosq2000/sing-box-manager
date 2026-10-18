@@ -49,6 +49,8 @@ def test_defaults_are_disabled_and_loopback_port_is_separate():
         ControlPlaneSettings(secret_key="short")
     with pytest.raises(ValidationError):
         ControlPlaneSettings(database_socket_dir=Path("relative"))
+    with pytest.raises(ValidationError, match="requires control_plane.enabled"):
+        ControlPlaneSettings(enabled=False, authoritative=True)
 
 
 @pytest.mark.parametrize(
@@ -143,6 +145,43 @@ def test_enabled_deployment_provisions_migrates_starts_and_checks(monkeypatch):
     assert "PYTHONDONTWRITEBYTECODE=1" in unit
     assert "--action serve" in unit
     assert "systemctl restart" in commands[-2]
+
+
+def test_authoritative_deployment_syncs_node_config_from_database(monkeypatch):
+    events = record_deployment(monkeypatch)
+    deployment.deploy(
+        "fixture-host",
+        "/opt/sing-box-manager",
+        Settings(control_plane=ControlPlaneSettings(enabled=True, authoritative=True)),
+    )
+    commands = [event[1] for event in events if event[0] == "command"]
+    actions = [
+        command.split("--action ", 1)[1].split()[0]
+        for command in commands
+        if "--action " in command
+    ]
+    assert actions == ["check", "migrate", "collect-static", "health", "sync-node"]
+    assert "update_nginx_site_text" in commands[-1]
+    assert "nginx -t" in commands[-1]
+
+
+def test_update_nginx_site_text_is_idempotent_and_reversible():
+    original = (
+        "server {\n"
+        "    listen 443 ssl;\n"
+        "    server_name vpn.example.com;\n"
+        "\n"
+        "    location / {\n"
+        "        proxy_pass http://127.0.0.1:8080;\n"
+        "    }\n"
+        "}\n"
+    )
+    routed = deployment.update_nginx_site_text(original, 47071)
+    assert "proxy_pass http://127.0.0.1:47071;" in routed
+    assert "location ~ ^/(sub/|install\\.sh$|install\\.ps1$|install/)" in routed
+    assert deployment.update_nginx_site_text(routed, 47071) == routed
+    reverted = deployment.update_nginx_site_text(routed, None)
+    assert reverted == original
 
 
 def test_disabled_deployment_only_disables_its_unit_and_retains_database(monkeypatch):

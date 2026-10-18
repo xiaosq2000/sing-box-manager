@@ -17,7 +17,20 @@ if not control.secret_key:
 
 SECRET_KEY = control.secret_key
 DEBUG = False
-ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+ALLOWED_HOSTS = list(
+    dict.fromkeys(
+        [
+            "127.0.0.1",
+            "localhost",
+            *(
+                [runtime.deployment_data.host]
+                if runtime.deployment_data is not None
+                else []
+            ),
+            *runtime.web.allowed_hosts,
+        ]
+    )
+)
 ROOT_URLCONF = "sing_box_manager.control_plane.urls"
 WSGI_APPLICATION = "sing_box_manager.control_plane.wsgi.application"
 AUTH_USER_MODEL = "control_plane.User"
@@ -33,6 +46,7 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "sing_box_manager.control_plane.views.LoopbackAdminMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

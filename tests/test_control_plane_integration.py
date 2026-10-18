@@ -626,6 +626,21 @@ assert client.get(
 assert client.get(f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.13.0").status_code == 409
 assert client.get(f"/sub/{alice_token}?format=raw&os=linux&sing-box=1.14.2").status_code == 400
 
+# Mobile remote profile and browser subscription page work on public Host, while /admin/ is 404 off loopback.
+public_client = Client(HTTP_HOST=runtime.deployment.host)
+assert public_client.get("/admin/").status_code == 404
+assert client.get("/admin/", HTTP_X_FORWARDED_FOR="203.0.113.5").status_code == 404
+mobile_resp = public_client.get(f"/sub/{alice_token}")
+assert mobile_resp.status_code == 200
+assert mobile_resp.json()["inbounds"][0]["type"] == "tun"
+assert public_client.get(f"/sub/{alice_token}?protocol=hysteria2").json()["outbounds"][0]["type"] == "hysteria2"
+assert public_client.get(f"/sub/{alice_token}?protocol=unknown").status_code == 400
+page_resp = public_client.get(f"/sub/{alice_token}/", HTTP_X_FORWARDED_PROTO="https")
+assert page_resp.status_code == 200
+assert f"https://{runtime.deployment.host}/sub/{alice_token}" in page_resp.content.decode()
+assert f"https://{runtime.deployment.host}/install.sh" in page_resp.content.decode()
+assert public_client.get(f"/sub/{carol_token}/").status_code == 404
+
 # Portal-only user carol can still fetch signed manifest files, while bob/dave cannot.
 assert client.get(f"/sub/{carol_token}/files/manifest.json").status_code == 200
 sbc_resp = client.get(f"/sub/{alice_token}/files/sbc/linux-amd64/sbc")

@@ -7,12 +7,14 @@ from sing_box_manager.control_plane.views import (
     install_sh,
     subscription,
     subscription_file,
+    subscription_page,
 )
 
 urlpatterns = [
     path("health/", health, name="health"),
     path("admin/", admin.site.urls),
     path("sub/<str:token>", subscription, name="subscription"),
+    path("sub/<str:token>/", subscription_page, name="subscription_page"),
     path(
         "sub/<str:token>/files/<path:name>",
         subscription_file,

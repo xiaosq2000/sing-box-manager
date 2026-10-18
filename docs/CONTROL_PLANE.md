@@ -9,17 +9,18 @@ and single-node `sing-box` configuration sync.
 
 ## Layout
 
-| Component      | Location or behavior                                                         |
-| -------------- | ---------------------------------------------------------------------------- |
-| Django         | `sing_box_manager/control_plane/`, served by Gunicorn                        |
-| Admin          | `http://127.0.0.1:47071/admin/`, through an SSH tunnel                       |
-| Subscriptions  | `/sub/<token>`, `/sub/<token>/files/<path>`, `/install.sh`, `/install.ps1`   |
-| Readiness      | `/health/`; checks database access, migrations, and an admin static asset    |
-| Service        | `sing-box-manager-control-plane.service`, running as `sbm`                   |
-| Database       | OS-managed PostgreSQL 14 or later; database `sbm_control_plane`              |
-| Database login | Local Unix socket, role `sbm`, peer authentication                           |
-| Static files   | Root-owned `config/generated/control-plane-static/`                          |
-| Models         | `User` (operators), `Account` (proxy users), `Credential` (protocol secrets) |
+| Component      | Location or behavior                                                                    |
+| -------------- | --------------------------------------------------------------------------------------- |
+| Django         | `sing_box_manager/control_plane/`, served by Gunicorn                                   |
+| Admin          | `http://127.0.0.1:47071/admin/`, through an SSH tunnel (returns 404 off loopback)       |
+| Subscriptions  | `/sub/<token>` (`sbc` & mobile), `/sub/<token>/` (browser page), `/sub/<token>/files/…` |
+| Installers     | `/install.sh`, `/install/linux.sh`, `/install/macos.sh`, `/install.ps1`                 |
+| Readiness      | `/health/`; checks database access, migrations, and an admin static asset               |
+| Service        | `sing-box-manager-control-plane.service`, running as `sbm`                              |
+| Database       | OS-managed PostgreSQL 14 or later; database `sbm_control_plane`                         |
+| Database login | Local Unix socket, role `sbm`, peer authentication                                      |
+| Static files   | Root-owned `config/generated/control-plane-static/`                                     |
+| Models         | `User` (operators), `Account` (proxy users), `Credential` (protocol secrets)            |
 
 Peer authentication uses the operating-system account (`sbm`) to identify a database
 client. No database password is needed. The database role has no superuser,
@@ -37,11 +38,17 @@ Add this block to the selected inventory:
 ```yaml
 control_plane:
   enabled: true
+  authoritative: false
   port: 47071
   database_name: sbm_control_plane
   database_socket_dir: /var/run/postgresql
   database_port: 5432
 ```
+
+Set `control_plane.authoritative: true` after importing accounts so every `sbm deploy`
+automatically runs `control-plane --action sync-node` (applying PostgreSQL-managed
+accounts to `sing-box.service`) and routes Nginx `/sub/` and `/install*` requests to
+the control plane.
 
 `secret_key` is optional for release and deploy. Deploy generates it when absent
 and preserves the server's key on later deployments, including disable/re-enable.

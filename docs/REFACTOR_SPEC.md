@@ -501,11 +501,13 @@ hosted installers. Keep the service working between these incremental PRs:
    reset counters in one transaction and verifies server/client config parity.
 3. **Admin management, subscription serving, and node sync.** Implemented locally in
    `sing_box_manager/control_plane/`. Operators manage `Account` and inline
-   `Credential` rows in Django Admin, hash new portal passwords, and reset
-   subscription links. Django serves `/sub/<token>`, `/sub/<token>/files/<path>`,
-   `/install.sh`, and `/install.ps1`. `control-plane --action sync-node` renders
-   the server config from PostgreSQL, checks it with `sing-box check`, and applies
-   it to `sing-box.service`.
+   `Credential` rows in Django Admin (restricted to direct loopback/SSH tunnel), hash
+   new portal passwords, and reset subscription links. Django serves `/sub/<token>`
+   (both `sbc` envelopes and mobile remote profiles with `subscription-userinfo`),
+   `/sub/<token>/` (browser user page), `/sub/<token>/files/<path>`, `/install.sh`,
+   and `/install.ps1`. `control-plane --action sync-node` (and `sbm deploy` when
+   `control_plane.authoritative: true`) renders the server config from PostgreSQL,
+   checks it with `sing-box check`, and applies it to `sing-box.service`.
 4. **Device management and ownership cutover.** Add account-authenticated enrollment,
    revocation, transactional slot checks, and per-user policies. Postgres becomes
    authoritative for users, devices, and policies. Later deploys cannot overwrite
