@@ -319,8 +319,12 @@ def deploy(
             SYNC_PATH_NAME,
             dry_run=dry_run,
         )
+        trigger = shlex.quote(
+            str(Path(remote_root) / "config/generated/node-sync.trigger")
+        )
         _ssh(
             hostname,
+            f"sudo install -o {SERVICE_USER} -g {SERVICE_USER} -m 0600 /dev/null {trigger} && "
             f"sudo systemctl daemon-reload && sudo systemctl enable --now {SYNC_PATH_NAME}",
             "Failed to enable the control-plane node sync watcher.",
             dry_run=dry_run,
