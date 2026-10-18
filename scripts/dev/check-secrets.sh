@@ -45,7 +45,12 @@ tar -xzf "$tmp/gitleaks.tar.gz" -C "$tmp" gitleaks
 
 # Fail closed if an allowlist accidentally hides new credentials in fixture files.
 mkdir -p "$tmp/control/tests"
-control_value=$(head -c 32 /dev/urandom | base64)
+# Use a high-entropy charset without vowels or punctuation to avoid
+# Gitleaks generic-api-key stopwords and leading non-alphanumeric characters.
+control_value=$(
+	set +o pipefail
+	LC_ALL=C tr -dc 'bcdfgjklnprstwzBCDFGJKLNPRSTWZ123456789' </dev/urandom | head -c 48
+)
 printf 'api_key = "%s"\n' "$control_value" >"$tmp/control/tests/test_inventory.py"
 control_status=0
 "$tmp/gitleaks" dir "$tmp/control" --config "$root/.gitleaks.toml" \
