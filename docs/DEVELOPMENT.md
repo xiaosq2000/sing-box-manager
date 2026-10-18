@@ -25,7 +25,7 @@ bash scripts/dev/check-secrets.sh
 
 The scanner is pinned by version and SHA-256 and redacts findings. Its narrow
 allowlists cover only reviewed non-secret values, including synthetic fixtures
-and one exact documentation fingerprint. A negative control checks that they do
+and exact documentation fingerprints. A negative control checks that they do
 not hide new credentials. Keep these safeguards
 and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 
