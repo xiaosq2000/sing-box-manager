@@ -1,46 +1,12 @@
-"""Session management and rate limiting for the web service."""
+"""Legacy machine-token compatibility and bounded password attempt tracking."""
 
 import hashlib
 import secrets
 import time
 
 
-class SessionManager:
-    """HMAC-based session token management."""
-
-    def __init__(self, secret: str, expiry_seconds: int = 3600) -> None:
-        self._secret = secret
-        self._expiry_seconds = expiry_seconds
-
-    def create_token(self, username: str) -> str:
-        """Create a signed session token for the given username."""
-        timestamp = str(int(time.time()))
-        token_data = f"{username}:{timestamp}:{self._secret}"
-        token_hash = hashlib.sha256(token_data.encode()).hexdigest()
-        return f"{username}:{timestamp}:{token_hash}"
-
-    def validate_token(self, token: str) -> str | None:
-        """Validate a session token and return the username, or None if invalid."""
-        try:
-            username, timestamp, token_hash = token.split(":", 2)
-            current_time = int(time.time())
-            token_age = current_time - int(timestamp)
-
-            if token_age > self._expiry_seconds:
-                return None
-
-            expected_data = f"{username}:{timestamp}:{self._secret}"
-            expected_hash = hashlib.sha256(expected_data.encode()).hexdigest()
-
-            if secrets.compare_digest(token_hash, expected_hash):
-                return username
-            return None
-        except Exception:
-            return None
-
-
 class MachineTokenManager:
-    """HMAC-based long-lived machine token for CLI authentication."""
+    """Legacy signed machine token for CLI authentication."""
 
     def __init__(self, secret: str, expiry_seconds: int = 365 * 86400) -> None:
         self._secret = secret
@@ -60,7 +26,7 @@ class MachineTokenManager:
             current_time = int(time.time())
             token_age = current_time - int(timestamp)
 
-            if token_age > self._expiry_seconds:
+            if not 0 <= token_age <= self._expiry_seconds:
                 return None
 
             expected_data = f"machine:{username}:{timestamp}:{self._secret}"
@@ -69,7 +35,7 @@ class MachineTokenManager:
             if secrets.compare_digest(token_hash, expected_hash):
                 return username
             return None
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
 

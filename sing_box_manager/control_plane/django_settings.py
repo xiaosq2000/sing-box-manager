@@ -1,6 +1,7 @@
-"""Production settings for the loopback-only, SSH-tunnelled admin service."""
+"""One Django service for public subscriptions and tunnel-only administration."""
 
 import os
+from pathlib import Path
 
 from sing_box_manager.settings import PROJECT_ROOT, load_settings
 
@@ -59,6 +60,7 @@ TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "APP_DIRS": True,
+        "DIRS": [Path(__file__).parent / "templates"],
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
@@ -96,6 +98,7 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_TZ = True
 STATIC_URL = "/static/"
+STATICFILES_DIRS = [("portal", Path(__file__).parent.parent / "web" / "static")]
 STATIC_ROOT = str(
     (PROJECT_ROOT / runtime.generated_root / "control-plane-static").resolve()
 )
@@ -110,7 +113,7 @@ WHITENOISE_AUTOREFRESH = False
 FILE_UPLOAD_PERMISSIONS = 0o640
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
 # HTTP exists only on loopback. SSH supplies encryption for remote operators.
-# Use distinct cookies so the legacy portal session remains independent.
+# Preserve operator sessions when retiring the legacy portal.
 SESSION_COOKIE_NAME = "sbm_control_session"
 CSRF_COOKIE_NAME = "sbm_control_csrf"
 SESSION_COOKIE_HTTPONLY = True
@@ -120,3 +123,21 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 # no-referrer can make browser form submissions send Origin: null.
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "subscription_tokens": {
+            "()": "sing_box_manager.subscription.TokenRedactingFilter"
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["subscription_tokens"],
+        },
+    },
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}

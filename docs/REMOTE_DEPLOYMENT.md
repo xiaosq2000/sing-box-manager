@@ -37,7 +37,7 @@ pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-h
 
 ## Requirements
 
-1. Build a release with the selected inventory first. The auth snapshot, release
+1. Build a release with the selected infrastructure settings first. The release
    metadata, active `releases/rel-<id>/` directory, and `releases/store/` must exist
    locally.
 1. Run `pixi install` locally so the deploy environment includes `rsync`.
@@ -88,7 +88,7 @@ appear on stderr.
    across releases
 1. syncs `releases/rel-<id>/` with `--delete`, which is safe because that directory is
    named after a hash of its own contents
-1. uploads the auth snapshot, release metadata and a `VERSION` file to temporary paths
+1. uploads release metadata and a `VERSION` file to temporary paths
 1. locks down the remote root: deletes bytecode caches under `sing_box_manager/`,
    makes everything `root:sbm`, and removes group and other write access, so the
    service account can read the tree but not change what root later runs from it
@@ -107,20 +107,21 @@ appear on stderr.
 1. publishes the staged metadata with an atomic `mv`
 1. derives `config/inventory/runtime.yaml` from the local encrypted config, stages it,
    and atomically publishes it as `root:sbm` mode `0640` after preserving the server's
-   existing `web.session_secret` and `web.subscription_secret`
-1. rewrites the managed systemd units — the web service, the traffic stats service and
+   existing `web.session_secret`, `web.subscription_secret`, and Django secret key.
+   In authoritative mode it omits legacy inventory account lists
+1. rewrites the managed systemd units — the traffic stats service and
    timer plus the connection stream service when `traffic_stats.enabled` is true, and
    the certbot renewal pair — then reloads the daemon and enables them
 1. writes `/etc/nginx/conf.d/sing-box-manager-log.conf`, a log format that records
    `/sub/[token]` in place of a subscription token, and adds an `access_log` line using
    it after each `server_name` in the certbot-managed site, once. It reloads nginx only
    if `nginx -t` passes, and otherwise restores both files and fails the deploy
-1. restarts `sing-box-manager-web.service` if that unit exists and verifies it is
-   active
-1. when code sync is enabled, deploys or disables the control plane and checks readiness.
-   Authoritative deployment enables the watcher, syncs PostgreSQL accounts, and routes
-   subscriptions to Django. Other modes disable the watcher and remove those routes.
-   It retains the database. See [mode transitions](CONTROL_PLANE.md#disable-without-removing-data)
+1. when code sync is enabled, migrates Django, collects static files, restarts its service,
+   and checks readiness. Authoritative deployment enables the watcher and syncs PostgreSQL accounts.
+   It routes the whole portal to Django, rejects public Admin access, and then disables
+   `sing-box-manager-web.service`. Non-authoritative mode keeps Django and disables the watcher.
+   Disabled mode returns 503 publicly and disables both Web services. No data is removed.
+   See [mode transitions](CONTROL_PLANE.md#disable-without-removing-data)
 1. runs `sing-box-manager-traffic-stats.service` once when traffic stats are enabled,
    after the final node sync. A collection failure stops deployment
 1. restarts `sing-box-manager-traffic-stream.service` and confirms it is still active
@@ -138,8 +139,7 @@ provisioned with and lets a release that depends on a new directive deploy clean
 then fail at runtime.
 
 Release metadata built by an older builder may carry no release id. The deploy still
-succeeds in that case; it prints a notice and skips the marker, and the portal omits
-the “last updated” time rather than showing a stale one.
+succeeds in that case; it prints a notice and skips the marker.
 
 The command does not build a release for you. If the expected artifacts are missing, it
 fails and asks you to run `sbm release` first.
@@ -182,12 +182,12 @@ alone across restarts. That keeps the remote root disposable: it can be wiped an
 reprovisioned without losing usage history. Set `traffic_stats.database_path` to a
 relative path only if you want the database back inside the deploy root.
 
-PostgreSQL stores the optional control plane's database in its OS-managed data
+PostgreSQL stores the control-plane database in its OS-managed data
 directory, outside the deploy root. Deploy never synchronizes or removes it.
 `--skip-code` leaves the control-plane code and database unchanged. The binary installer
 still checks the deployed authority setting and preserves its current node config.
 
-`config/generated/` holds the optional root-owned Django static files. Metadata
+`config/generated/` holds the root-owned Django static files. Metadata
 files are published individually. This directory is never a `--delete` target.
 
 `config/inventory/runtime.yaml` is intentionally synchronized because it is derived
@@ -197,8 +197,22 @@ uses an atomic replacement. Credentials are never placed in SSH command argument
 `--skip-code` leaves this file alone along with the remote code tree.
 
 Ordinary deploys do not replace TLS files. They manage Nginx log redaction and,
-when authoritative, the control-plane subscription routes. `--bootstrap` creates
+the whole-portal Django routes, including when node authority is disabled. `--bootstrap` creates
 the site and obtains certificates. Both flows install renewal units. Neither builds a release.
+
+## Portal cutover acceptance
+
+A production cutover needs separate authorization and pre-change backups of PostgreSQL,
+SQLite history, signing keys, runtime config, source/environment, Nginx, systemd, and the node config.
+Reuse the current built release when its signed clients remain suitable.
+
+Check existing subscriptions and all three protocols before and after cutover.
+Measure proxy interruption; each interruption must stay below 60 seconds.
+Check `/api/sub` migration, signed downloads, personal-domain privacy, private traffic
+permissions, and public Admin rejection. Confirm the old Web service is stopped and disabled.
+Do not delete old snapshots, release archives, units, or backups as part of this change.
+A rollback must restore matching code, environment, Nginx routing, and service state;
+leaving Django disabled is not a fallback portal.
 
 ## Reclaiming Space
 

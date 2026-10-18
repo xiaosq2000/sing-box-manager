@@ -168,7 +168,6 @@ def _prepare_release_artifacts(
     tmp_path: Path,
     settings: Settings,
     *,
-    with_auth_snapshot: bool = True,
     with_release_dir: bool = True,
     with_manifest: bool = True,
     with_server_dir: bool = True,
@@ -196,11 +195,6 @@ def _prepare_release_artifacts(
             (release_dir / "server").mkdir()
     if with_store:
         (releases_root / "store" / "prefix").mkdir(parents=True)
-
-    if with_auth_snapshot:
-        auth_snapshot_path = tmp_path / settings.auth_snapshot_path
-        auth_snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-        auth_snapshot_path.write_text('{"users": []}\n', encoding="utf-8")
 
     return release_info, release_dir
 
@@ -729,7 +723,7 @@ def test_every_deploy_redacts_tokens_from_the_nginx_log(
 
     redaction = recorder.index_of("sbm_redacted")
     assert redaction > recorder.index_of("sing_box_manager.remote_config")
-    assert redaction < recorder.index_of("systemctl restart sing-box-manager-web")
+    assert redaction < recorder.index_of("update_nginx_site_text")
 
 
 def test_the_server_package_is_installed_from_a_directory_not_a_tarball(
@@ -780,7 +774,6 @@ def test_managed_units_are_rewritten_on_an_ordinary_deploy(
 
     written = [command for command in recorder.remote_commands if "tee" in command]
     for unit in (
-        "sing-box-manager-web.service",
         "sing-box-manager-traffic-stats.service",
         "sing-box-manager-traffic-stats.timer",
     ):
@@ -827,7 +820,6 @@ def test_a_missing_web_unit_is_not_an_error(
 @pytest.mark.parametrize(
     ("artifact_kwargs", "expected"),
     [
-        ({"with_auth_snapshot": False}, "auth snapshot"),
         ({"with_release_dir": False}, "Release directory not found"),
         ({"with_manifest": False}, "Release manifest not found"),
         ({"with_server_dir": False}, "Server package not found"),
@@ -961,7 +953,6 @@ def _remote() -> _Remote:
         store_dir=f"{REMOTE_ROOT}/releases/store",
         server_dir=f"{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server",
         generated_dir=f"{REMOTE_ROOT}/config/generated",
-        auth_snapshot=f"{REMOTE_ROOT}/config/generated/auth-users.json",
         release_info=f"{REMOTE_ROOT}/config/generated/release-info.json",
         deployment_info=f"{REMOTE_ROOT}/config/generated/deployment-info.json",
         version_file=f"{REMOTE_ROOT}/VERSION",
@@ -1191,7 +1182,8 @@ def test_control_plane_checks_precede_success_metadata(tmp_path, monkeypatch):
     recorder = _deploy(tmp_path, monkeypatch, control_plane_enabled=True)
     assert recorder.index_of("--action migrate") < recorder.index_of("--action health")
     assert recorder.index_of("--action health") < recorder.index_of("deployment-info.json")
-    assert recorder.index_of("systemctl restart sing-box-manager-web.service") < recorder.index_of("--action health")
+    assert recorder.index_of("--action health") < recorder.index_of("update_nginx_site_text")
+    assert recorder.index_of("update_nginx_site_text") < recorder.index_of("disable --now sing-box-manager-web.service")
 
 
 def test_authoritative_deploy_preserves_node_config_before_sync(tmp_path, monkeypatch):

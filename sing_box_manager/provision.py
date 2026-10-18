@@ -43,6 +43,7 @@ NGINX_REDACTED_LOG_FORMAT = "sbm_redacted"
 # A subscription link's path is its credential. This is the combined format
 # with the token replaced, so the access log records /sub/[token].
 NGINX_LOG_CONFIG = f"""# Managed by sing-box-manager deploy.
+limit_req_zone $binary_remote_addr zone=sbm_auth:1m rate=5r/m;
 map $request_uri $sbm_loggable_request_uri {{
     "~^/sub/[^/?]+(?<sbm_after_token>.*)$" "/sub/[token]$sbm_after_token";
     default $request_uri;
@@ -89,7 +90,7 @@ def provision_remote(  # noqa: PLR0913
     _install_nginx_site(
         hostname,
         inventory.deployment.host,
-        settings.web.port,
+        settings.control_plane.port,
         dry_run=dry_run,
     )
 
@@ -115,13 +116,6 @@ def install_managed_units(
     same bytes again is a no-op, so doing it unconditionally costs nothing.
     """
     print("Installing managed systemd services...")
-
-    _install_unit(
-        hostname,
-        _web_service_unit(remote_root),
-        "sing-box-manager-web.service",
-        dry_run=dry_run,
-    )
 
     if settings.traffic_stats.enabled:
         _install_unit(
@@ -156,7 +150,7 @@ def install_managed_units(
         dry_run=dry_run,
     )
 
-    units = ["sing-box-manager-web.service"]
+    units = []
     if settings.traffic_stats.enabled:
         units.append("sing-box-manager-traffic-stats.timer")
         units.append("sing-box-manager-traffic-stream.service")
@@ -365,8 +359,6 @@ def _derive_remote_config(settings: Settings, inventory: RuntimeInventory) -> st
         "sing_box_version": settings.sing_box_version,
         "default_protocol": settings.default_protocol,
         "web": {
-            "host": "127.0.0.1",
-            "port": settings.web.port,
             # A deploy creates the server's secrets when the inventory has none.
             # Later deploys keep whatever the server holds; see remote_config.
             "session_secret": settings.web.session_secret or secrets.token_hex(32),
@@ -396,6 +388,8 @@ def _derive_remote_config(settings: Settings, inventory: RuntimeInventory) -> st
             "message": settings.client_upgrade.message,
         },
     }
+    if settings.control_plane.authoritative:
+        inventory = inventory.without_accounts()
     inventory_data = inventory.model_dump(
         mode="json",
         include={
@@ -650,16 +644,6 @@ def _sbm_unit(
         + "RestartSec=5s\n"
         + "Environment=PYTHONUNBUFFERED=1\n"
         + "\n[Install]\nWantedBy=multi-user.target\n"
-    )
-
-
-def _web_service_unit(remote_root: str) -> str:
-    return _sbm_unit(
-        description="sing-box-manager web portal",
-        after="network-online.target",
-        remote_root=remote_root,
-        subcommand="serve",
-        restart="on-failure",
     )
 
 

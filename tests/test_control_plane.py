@@ -42,13 +42,17 @@ def test_rejects_unsafe_database_names(name):
         provision_sql(name)
 
 
-def test_defaults_are_disabled_and_loopback_port_is_separate():
+def test_control_plane_port_checks_ignore_the_retired_web_listener():
     settings = Settings()
     assert not settings.control_plane.enabled
-    assert settings.control_plane.port != settings.web.port
+    Settings(control_plane=ControlPlaneSettings(enabled=True, port=settings.web.port))
+    assert "port" not in settings.web.model_dump()
+    assert "host" not in settings.web.model_dump()
     with pytest.raises(ValidationError, match="must differ"):
         Settings(
-            control_plane=ControlPlaneSettings(enabled=True, port=settings.web.port)
+            control_plane=ControlPlaneSettings(
+                enabled=True, port=settings.control_plane.database_port
+            )
         )
     with pytest.raises(ValidationError):
         ControlPlaneSettings(secret_key="short")
@@ -199,10 +203,11 @@ def test_enabled_deployment_provisions_migrates_starts_and_checks(monkeypatch):
     assert wrapper[3] == {"mode": "0755", "dry_run": False}
     commands = [event[1] for event in events if event[0] == "command"]
     assert "disable --now sing-box-manager-sync.path" in commands[0]
-    assert "update_nginx_site_text" in commands[1]
-    assert "postgresql-client" in commands[2]
-    assert "ON_ERROR_STOP=1" in commands[3]
-    assert "sudo -u sbm" in commands[4]
+    assert "postgresql-client" in commands[1]
+    assert "ON_ERROR_STOP=1" in commands[2]
+    assert "sudo -u sbm" in commands[3]
+    assert "update_nginx_site_text" in commands[-2]
+    assert "disable --now sing-box-manager-web.service" in commands[-1]
     actions = [
         command.split("--action ", 1)[1].split()[0]
         for command in commands
@@ -215,7 +220,7 @@ def test_enabled_deployment_provisions_migrates_starts_and_checks(monkeypatch):
     assert "ProtectSystem=strict\n" in unit
     assert "PYTHONDONTWRITEBYTECODE=1" in unit
     assert "--action serve" in unit
-    assert "systemctl restart" in commands[-2]
+    assert "systemctl restart" in commands[-4]
 
 
 def test_authoritative_deployment_syncs_node_config_from_database(monkeypatch):
@@ -238,11 +243,12 @@ def test_authoritative_deployment_syncs_node_config_from_database(monkeypatch):
         "sing-box-manager-sync.service",
         "sing-box-manager-sync.path",
     ]
-    assert "update_nginx_site_text" in commands[-1]
-    assert "nginx -t" in commands[-1]
+    assert "update_nginx_site_text" in commands[-2]
+    assert "nginx -t" in commands[-2]
+    assert "disable --now sing-box-manager-web.service" in commands[-1]
 
 
-def test_update_nginx_site_text_is_idempotent_and_reversible():
+def test_update_nginx_site_text_routes_the_whole_portal_and_disables_without_fallback():
     original = (
         "server {\n"
         "    listen 443 ssl;\n"
@@ -255,10 +261,14 @@ def test_update_nginx_site_text_is_idempotent_and_reversible():
     )
     routed = deployment.update_nginx_site_text(original, 47071)
     assert "proxy_pass http://127.0.0.1:47071;" in routed
-    assert "location ~ ^/(sub/|install\\.sh$|install\\.ps1$|install/)" in routed
+    assert "location ^~ /admin/ { return 404; }" in routed
+    assert "limit_req zone=sbm_auth" in routed
+    assert "8080" not in routed
     assert deployment.update_nginx_site_text(routed, 47071) == routed
-    reverted = deployment.update_nginx_site_text(routed, None)
-    assert reverted == original
+    disabled = deployment.update_nginx_site_text(routed, None)
+    assert "return 503" in disabled
+    assert "proxy_pass" not in disabled
+    assert deployment.update_nginx_site_text(disabled, 47071) == routed
 
 
 @pytest.mark.parametrize("port", [None, 47071])
@@ -331,11 +341,12 @@ def test_disabled_deployment_only_disables_its_unit_and_retains_database(monkeyp
     events = record_deployment(monkeypatch)
     deployment.deploy("fixture-host", "/opt/sing-box-manager", Settings())
     commands = [event[1] for event in events]
-    assert len(commands) == 3
+    assert len(commands) == 4
     assert "disable --now sing-box-manager-sync.path" in commands[0]
     assert "update_nginx_site_text" in commands[1]
     assert "nginx -t" in commands[1]
     assert "disable --now sing-box-manager-control-plane.service" in commands[2]
+    assert "disable --now sing-box-manager-web.service" in commands[3]
     assert all("postgres" not in command for command in commands)
 
 

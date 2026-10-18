@@ -22,13 +22,12 @@ The current layout separates those jobs:
 - an operator-owned `*.sops.yaml` inventory holds infrastructure settings and legacy
   portal/protocol records. It is not tracked in this public repository
 - with `control_plane.authoritative: true`, PostgreSQL owns proxy accounts, credentials,
-  and subscription counters. Inventory import is blocked. Admin changes do not update
-  the legacy FastAPI auth snapshot
-- `config/generated/auth-users.json` is a generated auth snapshot for the web portal
-- `sbm serve` verifies portal credentials against the generated auth snapshot;
-  it also loads app settings from the file selected by `--config` or `SBM_CONFIG`
-- `sbm release` decrypts the inventory, renders Trojan, Hysteria2, and Naive configs, and
-  refreshes the auth snapshot
+  and subscription counters. Inventory import is blocked. All Django portal authentication
+  reads PostgreSQL, including compatibility endpoints for installed legacy clients
+- `sbm serve` runs the Django service using the selected infrastructure settings
+- `sbm release` builds shared artifacts. It generates no authentication snapshot or per-user archive
+- authoritative deployment removes legacy account lists from the derived runtime inventory.
+  It keeps shared protocol settings, TLS paths, and signing secrets. The local inventory is not rewritten
 
 ## Files you should care about
 
@@ -38,7 +37,6 @@ The current layout separates those jobs:
 - `config/inventory/runtime.sops.yaml` is an ignored local config path, not a
   bundled inventory; select it explicitly with `--config` or `SBM_CONFIG`. Keeping
   the inventory outside the checkout or in a separate private repository is preferred
-- `config/generated/auth-users.json` is generated output; do not hand-edit it
 - `sing_box_manager/settings.py` validates application settings and inventory with
   one strict Pydantic root model; unknown keys fail validation
 - `tests/fixtures/profiles/` holds golden outputs with example credentials only
@@ -105,8 +103,8 @@ Important distinctions:
 - `deployment.tls.server_name` is rendered into Trojan, Hysteria2, and Naive `tls.server_name`
 - `deployment.tls.key_path` and `deployment.tls.certificate_path` are rendered only into server configs
 - `deployment.tls.self_signed_cert` defaults to `false`; set it to `true` when the referenced certificate and key files are self-signed PEM sources that should be inlined into rendered sing-box configs
-- `web_portal.users[].password_hash` is only for portal login verification
-- `web_portal.users[].admin` defaults to `false`; set it to `true` only for users who can view all users' traffic stats at `/admin`
+- `web_portal.users[].password_hash` is a legacy verifier for initial import. PostgreSQL owns it after import
+- `web_portal.users[].admin` is retained for import parity, not authorization. Django staff need `control_plane.view_traffic` for private traffic pages
 - `client_upgrade.policy` and `client_upgrade.message` are public portal metadata;
   keep the optional message short and never include credentials or private details
 - `trojan.users[].password` is only for Trojan config rendering
@@ -138,9 +136,9 @@ related by username, but they are stored independently.
 
 `argon2id` is a password hashing algorithm.
 
-- it protects the portal login without storing the plaintext password
+- it protects legacy password authentication without storing the plaintext password
 - it is one-way, so you cannot recover the original password from the hash
-- the app verifies a submitted password against the stored hash during login
+- compatibility endpoints verify submitted passwords against the PostgreSQL hash
 
 Format illustration (the salt and hash below are placeholders):
 
@@ -148,24 +146,22 @@ Format illustration (the salt and hash below are placeholders):
 $argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>
 ```
 
-If you forget the plaintext portal password, you cannot recover it from
-`web_portal.users[].password_hash`. Generate a new hash and replace it.
+A hash cannot recover a forgotten password. An operator can set a replacement in Django Admin.
+New accounts use subscription links and need no portal password.
 
 ## Where the real secrets live
 
-- the real portal login verifiers live under `web_portal.users[].password_hash`
-- the admin portal flag lives under `web_portal.users[].admin`; it is copied into `config/generated/auth-users.json`
-- the real Trojan passwords live under `trojan.users[].password`
-- the real Hysteria2 passwords live under `hysteria2.users[].password`
-- the real Naive passwords live under `naive.users[].password`
+- PostgreSQL stores account verifiers and protocol secrets. Inventory user fields are legacy initial-import inputs
+- Django operator permissions are separate from proxy accounts and legacy inventory flags
 - the shared Hysteria2 obfs secret lives under `hysteria2.obfs_password`
 - KiwiVM credentials live under `vps_info.kiwi_veid` and
   `vps_info.kiwi_api_key`; ordinary deploys copy them into the server runtime
   config, mode `0640` and owned by `root:sbm`, so the portal can publish VPS
   information. The collector also
   reads them to derive the billing cycle boundary from the VPS's own reset date
-- `web.session_secret` signs portal sessions and installer machine tokens, and
-  `web.subscription_secret` keys subscription links, so anyone who holds it can
+- `web.session_secret` signs legacy installer machine tokens. Retain it during portal consolidation.
+  `web.subscription_secret` keys subscription links, and
+  anyone who holds that secret can
   compute every user's link. Deploy generates either one on the server when the
   inventory leaves it unset, and keeps the server's value afterwards
 - `control_plane.secret_key` signs the private Django service's sessions. Deploy
@@ -204,7 +200,6 @@ If you forget the plaintext portal password, you cannot recover it from
 - TLS certificate and key source files live at `deployment.tls.certificate_path` and `deployment.tls.key_path`
 - when `deployment.tls.self_signed_cert` is `true`, `sbm release` reads those files and inlines their PEM lines into the rendered sing-box JSON
 - use `pixi run sops <your config file>` to edit the encrypted inventory
-- `config/generated/auth-users.json` stores only the generated portal auth snapshot
 
 ## TLS handling now
 
@@ -287,7 +282,7 @@ its file permissions restrictive and select it with `--config` or `SBM_CONFIG`.
 Keep production inventory in an operator-owned location or a separate private
 repository. Public CI uses only example inventory and generated test fixtures.
 When `serve` receives a `.sops.yaml` config, it needs decryption access to load app
-settings even though it uses the generated snapshot for authentication. Deploy
+settings. Account authentication uses PostgreSQL. Deploy
 avoids that requirement on the VPS by supplying a derived plaintext runtime config.
 
 ## Repo-local `.env` support
@@ -351,7 +346,7 @@ The current split schema maps the old plaintext data like this:
 - keep server-only TLS paths in inventory, never in client configurations
 - keep `deployment.tls.self_signed_cert` at `false` for CA-signed TLS and set it to `true` only when the referenced PEM files should be embedded into rendered sing-box configs
 - treat generated server packages as sensitive when `deployment.tls.self_signed_cert` is `true`
-- do not hand-edit `config/generated/auth-users.json`
+- do not restore authentication from an old `auth-users.json` file
 - do not reintroduce shared secret fields across portal, Trojan, Hysteria2, and Naive sections
 - do not hardcode per-client certificate blobs in Hysteria2 or Naive configuration builders
 
@@ -377,7 +372,7 @@ The upstream `SagerNet/sing-box` repository is public, so `pixi run sbm release`
 without `GITHUB_TOKEN`. Maintainers should still export the token before release runs to
 avoid the lower anonymous GitHub API rate limits.
 
-Start the web service after the auth snapshot exists:
+Start the Django service after migration and static-file collection:
 
 ```sh
 pixi run sbm --config config/inventory/runtime.sops.yaml serve

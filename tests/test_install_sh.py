@@ -9,7 +9,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "sing_box_manager" / "web" / "client" / "install.sh"
@@ -585,13 +584,3 @@ def test_messages_follow_the_locale(
     assert ("sbc replaced the bash client" in result.stderr) is not chinese
     if chinese:
         assert "sbc 仍在 127.0.0.1:41137，因为端口 1085 仍被占用" in result.stderr
-
-
-def test_the_portal_serves_the_script_at_every_installer_path(
-    client: TestClient,
-) -> None:
-    for path in ("/install.sh", "/install/linux.sh", "/install/macos.sh"):
-        response = client.get(path)
-        assert response.status_code == 200
-        assert response.headers["content-type"].startswith("text/plain")
-        assert response.text == SCRIPT.read_text(encoding="utf-8")

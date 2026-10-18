@@ -10,8 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
-import uvicorn
-
 from sing_box_manager.control_plane.runner import Action, normalize_action
 
 tyro: Any = importlib.import_module("tyro")
@@ -25,7 +23,7 @@ CLI_DESCRIPTION = "sing-box-manager: Deploy, package and distribute sing-box."
 
 @dataclass
 class ServeCommand:
-    """Start the authenticated download web service."""
+    """Start the Django subscription and private administration service."""
 
     port: int | None = None
     host: str | None = None
@@ -133,21 +131,23 @@ def _configure_logging(log_format: str) -> None:
 def _run_serve(command: ServeCommand, settings: Settings) -> None:
     _configure_logging("%(asctime)s - %(levelname)s - %(message)s")
 
-    from sing_box_manager.subscription import TokenRedactingFilter
-    from sing_box_manager.web.app import create_app
+    from sing_box_manager.control_plane.runner import run
 
-    # uvicorn logs each request path, and a subscription link's path is its
-    # credential. Its logging setup keeps filters already on the logger.
-    logging.getLogger("uvicorn.access").addFilter(TokenRedactingFilter())
-
-    web_app = create_app(settings)
-    uvicorn.run(
-        web_app,
-        host=command.host or settings.web.host,
-        port=command.port or settings.web.port,
-        proxy_headers=True,
-        forwarded_allow_ips="127.0.0.1",
-    )
+    if command.host not in (None, "127.0.0.1"):
+        raise SystemExit(
+            "The Django service must bind to 127.0.0.1. Use Nginx for public access."
+        )
+    if command.port is not None:
+        if not 1 <= command.port <= 65535:
+            raise SystemExit("The port must be between 1 and 65535.")
+        settings = settings.model_copy(
+            update={
+                "control_plane": settings.control_plane.model_copy(
+                    update={"port": command.port}
+                )
+            }
+        )
+    run("serve", settings)
 
 
 def _run_release(_: ReleaseCommand, settings: Settings) -> None:

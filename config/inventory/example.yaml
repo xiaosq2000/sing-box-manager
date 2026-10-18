@@ -5,23 +5,20 @@ sing_box_version: 1.14.2
 default_protocol: trojan
 upstream_cache_root: .cache/sing-box-manager/upstream
 web:
-  host: 127.0.0.1
-  port: 47070
-  # Signs web sessions and installer machine tokens. `sbm serve` refuses to
-  # start without it. When this is unset, bootstrap generates the server's
-  # value, and later deploys keep whatever the server holds.
+  # Signs legacy installer machine tokens. Deployment generates and retains
+  # the server's value when this is unset.
   session_secret: change-me-with-a-long-random-secret
   # Keys subscription links. When this is unset, the next deploy generates the
   # server's value, and later deploys keep it. Without it, `sbm serve` turns
   # subscription links off.
   # subscription_secret: change-me-with-another-long-random-secret
-  # Each user's link reset counter. The default is in the services' state directory.
+  # Read-only legacy counter source for initial import. Runtime counters use PostgreSQL.
   # subscription_database_path: /var/lib/sing-box-manager/subscriptions.sqlite3
   allowed_hosts:
     - localhost
     - 127.0.0.1
-# Optional Django/PostgreSQL control plane. Import accounts before making it
-# authoritative. See docs/CONTROL_PLANE.md for access rules and mode transitions.
+# Enable Django/PostgreSQL to serve the portal. Import accounts before making
+# the node authoritative. See docs/CONTROL_PLANE.md for setup and access rules.
 # Deploy generates and retains the Django signing key.
 control_plane:
   enabled: false
@@ -66,8 +63,8 @@ traffic_stats:
   # Domains retained per user per day. The rest are folded into a single
   # __other__ row, so totals still reconcile with the per-user counters.
   domain_top_n: 50
-  # Whether ordinary users see their own top domains on the download page.
-  # Admins always see the breakdown at /admin.
+  # Whether users see their own top domains on the subscription page and usage API.
+  # Django traffic operators can see all domains at /admin/traffic/.
   show_user_domains: false
 deployment:
   # Direct routing and DNS for these apex domains and their subdomains.
@@ -89,6 +86,7 @@ deployment:
     key_path: /etc/letsencrypt/live/vpn.example.com/privkey.pem
     certificate_path: /etc/letsencrypt/live/vpn.example.com/fullchain.pem
     self_signed_cert: false
+# Legacy accounts for initial import. These flags do not grant Django permissions.
 web_portal:
   users:
     - username: alice

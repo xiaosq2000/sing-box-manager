@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -132,33 +132,34 @@ class VpsInfoProvider:
         self._error_cache_ttl = error_cache_ttl
         self._cache: VpsInfo | None = None
         self._cache_expiry: float = 0.0
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
 
-    async def get_info(self) -> VpsInfo:
+    def get_info(self) -> VpsInfo:
         cached = self._fresh_cache()
         if cached is not None:
             return cached
 
-        async with self._lock:
+        with self._lock:
             # A waiter that queued behind an in-flight refresh has its answer.
             cached = self._fresh_cache()
             if cached is not None:
                 return cached
-            return await self._refresh()
+            return self._refresh()
 
     def _fresh_cache(self) -> VpsInfo | None:
         if self._cache is None or time.monotonic() >= self._cache_expiry:
             return None
         return self._cache
 
-    async def _refresh(self) -> VpsInfo:
+    def _refresh(self) -> VpsInfo:
         try:
-            data = await kiwivm.fetch_service_info_async(self._veid, self._api_key)
+            data = kiwivm.fetch_service_info(self._veid, self._api_key)
+            info = _parse_service_info(data, self._timezone_name)
         except Exception:
-            logger.warning("Failed to fetch VPS info from KiwiVM API", exc_info=True)
+            # Provider exceptions can contain the API key or request URL.
+            logger.warning("Failed to fetch VPS info from KiwiVM API")
             return self._store(self._last_good_or_error(), self._error_cache_ttl)
 
-        info = _parse_service_info(data, self._timezone_name)
         return self._store(info, self._cache_ttl)
 
     def _last_good_or_error(self) -> VpsInfo:

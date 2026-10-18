@@ -18,6 +18,7 @@ harness = [
   ".github/workflows/",
   "scripts/dev/",
   ".gitleaks.toml",
+  ".prettierignore",
   ".gitignore",
   "config/.gitignore",
   "tests/test_public_repository.py",
@@ -46,6 +47,8 @@ unix-installer = [
 
 control-plane = [
   "sing_box_manager/control_plane/",
+  "sing_box_manager/web/",
+  "sing_box_manager/subscription.py",
   "sing_box_manager/cli.py",
   "sing_box_manager/settings.py",
   "sing_box_manager/deploy.py",
@@ -54,6 +57,9 @@ control-plane = [
   "pixi.toml",
   "scripts/dev/test-control-plane-native.py",
   "tests/test_control_plane*.py",
+  "tests/test_routes.py",
+  "tests/test_auth.py",
+  "tests/test_vps_info.py",
 ]
 
 [documents]
@@ -95,6 +101,8 @@ control-plane = [
   "tests/test_server_egress.py",
   "tests/test_server_install.py",
   "tests/test_inventory.py",
+  "tests/test_release*.py",
+  "tests/test_client_downloads.py",
   "@unix-installer",
   "tests/fetch_sing_box.py",
   "@sbc",

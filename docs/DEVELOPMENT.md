@@ -34,20 +34,20 @@ and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 Choose checks for the files and behavior being changed. The commands below are
 available tools, not a sequence required for every edit.
 
-| Change              | Useful checks                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                    |
-| Doc reviews         | `pixi run docstale check`                                                                                                                                                |
-| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                                                                     |
-| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                                                                      |
-| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                                                                   |
-| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py`                                         |
-| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                                                             |
-| Django/PostgreSQL   | `pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py tests/test_server_install.py` |
-| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                                                          |
-| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                                                     |
+| Change              | Useful checks                                                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                                         |
+| Doc reviews         | `pixi run docstale check`                                                                                                                                                                     |
+| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                                                                                          |
+| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                                                                                           |
+| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                                                                                        |
+| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py`                                                              |
+| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                                                                                  |
+| Django/PostgreSQL   | `pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_routes.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py tests/test_server_install.py` |
+| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                                                                               |
+| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                                                                          |
 
-Use `pixi run test tests/test_routes.py -k download` as the pattern for running a
+Use `pixi run -e control-plane-test test tests/test_routes.py -k download` as the pattern for running a
 specific file or case. `pixi run test` runs the full Python suite when shared
 behavior or the scope of the change warrants it.
 
@@ -56,6 +56,8 @@ behavior or the scope of the change warrants it.
 and the full Python and Go test suites. Inspect the resulting diff and keep
 unrelated formatting out of a focused change. For a Markdown edit, formatting just
 the edited paths with `pixi run prettier --write PATH...` is sufficient.
+Django HTML templates are excluded from Prettier because its HTML parser changes
+template tags. Route tests check that these pages render without unprocessed tags.
 
 `sbc`, in `cmd/sbc` and `internal/`, uses Cobra and pflag for commands, help,
 validation, and completion. Other client code uses the Go standard library.
@@ -224,13 +226,13 @@ edit. Even `deploy --dry-run` can connect over SSH and needs local release artif
 
 ## Control-plane checks
 
-The opt-in foundation lives in `sing_box_manager/control_plane/`. Production uses
+The Django portal and control plane live in `sing_box_manager/control_plane/`. Production uses
 OS-managed PostgreSQL and the default Pixi environment. The `control-plane-test`
 environment adds PostgreSQL 17 tools and shares the runtime dependency resolution.
 It does not install or start a system database service.
 
 ```sh
-pixi run -e control-plane-test test tests/test_control_plane*.py
+pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_routes.py
 ```
 
 Tests start a temporary cluster with no TCP listener, a private socket directory,
@@ -245,7 +247,7 @@ before database reads, rejected configs, restart recovery, and recovery failure.
 Mocked restart and identity tests do not start PostgreSQL. Database tests also verify
 traffic collection for accounts that exist only in PostgreSQL.
 Deployment fixtures exercise both authority transitions, Nginx rollback, and JSON-equivalent no-op sync.
-HTTP login checks send a browser-style `Origin` header and check the `same-origin`
+Django Admin login checks send a browser-style `Origin` header and check the `same-origin`
 referrer policy. They reject null and cross-site origins, plus missing or incorrect
 CSRF tokens.
 The default test environment skips these integration checks without PostgreSQL
@@ -257,7 +259,10 @@ hardened systemd service. `scripts/dev/test-control-plane-native.py` runs only o
 an explicitly enabled disposable GitHub runner. It verifies repeat deployment,
 read-only assets, peer-authenticated root sync, and trigger-driven account disable/re-enable.
 It installs the pinned official sing-box binary, checks config preservation and no-op sync,
-and checks Nginx route changes when entering and leaving authoritative mode.
+and checks whole-portal Nginx routing across authority transitions. It rejects public
+Admin access, stops the retired Web service, and verifies 503 when Django is disabled.
+Node installation must finish within 60 seconds in this fixture; this does not measure
+production interruption.
 Database records survive authority exit and disablement. Native node checks keep traffic
 stats off; the separate runtime job tests the custom counter binary.
 Its local unit test mocks all host commands. Do not run the native script on an operator machine or VPS.
@@ -280,10 +285,10 @@ migration fixture is the previous version's schema with synthetic usage.
 pixi run test tests/test_connection_stats.py tests/test_connection_collector.py tests/test_traffic_stats.py tests/test_traffic_stats_billing_day.py tests/test_traffic_stats_domains.py tests/test_traffic_reconciliation.py tests/test_traffic_store_migrations.py
 ```
 
-Route tests also need local socket-pair communication for TestClient's event loop.
-A sandbox that blocks socket sends can make even a minimal FastAPI test stall.
-Run fixture route checks in an environment that permits local socket communication
-before treating that stall as an application failure.
+`tests/test_routes.py` uses Django's test client in isolated PostgreSQL processes.
+It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer
+migration, token revocation, traffic-viewer permissions, personal-domain privacy,
+cache headers, and refusal to use inventory when PostgreSQL fails.
 
 ## sing-box version checks
 

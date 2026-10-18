@@ -1,0 +1,10 @@
+{% extends 'admin/index.html' %}
+{% block content %}
+  {% if perms.control_plane.view_traffic %}
+  <p>
+    <a href="{% url 'traffic' %}">流量统计</a> ·
+    <a href="{% url 'connections' %}">活动连接</a>
+  </p>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

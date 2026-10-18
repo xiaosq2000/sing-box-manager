@@ -176,7 +176,7 @@ def test_printed_values_stay_in_the_text_overlay(renderer, dataset) -> None:
 def test_stylesheet_repaints_printed_values() -> None:
     """The chart CSS has to target where the labels actually are."""
     css = (
-        pathlib.Path(charts.__file__).parent / "static" / "styles.css"
+        pathlib.Path(charts.__file__).parent / "static" / "traffic.css"
     ).read_text(encoding="utf-8")
 
     assert ".sbm-chart .text-overlay text" in css

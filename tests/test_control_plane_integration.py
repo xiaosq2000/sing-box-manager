@@ -13,8 +13,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-import pytest
 import psycopg
+import pytest
 import yaml
 
 from sing_box_manager.control_plane.database import provision_sql
@@ -640,13 +640,14 @@ def test_inventory_import_subscriptions_admin_and_node_sync(postgres, tmp_path):
     )
     path.write_text(yaml.safe_dump(full_cfg))
 
-    from sing_box_manager.subscription import ResetCounters
+    import sqlite3
 
-    counters = ResetCounters(sub_db)
-    assert counters.advance("alice") == 1
-    assert counters.advance("alice") == 2
+    with sqlite3.connect(sub_db) as counters:
+        counters.execute("CREATE TABLE reset_counters (username TEXT PRIMARY KEY, counter INTEGER)")
+        counters.execute("INSERT INTO reset_counters VALUES ('alice', 2)")
 
     assert cli(path, env, "migrate").returncode == 0
+    assert cli(path, env, "collect-static").returncode == 0
     imported = cli(path, env, "import-inventory")
     assert imported.returncode == 0, imported.stderr
     assert '"accounts": 4' in imported.stdout
@@ -730,7 +731,7 @@ assert client.get(f"/sub/{bob_token}/files/manifest.json").status_code == 404
 assert client.get("/install.sh").status_code == 200
 assert client.get("/install.ps1").status_code == 200
 
-# Admin form hashes plaintext portal password, auto-generates hash + credentials for new users, and link reset invalidates old token.
+# Admin hashes optional legacy passwords, generates protocol credentials, and resets links.
 old_hash = alice.portal_password_hash
 form = AccountAdminForm(
     data={
@@ -766,7 +767,7 @@ new_form = AccountAdminForm(
 )
 assert new_form.is_valid(), new_form.errors
 frank = new_form.save()
-assert frank.portal_password_hash.startswith("$argon2id$")
+assert frank.portal_password_hash == ""
 created_protos = ensure_default_credentials(frank)
 assert set(created_protos) == {"trojan", "hysteria2", "naive"}
 frank_token = subscription_token(secret, "frank", 0)

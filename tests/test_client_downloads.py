@@ -12,13 +12,11 @@ from pathlib import Path
 import pytest
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from fastapi.testclient import TestClient
 
 from sing_box_manager.release import builder as builder_module
 from sing_box_manager.release.artifacts import ReleaseInfo
 from sing_box_manager.release.builder import ReleaseBuilder
 from sing_box_manager.release.client_downloads import (
-    ClientDownloads,
     build_sbc,
     client_manifest,
     generate_key,
@@ -30,13 +28,6 @@ from sing_box_manager.release.client_downloads import (
 from sing_box_manager.release.digest_cache import sha256_for_path, write_cached_digest
 from sing_box_manager.release.manifest import MANIFEST_FILENAME, Manifest, Member
 from sing_box_manager.release.platforms import MIXED_PROFILE, Platform
-from sing_box_manager.subscription import subscription_token
-from tests.test_subscription import subscription_client as subscription_client
-from tests.test_subscription import subscription_settings as subscription_settings
-from tests.test_subscription import (
-    QUERY,
-    SECRET,
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = base64.b64encode(bytes(range(32))).decode()
@@ -183,49 +174,6 @@ def test_a_release_without_a_key_has_no_client_downloads(
         builder._build_client_downloads()
 
 
-@pytest.fixture
-def downloads_client(subscription_client: TestClient, tmp_path: Path) -> TestClient:
-    release = tmp_path / "release-with-client"
-    (release / "client").mkdir(parents=True)
-    (release / "client" / "manifest.json").write_text('{"sbc": "abc"}\n')
-    (release / "client" / "sbc").write_bytes(b"binary")
-    subscription_client.app.state.client_downloads = ClientDownloads(
-        release_dir=release,
-        files={
-            "manifest.json": "client/manifest.json",
-            "sbc/linux-amd64/sbc": "client/sbc",
-        },
-        sbc_version="abc",
-        build_id="c" * 64,
-    )
-    return subscription_client
-
-
-def test_the_portal_serves_only_listed_files_to_a_valid_link(
-    downloads_client: TestClient,
-) -> None:
-    base = f"/sub/{subscription_token(SECRET, 'alice')}/files"
-
-    binary = downloads_client.get(f"{base}/sbc/linux-amd64/sbc")
-    manifest = downloads_client.get(f"{base}/manifest.json")
-
-    assert binary.status_code == 200
-    assert binary.content == b"binary"
-    assert binary.headers["content-type"] == "application/octet-stream"
-    assert manifest.headers["content-type"] == "application/json"
-    assert downloads_client.get(f"{base}/../../runtime.yaml").status_code == 404
-    assert downloads_client.get(f"{base}/client/sbc").status_code == 404
-    other = f"/sub/{'a' * 22}/files/manifest.json"
-    assert downloads_client.get(other).status_code == 404
-
-
-def test_the_envelope_names_the_latest_sbc(downloads_client: TestClient) -> None:
-    response = downloads_client.get(
-        f"/sub/{subscription_token(SECRET, 'alice')}", params=QUERY
-    )
-    assert response.json()["latest"] == {"sing_box": "1.14.2", "sbc": "abc"}
-
-
 def test_a_release_names_its_client_build_by_the_client_manifest(
     tmp_path: Path,
 ) -> None:
@@ -249,10 +197,3 @@ def test_a_release_names_its_client_build_by_the_client_manifest(
     assert downloads is not None
     assert downloads.sbc_version == "abc"
     assert downloads.build_id == hashlib.sha256(client).hexdigest()
-
-
-def test_bash_clients_are_told_to_upgrade_to_the_sbc_build(
-    downloads_client: TestClient,
-) -> None:
-    response = downloads_client.get("/api/client-update")
-    assert f"client_build_id={'c' * 64}\n" in response.text

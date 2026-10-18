@@ -1,6 +1,6 @@
 # Security policy
 
-Checked on 2026-10-13.
+Checked on 2026-10-18.
 
 ## Report vulnerabilities privately
 

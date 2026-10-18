@@ -1,4 +1,3 @@
-import secrets
 from typing import ClassVar, cast
 
 from django import forms
@@ -20,7 +19,7 @@ class AccountAdminForm(forms.ModelForm):
     new_portal_password = forms.CharField(
         required=False,
         widget=forms.PasswordInput(render_value=False),
-        help_text="Enter a plaintext password to hash with Argon2id, or leave blank to auto-generate (new account) or keep the existing hash.",
+        help_text="Optional legacy client password. Leave blank to preserve the hash. Subscription links do not require a password.",
     )
 
     class Meta:
@@ -29,7 +28,6 @@ class AccountAdminForm(forms.ModelForm):
             "username",
             "enabled",
             "portal_enabled",
-            "is_portal_admin",
             "new_portal_password",
             "portal_password_hash",
         ]
@@ -40,10 +38,6 @@ class AccountAdminForm(forms.ModelForm):
         if isinstance(new_password, str) and new_password:
             cleaned["portal_password_hash"] = ARGON2ID_VERIFIER.hash(new_password)
             self.instance.portal_password_hash = str(cleaned["portal_password_hash"])
-        elif not self.instance.pk and not cleaned.get("portal_password_hash"):
-            generated = ARGON2ID_VERIFIER.hash(secrets.token_urlsafe(24))
-            cleaned["portal_password_hash"] = generated
-            self.instance.portal_password_hash = generated
         return cleaned
 
 
@@ -61,7 +55,6 @@ class AccountAdmin(admin.ModelAdmin):
         "username",
         "enabled",
         "portal_enabled",
-        "is_portal_admin",
         "protocols_summary",
         "user_page_url",
         "subscription_counter",
@@ -70,7 +63,6 @@ class AccountAdmin(admin.ModelAdmin):
     list_filter: ClassVar[tuple[str, ...]] = (
         "enabled",
         "portal_enabled",
-        "is_portal_admin",
         "credentials__protocol",
     )
     search_fields: ClassVar[tuple[str, ...]] = ("username",)
@@ -95,12 +87,7 @@ class AccountAdmin(admin.ModelAdmin):
         from sing_box_manager.control_plane import django_settings
 
         secret = django_settings.runtime.web.subscription_secret
-        if (
-            not secret
-            or not obj.enabled
-            or not obj.portal_enabled
-            or not obj.portal_password_hash
-        ):
+        if not secret or not obj.enabled or not obj.portal_enabled:
             return "-"
         token = subscription_token(
             secret, str(obj.username), cast("int", obj.subscription_counter)

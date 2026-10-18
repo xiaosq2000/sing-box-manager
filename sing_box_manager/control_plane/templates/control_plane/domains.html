@@ -1,0 +1,28 @@
+{% load portal %} {% if domains %}
+<section class="card module">
+  <h2>域名流量</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>域名</th>
+        <th>上传</th>
+        <th>下载</th>
+        <th>总计</th>
+        <th>连接数</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in domains %}
+      <tr>
+        <td>{{ row.domain|domain_name }}</td>
+        <td>{{ row.upload_bytes|bytes }}</td>
+        <td>{{ row.download_bytes|bytes }}</td>
+        <td>{{ row.total_bytes|bytes }}</td>
+        <td>{{ row.connection_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p>域名统计来自连接记录，可能因采集时间、重放或未归属流量与计费总量不同。</p>
+</section>
+{% endif %}

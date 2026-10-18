@@ -10,7 +10,7 @@ import tarfile
 import tempfile
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from importlib import import_module
 from pathlib import Path
 from time import perf_counter
@@ -34,36 +34,23 @@ from sing_box_manager.release.digest_cache import (
     is_sha256_hex,
     load_cached_digest,
     sha256_for_path,
-    sha256_for_text,
     write_cached_digest,
 )
 from sing_box_manager.release.errors import ReleaseStageError
 from sing_box_manager.release.manifest import (
-    ARCHIVE_ROOT,
-    COMMON_DIR_NAME,
     MANIFEST_FILENAME,
     RELEASE_DIR_PREFIX,
     RELEASE_ID_LENGTH,
     SERVER_DIR_NAME,
-    TAR_GZ_FORMAT,
-    USERS_DIR_NAME,
-    ZIP_FORMAT,
-    ArchiveEntry,
     Manifest,
     Member,
-    Prefix,
 )
 from sing_box_manager.release.models import ReleasePlan, ReleaseResult
-from sing_box_manager.release.packing import SourceFile, member_for_bytes
 from sing_box_manager.release.platforms import (
-    MIXED_PROFILE,
+    MOBILE_TUN_PROFILE,
     PLATFORMS,
-    PROTOCOLS,
     ROUTE_STRATEGIES,
     Platform,
-    Protocol,
-    client_config_filename,
-    route_client_config_filename,
 )
 from sing_box_manager.release.profiles import (
     build_client_profile,
@@ -72,7 +59,6 @@ from sing_box_manager.release.profiles import (
 )
 from sing_box_manager.release.renderers import (
     apply_desktop_route_strategy,
-    render_auth_snapshot,
 )
 from sing_box_manager.release.rule_sets import desktop_rule_sets, prepare_rule_snapshots
 from sing_box_manager.release.store import STORE_DIR_NAME, Store
@@ -80,14 +66,12 @@ from sing_box_manager.release.ui import PlainReleaseReporter, ReleaseReporter
 from sing_box_manager.release.validation import check_config
 from sing_box_manager.runtime_env import load_local_env
 from sing_box_manager.settings import (
-    DeploymentConfig,
     Hysteria2User,
     NaiveUser,
     RuntimeInventory,
     Settings,
     TrojanUser,
     load_runtime_inventory,
-    write_auth_snapshot,
 )
 from sing_box_manager.traffic_stats import build_custom_server_binary
 
@@ -121,31 +105,13 @@ DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 UPSTREAM_REPOSITORY = "SagerNet/sing-box"
 UPSTREAM_USER_AGENT = "sing-box-manager"
-DEFAULT_PROTOCOL_FILENAME = "default-protocol"
-CLIENT_VERSION_FILENAME = "client-version"
-DESKTOP_CLIENT_PLATFORM_PREFIXES = ("linux-", "darwin-", "windows-")
 
 STAGING_DIR_NAME = ".staging"
 
-# The mode a file is written with on disk and the mode recorded for it in an
-# archive are deliberately separate. Rendered configs carry the user's
-# credentials and now live as loose files on both the build host and the VPS,
-# so on disk they are 0600. What the client ends up with after extraction is
-# unchanged from before this refactor.
+# Server configs can contain infrastructure secrets and TLS material.
 RENDERED_FILE_MODE = 0o600
-CLIENT_CONFIG_ARCHIVE_MODE = 0o644
 EXECUTABLE_ARCHIVE_MODE = 0o755
 REGULAR_ARCHIVE_MODE = 0o644
-
-
-@dataclass
-class ReleaseUser:
-    """Per-username release inputs across supported protocols."""
-
-    username: str
-    trojan: TrojanUser | None = None
-    hysteria2: Hysteria2User | None = None
-    naive: NaiveUser | None = None
 
 
 class AssetIntegrityError(RuntimeError):
@@ -154,14 +120,6 @@ class AssetIntegrityError(RuntimeError):
 
 class UnsafeArchiveError(RuntimeError):
     """Raised when an upstream archive contains unsafe members."""
-
-
-def _archive_platforms() -> list[Platform]:
-    """The platforms that get a per-user archive: those with client profiles.
-
-    Read when called, so a test that replaces PLATFORMS sees its own list.
-    """
-    return [platform for platform in PLATFORMS if platform.client_profiles]
 
 
 def _write_file_with_mode(path: Path, payload: bytes, mode: int) -> None:
@@ -206,10 +164,7 @@ class ReleaseBuilder:
         self._upstream_cache_root = self._resolve_path(settings.upstream_cache_root)
         self._reporter = reporter or PlainReleaseReporter()
         self._download_paths: dict[str, Path] = {}
-        self._inventory: RuntimeInventory | None = None
         self._custom_server_binary_path: Path | None = None
-        self._prefixes: dict[str, Prefix] = {}
-        self._prefixes_built = 0
         self._payload_digests: set[str] = set()
         self._rule_snapshot_paths: list[Path] = []
 
@@ -225,8 +180,6 @@ class ReleaseBuilder:
         original_cwd = Path.cwd()
         started_at = perf_counter()
         self._custom_server_binary_path = None
-        self._prefixes = {}
-        self._prefixes_built = 0
         self._payload_digests = set()
         self._rule_snapshot_paths = []
 
@@ -239,14 +192,11 @@ class ReleaseBuilder:
                 action=self._load_inventory,
                 summary=lambda _: self._resolve_path(self._config_path).name,
             )
-            self._inventory = inventory
             self._release_info = replace(
                 self._release_info,
                 deployment_host=inventory.deployment.host,
             )
-            users = self._collect_release_users(inventory)
-            self._validate_default_protocol_coverage(users)
-            plan = self._build_plan(inventory, users)
+            plan = self._build_plan()
             self._reporter.start(plan)
             self._reset_staging_dir()
 
@@ -278,37 +228,13 @@ class ReleaseBuilder:
                 action=self._prepare_rule_sets,
                 summary=lambda count: f"{count} rule files ready",
             )
-            self._validate_desktop_configs(users, inventory)
-
-            user_target_count = len(users) * len(_archive_platforms())
-            self._run_stage(
-                key="prefix",
-                title="Build shared platform payloads",
-                total=len(_archive_platforms()),
-                action=self._build_prefixes,
-                summary=lambda counts: f"{counts[0]} built, {counts[1]} reused",
-            )
-            archives = self._run_stage(
-                key="render",
-                title="Render client configurations",
-                total=user_target_count,
-                action=lambda: self._render_user_configs(users, inventory.deployment),
-                summary=lambda entries: f"{len(entries)} archives described",
-            )
-            archives = self._add_client_version_metadata(archives, inventory.deployment)
+            self._validate_client_configs(inventory)
             server_members = self._run_stage(
                 key="server",
                 title="Build server package",
                 total=1,
                 action=lambda: self._build_server_release(inventory),
                 summary=lambda members: f"{len(members)} files staged",
-            )
-            self._run_stage(
-                key="auth",
-                title="Refresh portal auth snapshot",
-                total=1,
-                action=lambda: self._write_auth_snapshot(inventory),
-                summary=lambda path: path.name,
             )
             client_members: tuple[Member, ...] = ()
             if self._settings.client_signing_key is None:
@@ -328,9 +254,7 @@ class ReleaseBuilder:
                 key="publish",
                 title="Publish release",
                 total=1,
-                action=lambda: self._publish_release(
-                    archives, server_members, client_members
-                ),
+                action=lambda: self._publish_release(server_members, client_members),
                 summary=lambda outcome: (
                     outcome[1].name + (" (unchanged)" if outcome[2] else "")
                 ),
@@ -339,16 +263,8 @@ class ReleaseBuilder:
 
             result = ReleaseResult(
                 release_dir=release_dir,
-                auth_snapshot_path=self._resolve_path(
-                    self._settings.auth_snapshot_path
-                ),
                 release_id=manifest.release_id,
-                archive_names=tuple(
-                    sorted(entry.filename for entry in manifest.archives)
-                ),
                 server_package_dir=release_dir / SERVER_DIR_NAME,
-                prefixes_built=self._prefixes_built,
-                prefixes_reused=len(self._prefixes) - self._prefixes_built,
                 reused_existing_release=reused_existing,
                 elapsed_seconds=perf_counter() - started_at,
             )
@@ -358,31 +274,13 @@ class ReleaseBuilder:
             shutil.rmtree(self._staging_dir, ignore_errors=True)
             os.chdir(original_cwd)
 
-    def _build_plan(
-        self, inventory: RuntimeInventory, users: list[ReleaseUser]
-    ) -> ReleasePlan:
-        """Create the release plan shown to users before work starts."""
-        enabled_portal_users = sum(user.enabled for user in inventory.web_portal.users)
-        enabled_trojan_users = sum(user.enabled for user in inventory.trojan.users)
-        enabled_hysteria2_users = sum(
-            user.enabled for user in inventory.hysteria2.users
-        )
-        enabled_naive_users = sum(user.enabled for user in inventory.naive.users)
-
+    def _build_plan(self) -> ReleasePlan:
+        """Release artifacts are independent of the live account roster."""
         return ReleasePlan(
             version=self._settings.sing_box_version,
             release_dir=self._release_dir,
             config_path=self._resolve_path(self._config_path),
-            auth_snapshot_path=self._resolve_path(self._settings.auth_snapshot_path),
-            default_protocol=self._settings.default_protocol,
-            enabled_portal_users=enabled_portal_users,
-            enabled_release_users=len(users),
-            enabled_trojan_users=enabled_trojan_users,
-            enabled_hysteria2_users=enabled_hysteria2_users,
-            enabled_naive_users=enabled_naive_users,
-            platforms=tuple(platform.name for platform in _archive_platforms()),
-            protocols=tuple(protocol.name for protocol in PROTOCOLS),
-            expected_user_archives=len(users) * len(_archive_platforms()),
+            platforms=tuple(CLIENT_PLATFORMS),
         )
 
     def _load_inventory(self) -> RuntimeInventory:
@@ -421,63 +319,6 @@ class ReleaseBuilder:
             completion_summary = summary(result)
         self._reporter.complete_stage(key, completion_summary)
         return result
-
-    def _collect_release_users(self, inventory: RuntimeInventory) -> list[ReleaseUser]:
-        """Merge enabled per-protocol rosters into per-username release inputs."""
-        release_users: dict[str, ReleaseUser] = {}
-
-        for user in inventory.trojan.users:
-            if not user.enabled:
-                continue
-            release_users.setdefault(
-                user.username, ReleaseUser(username=user.username)
-            ).trojan = user
-
-        for user in inventory.hysteria2.users:
-            if not user.enabled:
-                continue
-            release_users.setdefault(
-                user.username, ReleaseUser(username=user.username)
-            ).hysteria2 = user
-
-        for user in inventory.naive.users:
-            if not user.enabled:
-                continue
-            release_users.setdefault(
-                user.username, ReleaseUser(username=user.username)
-            ).naive = user
-
-        return list(release_users.values())
-
-    def _validate_default_protocol_coverage(self, users: list[ReleaseUser]) -> None:
-        """Ensure every release user can use the configured default protocol."""
-        default_protocol = self._settings.default_protocol
-        missing_users = sorted(
-            user.username
-            for user in users
-            if self._release_user_protocol(user, default_protocol) is None
-        )
-        if not missing_users:
-            return
-
-        raise ReleaseStageError(
-            "Validate default protocol",
-            (
-                f"default protocol {default_protocol} is not enabled for all "
-                f"release users: {', '.join(missing_users)}"
-            ),
-        )
-
-    def _release_user_protocol(
-        self, user: ReleaseUser, protocol_name: str
-    ) -> TrojanUser | Hysteria2User | NaiveUser | None:
-        if protocol_name == "trojan":
-            return user.trojan
-        if protocol_name == "hysteria2":
-            return user.hysteria2
-        if protocol_name == "naive":
-            return user.naive
-        raise ValueError(f"Unsupported protocol: {protocol_name}")
 
     def fetch_upstream_payload(self, platform_name: str) -> Path:
         """Download, verify and extract one platform's upstream release files.
@@ -864,13 +705,6 @@ class ReleaseBuilder:
 
         return extracted
 
-    def _write_auth_snapshot(self, inventory: RuntimeInventory) -> Path:
-        """Render and persist the auth snapshot used by the web portal."""
-        output_path = self._resolve_path(self._settings.auth_snapshot_path)
-        write_auth_snapshot(output_path, render_auth_snapshot(inventory.web_portal))
-        self._reporter.advance_stage("auth")
-        return output_path
-
     def _reset_staging_dir(self) -> None:
         """Start every run from an empty staging directory."""
         shutil.rmtree(self._staging_dir, ignore_errors=True)
@@ -887,24 +721,8 @@ class ReleaseBuilder:
             return EXECUTABLE_ARCHIVE_MODE
         return REGULAR_ARCHIVE_MODE
 
-    def _extra_arcname(self, extra: str) -> str:
-        """Where a repo file lands inside the archive.
-
-        Preserves the existing rule: a nested path such as scripts/lib/ui.sh
-        goes to sing-box/lib/ui.sh, everything else to the archive root.
-        """
-        relative = Path(extra)
-        if len(relative.parts) > 2:
-            return f"{ARCHIVE_ROOT}/{relative.parts[-2]}/{relative.name}"
-        return f"{ARCHIVE_ROOT}/{relative.name}"
-
     def _prepare_rule_sets(self) -> int:
-        # The sbc downloads carry the snapshots, as does an archive with the
-        # desktop profile.
-        if self._settings.client_signing_key is None and not any(
-            MIXED_PROFILE in platform.client_profiles
-            for platform in _archive_platforms()
-        ):
+        if self._settings.client_signing_key is None:
             return 0
         protocols = ("trojan", "hysteria2", "naive")
         configs = (
@@ -930,284 +748,6 @@ class ReleaseBuilder:
         )
         return len(rules)
 
-    def _prefix_sources(self, platform: Platform) -> list[SourceFile]:
-        """Everything in a platform's archive that is identical for every user."""
-        payload_dir = self._upstream_payload_dir(platform)
-        sources = [
-            SourceFile(f"{ARCHIVE_ROOT}/{path.name}", self._archive_mode(path), path)
-            for path in sorted(payload_dir.iterdir())
-            if path.is_file()
-        ]
-        sources.extend(
-            SourceFile(
-                self._extra_arcname(extra),
-                self._archive_mode(self._root_dir / extra),
-                self._root_dir / extra,
-            )
-            for extra in platform.extras
-        )
-        if MIXED_PROFILE in platform.client_profiles:
-            sources.extend(
-                SourceFile(
-                    f"{ARCHIVE_ROOT}/rules/{path.name}", REGULAR_ARCHIVE_MODE, path
-                )
-                for path in self._rule_snapshot_paths
-            )
-        return sources
-
-    def _archive_format(self, platform: Platform) -> str:
-        return TAR_GZ_FORMAT if platform.package_ext == ".tar.gz" else ZIP_FORMAT
-
-    def _build_prefixes(self) -> tuple[int, int]:
-        """Build, or reuse from the store, the payload every user shares."""
-        built = 0
-
-        for platform in _archive_platforms():
-            prefix, was_built = self._store.ensure_prefix(
-                platform.name,
-                self._archive_format(platform),
-                self._prefix_sources(platform),
-            )
-            self._prefixes[platform.name] = prefix
-            built += int(was_built)
-            self._reporter.advance_stage(
-                "prefix",
-                detail=f"Build shared platform payloads ({platform.name})",
-            )
-
-        self._prefixes_built = built
-        return built, len(_archive_platforms()) - built
-
-    def _archive_filename(self, username: str, platform: Platform) -> str:
-        return (
-            f"{self._settings.release_name}-{username}"
-            f"-{platform.name}{platform.package_ext}"
-        )
-
-    def _stage_shared_file(self, source: Path, arcname: str) -> Member:
-        """Stage a file that is identical for every user who receives it."""
-        common_dir = self._staging_dir / COMMON_DIR_NAME
-        common_dir.mkdir(parents=True, exist_ok=True)
-        destination = common_dir / source.name
-        if not destination.exists():
-            shutil.copy(source, destination)
-        payload = destination.read_bytes()
-        return member_for_bytes(
-            arcname,
-            self._archive_mode(source),
-            payload,
-            f"{COMMON_DIR_NAME}/{source.name}",
-        )
-
-    def _render_user_configs(
-        self, users: list[ReleaseUser], deployment: DeploymentConfig
-    ) -> list[ArchiveEntry]:
-        """Render each user's configs and describe the archives they belong to.
-
-        Only the rendered configs are per-user; everything else in the archive
-        already lives in the shared prefix. So this writes a few KB per user
-        per platform instead of a 24 MB archive.
-        """
-        marker = f"{self._settings.default_protocol}\n".encode()
-        common_dir = self._staging_dir / COMMON_DIR_NAME
-        common_dir.mkdir(parents=True, exist_ok=True)
-        _write_file_with_mode(
-            common_dir / DEFAULT_PROTOCOL_FILENAME, marker, REGULAR_ARCHIVE_MODE
-        )
-        default_protocol_member = member_for_bytes(
-            f"{ARCHIVE_ROOT}/{DEFAULT_PROTOCOL_FILENAME}",
-            REGULAR_ARCHIVE_MODE,
-            marker,
-            f"{COMMON_DIR_NAME}/{DEFAULT_PROTOCOL_FILENAME}",
-        )
-
-        entries: list[ArchiveEntry] = []
-        for user in users:
-            for platform in _archive_platforms():
-                target_dir = (
-                    self._staging_dir / USERS_DIR_NAME / user.username / platform.name
-                )
-                target_dir.mkdir(parents=True, exist_ok=True)
-                tail: list[Member] = []
-
-                for protocol in PROTOCOLS:
-                    # Empty when this user does not have this protocol, so the
-                    # files are absent from their archive entirely. That is why
-                    # the member list has to be recorded per archive.
-                    rendered = self._customize_protocol_config(
-                        user, deployment, platform, protocol
-                    )
-                    if not rendered:
-                        continue
-
-                    for config_filename, payload in rendered:
-                        _write_file_with_mode(
-                            target_dir / config_filename, payload, RENDERED_FILE_MODE
-                        )
-                        tail.append(
-                            member_for_bytes(
-                                f"{ARCHIVE_ROOT}/{config_filename}",
-                                CLIENT_CONFIG_ARCHIVE_MODE,
-                                payload,
-                                f"{USERS_DIR_NAME}/{user.username}"
-                                f"/{platform.name}/{config_filename}",
-                            )
-                        )
-                    tail.extend(
-                        self._stage_shared_file(
-                            self._root_dir / extra, self._extra_arcname(extra)
-                        )
-                        for extra in platform.protocol_extras.get(protocol.name, [])
-                    )
-
-                tail.append(default_protocol_member)
-                entries.append(
-                    ArchiveEntry(
-                        filename=self._archive_filename(user.username, platform),
-                        username=user.username,
-                        platform=platform.name,
-                        archive_format=self._archive_format(platform),
-                        prefix_id=self._prefixes[platform.name].prefix_id,
-                        tail_members=tuple(
-                            sorted(tail, key=lambda member: member.arcname)
-                        ),
-                    )
-                )
-                self._reporter.advance_stage(
-                    "render",
-                    detail=(
-                        f"Render client configurations "
-                        f"({user.username} / {platform.name})"
-                    ),
-                )
-
-        return entries
-
-    def _customize_protocol_config(
-        self,
-        user: ReleaseUser,
-        deployment: DeploymentConfig,
-        platform: Platform,
-        protocol: Protocol,
-    ) -> list[tuple[str, bytes]]:
-        """Render one protocol's configs, one per profile the platform carries.
-
-        Empty when this user does not have the protocol.
-        """
-        if self._release_user_protocol(user, protocol.name) is None:
-            return []
-        if self._inventory is None:
-            raise RuntimeError("Runtime inventory has not been loaded")
-        protocols = UserProtocols(
-            trojan=user.trojan,
-            hysteria2=user.hysteria2,
-            naive=user.naive,
-            hysteria2_settings=self._inventory.hysteria2,
-        )
-        rendered: list[tuple[str, dict]] = []
-        for profile in platform.client_profiles:
-            base = build_client_profile(deployment, protocols, protocol.name, profile)
-            if profile == MIXED_PROFILE:
-                rendered.extend(
-                    (
-                        route_client_config_filename(protocol.name, strategy),
-                        apply_desktop_route_strategy(
-                            base,
-                            strategy,
-                            os_name=platform.os_name,
-                        ),
-                    )
-                    for strategy in ROUTE_STRATEGIES
-                )
-            else:
-                rendered.append((client_config_filename(protocol.name, profile), base))
-        for config_filename, config in rendered:
-            self._check_config(
-                config, f"{user.username}/{platform.name}/{config_filename}"
-            )
-        return [
-            (filename, json.dumps(config, indent=4).encode("utf-8"))
-            for filename, config in rendered
-        ]
-
-    def _add_client_version_metadata(
-        self,
-        archives: list[ArchiveEntry],
-        deployment: DeploymentConfig,
-    ) -> list[ArchiveEntry]:
-        """Embed version metadata in every desktop client archive.
-
-        The build identifier hashes the complete desktop client archive
-        descriptions before this metadata member is appended. That keeps it
-        deterministic while still covering binaries, helper scripts, and
-        rendered configs.
-        """
-        desktop_archives = [
-            archive
-            for archive in archives
-            if archive.platform.startswith(DESKTOP_CLIENT_PLATFORM_PREFIXES)
-        ]
-        desktop_platforms = {archive.platform for archive in desktop_archives}
-        payload = {
-            "prefixes": [
-                prefix.to_dict()
-                for prefix in sorted(
-                    (
-                        prefix
-                        for prefix in self._prefixes.values()
-                        if prefix.platform in desktop_platforms
-                    ),
-                    key=lambda item: item.platform,
-                )
-            ],
-            "archives": [
-                archive.to_dict()
-                for archive in sorted(desktop_archives, key=lambda item: item.filename)
-            ],
-        }
-        client_build_id = sha256_for_text(
-            json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        )
-        metadata = (
-            "schema=1\n"
-            f"client_build_id={client_build_id}\n"
-            f"commit_sha={self._release_info.commit_sha}\n"
-            f"dirty={'true' if self._release_info.dirty else 'false'}\n"
-            f"upstream_version={self._settings.sing_box_version}\n"
-            f"portal_base_url=https://{deployment.host}\n"
-        ).encode()
-        common_dir = self._staging_dir / COMMON_DIR_NAME
-        common_dir.mkdir(parents=True, exist_ok=True)
-        _write_file_with_mode(
-            common_dir / CLIENT_VERSION_FILENAME,
-            metadata,
-            REGULAR_ARCHIVE_MODE,
-        )
-        metadata_member = member_for_bytes(
-            f"{ARCHIVE_ROOT}/{CLIENT_VERSION_FILENAME}",
-            REGULAR_ARCHIVE_MODE,
-            metadata,
-            f"{COMMON_DIR_NAME}/{CLIENT_VERSION_FILENAME}",
-        )
-
-        self._release_info = replace(
-            self._release_info, client_build_id=client_build_id
-        )
-        return [
-            replace(
-                archive,
-                tail_members=tuple(
-                    sorted(
-                        (*archive.tail_members, metadata_member),
-                        key=lambda member: member.arcname,
-                    )
-                ),
-            )
-            if archive.platform.startswith(DESKTOP_CLIENT_PLATFORM_PREFIXES)
-            else archive
-            for archive in archives
-        ]
-
     def _check_config(self, config: dict, label: str, *, server: bool = False) -> None:
         linux = next(
             (platform for platform in PLATFORMS if platform.name == "linux-amd64"), None
@@ -1221,25 +761,31 @@ class ReleaseBuilder:
         )
         check_config(binary, config, label=label, server=server)
 
-    def _validate_desktop_configs(
-        self, users: list[ReleaseUser], inventory: RuntimeInventory
-    ) -> None:
-        for user in users:
-            protocols = UserProtocols(
-                trojan=user.trojan,
-                hysteria2=user.hysteria2,
-                naive=user.naive,
-                hysteria2_settings=inventory.hysteria2,
+    def _validate_client_configs(self, inventory: RuntimeInventory) -> None:
+        # Validate profiles without reading or publishing any live user credentials.
+        values = {"username": "validation", "password": "synthetic-validation-only"}
+        protocols = UserProtocols(
+            trojan=TrojanUser.model_validate(values),
+            hysteria2=Hysteria2User.model_validate(values),
+            naive=NaiveUser.model_validate(values),
+            hysteria2_settings=inventory.hysteria2,
+        )
+        for os_name in ("linux", "darwin", "windows"):
+            config = build_desktop_config(
+                inventory.deployment,
+                protocols,
+                os_name=os_name,
+                default_protocol=self._settings.default_protocol,
+                default_route="china-direct",
             )
-            for os_name in ("linux", "darwin", "windows"):
-                config = build_desktop_config(
-                    inventory.deployment,
-                    protocols,
-                    os_name=os_name,
-                    default_protocol=self._settings.default_protocol,
-                    default_route="china-direct",
-                )
-                self._check_config(config, f"{user.username}/{os_name}/sbc")
+            self._check_config(config, f"validation/{os_name}/sbc")
+        for protocol in ("trojan", "hysteria2", "naive"):
+            self._check_config(
+                build_client_profile(
+                    inventory.deployment, protocols, protocol, MOBILE_TUN_PROFILE
+                ),
+                f"validation/mobile/{protocol}",
+            )
 
     def _build_custom_server_binary(self) -> Path:
         """Build the traffic-stats server binary from upstream source."""
@@ -1354,6 +900,8 @@ class ReleaseBuilder:
                 server_dir, self._custom_server_binary_path, "sing-box"
             )
 
+        if self._settings.control_plane.authoritative:
+            inventory = inventory.without_accounts()
         rendered = build_server_config(inventory, self._settings.traffic_stats)
         self._check_config(rendered, "server/config.json", server=True)
         _write_file_with_mode(
@@ -1394,7 +942,6 @@ class ReleaseBuilder:
 
     def _publish_release(
         self,
-        archives: list[ArchiveEntry],
         server_members: tuple[Member, ...],
         client_members: tuple[Member, ...] = (),
     ) -> tuple[Manifest, Path, bool]:
@@ -1406,8 +953,8 @@ class ReleaseBuilder:
         """
         manifest = Manifest(
             upstream_version=self._settings.sing_box_version,
-            prefixes=tuple(self._prefixes.values()),
-            archives=tuple(archives),
+            prefixes=(),
+            archives=(),
             server_members=server_members,
             payload_digests=tuple(sorted(self._payload_digests)),
             client_members=client_members,
@@ -1426,9 +973,6 @@ class ReleaseBuilder:
                 manifest.to_json().encode("utf-8"),
                 REGULAR_ARCHIVE_MODE,
             )
-            users_dir = self._staging_dir / USERS_DIR_NAME
-            if users_dir.is_dir():
-                users_dir.chmod(0o700)
             self._staging_dir.replace(release_dir)
 
         self._release_dir = release_dir

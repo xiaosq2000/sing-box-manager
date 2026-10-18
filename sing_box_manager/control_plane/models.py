@@ -37,6 +37,9 @@ class Account(models.Model):
 
     class Meta:
         ordering: ClassVar[list[str]] = ["id"]
+        permissions: ClassVar[list[tuple[str, str]]] = [
+            ("view_traffic", "Can view all traffic statistics"),
+        ]
 
     def __str__(self) -> str:
         return str(self.username)

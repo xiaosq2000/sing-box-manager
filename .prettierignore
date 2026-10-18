@@ -7,3 +7,6 @@ pixi.lock
 
 # Rewritten by sops on every edit, with its own indentation.
 config/inventory/*.sops.yaml
+
+# Prettier's HTML parser cannot preserve Django template tags or attributes.
+sing_box_manager/control_plane/templates/
