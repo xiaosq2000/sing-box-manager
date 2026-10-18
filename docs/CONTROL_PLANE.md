@@ -45,10 +45,10 @@ control_plane:
   database_port: 5432
 ```
 
-Set `control_plane.authoritative: true` after importing accounts so every `sbm deploy`
-automatically runs `control-plane sync-node` (applying PostgreSQL-managed
+Set `control_plane.authoritative: true` after importing accounts. Deployments without
+`--skip-code` run `control-plane sync-node` (applying PostgreSQL-managed
 accounts to `sing-box.service`), enables `sing-box-manager-sync.path` (so saving or
-deleting accounts in Django Admin automatically triggers a `sing-box` config reload),
+deleting accounts in Django Admin requests a `sing-box` config sync after transaction commit),
 and routes Nginx `/sub/` and `/install*` requests to the control plane.
 When creating a new `Account` in Django Admin (`http://127.0.0.1:47071/admin/`),
 leaving `Credentials` and `New portal password` blank automatically generates strong
@@ -108,21 +108,43 @@ Remote actions use the deployed runtime inventory. They run as `sbm`, except
 
 ## Account import, admin management, and node sync
 
-To idempotently import accounts, protocol credentials, and existing SQLite reset
-counters from the runtime configuration into PostgreSQL (and verify rendered
-server/client config parity in one transaction):
+Before enabling authoritative mode, import accounts, protocol credentials, and SQLite
+reset counters from the runtime configuration. The transaction verifies server/client
+config parity. Repeat imports preserve the highest reset counter:
 
 ```sh
 sudo -u sbm sbm control-plane import
 ```
 
-In Django Admin (`/admin/`), the **Accounts** view manages `Account` rows and inline
-`Credential` rows (`trojan`, `hysteria2`, `naive`):
+Import refuses to run when `control_plane.authoritative: true`. Do not disable
+that setting to repeat an import: inventory can overwrite Admin changes and disable
+accounts that exist only in PostgreSQL. Deploy never imports accounts automatically.
+
+In Django Admin (`/admin/`), **Operators** manages dashboard access. **Accounts**
+manages proxy users and inline `Credential` rows (`trojan`, `hysteria2`, `naive`):
+
+| Switch                   | Effect                                                                      |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `Account.enabled`        | Master switch for subscriptions, downloads, and all protocol credentials    |
+| `Account.portal_enabled` | Allows subscription access when the account also has a portal password hash |
+| `Credential.enabled`     | Enables one protocol when its account is enabled                            |
+
+Re-enabling an account retains its individual protocol settings and secrets.
+Disabling subscription access does not revoke credentials already held by a client.
+Account disablement removes those credentials from the node after a successful sync.
+A changed config requires a sing-box restart, which interrupts existing connections on this single node.
+The separate FastAPI portal still uses its generated authentication snapshot.
 
 - Enter a plaintext password in **New portal password** to hash it with Argon2id, or
   leave it blank to preserve the existing hash.
-- Use the **Reset subscription links for selected accounts** action to advance
-  `subscription_counter` and invalidate old `/sub/<token>` links.
+- New accounts with no supplied credentials receive three random protocol secrets.
+  Deleting every credential from an existing account does not generate replacements.
+- Use **Reset subscription links for selected accounts** to advance the read-only
+  `subscription_counter`. Old links fail, but downloaded proxy credentials remain valid.
+- Admin requests sync only after a successful transaction commit. A rollback does
+  not request sync. A trigger-write failure reports that changes were saved but sync failed.
+  A successful request does not prove that the node applied the change. Check
+  `sing-box-manager-sync.service`, or run the manual sync below.
 
 To render the server `sing-box` config from PostgreSQL accounts, validate it with
 `sing-box check`, and atomically update `/usr/local/etc/sing-box/config.json` and
@@ -131,6 +153,43 @@ restart `sing-box.service`:
 ```sh
 sudo sbm control-plane sync
 ```
+
+Sync and the server installer share `/usr/local/etc/sing-box/.sync.lock`. Sync reads
+PostgreSQL only after it acquires this lock. Root temporarily uses the `sbm` identity
+for the peer-authenticated query, then restores root privileges to apply the config.
+
+Sync compares parsed JSON, not formatting. If the config matches and the service is active,
+sync does not replace the file or restart sing-box. An inactive service still requires recovery.
+
+A rejected config leaves the active file unchanged. A failed restart or health check
+restores the previous file atomically and attempts to restart the previous service.
+Recovery failure returns an error. Inspect the service before retrying. If no previous
+config exists, sync removes the failed candidate. Checker output is not logged because
+it can contain credentials. Database edits remain saved even when node sync fails.
+
+## Traffic collection
+
+In authoritative mode, the traffic collector reads accounts and enabled credentials from
+PostgreSQL. It includes accounts created only in Django Admin. Account and protocol
+switches determine collection targets; `portal_enabled` does not.
+A database error fails collection instead of using the obsolete inventory roster.
+Non-authoritative mode continues to read inventory users. Usage history remains in SQLite.
+Deployment checks traffic collection after the final node sync.
+
+## Schema upgrade
+
+Back up the database and infrastructure configuration before an authorized upgrade.
+Migration `0003_account_portal_enabled` preserves effective access, secrets, and counters:
+
+- The old `enabled` value becomes `portal_enabled`.
+- The master switch remains enabled if the portal or any protocol credential was enabled.
+- Accounts with neither type of access remain disabled.
+
+Thus an account with disabled portal access and an enabled protocol keeps that protocol.
+To revoke all access, disable its master switch after the upgrade and verify node sync.
+The data migration has no automatic reverse operation: the old model cannot enforce
+account-wide revocation. Do not revert application code alone: old code treats the
+master switch as the portal switch. Use a protected backup for a deliberate schema rollback.
 
 ## Create an operator and open the admin
 
@@ -151,9 +210,9 @@ Open `http://127.0.0.1:47071/admin/`. Use a different local port if 47071 is occ
 After a CSRF 403, open a fresh login page at the exact tunnel URL.
 Keep the hostname and port unchanged during login.
 
-Admin changes affect Django operators only. They do not grant or revoke proxy access.
-A Django superuser has application permissions, not PostgreSQL superuser rights.
-The custom Django user model is the starting point for the later ownership cutover.
+Operator permissions and proxy access are separate. Edit **Accounts**, not **Operators**,
+to grant or revoke proxy access. A Django superuser has application permissions,
+not PostgreSQL superuser rights.
 
 For a manual readiness check on the server:
 
@@ -171,6 +230,8 @@ those files or the deployed source tree.
 These commands use the default database and local PostgreSQL cluster.
 Keep dumps private and outside the checkout. Use a new filename for each backup.
 Keep an encrypted copy on another host. Do not commit dumps or database files.
+Create a backup after cutover and continue regular backups: the inventory does not
+contain accounts or credential changes made in Django Admin.
 
 On the server:
 
@@ -185,7 +246,7 @@ Restore into a separate database, not over the active one:
 ```sh
 sudo -u postgres createdb --owner=sbm sbm_control_plane_restore
 sudo sh -c 'sudo -u postgres pg_restore --exit-on-error --no-owner --role=sbm --dbname=sbm_control_plane_restore < "$1"' sh "$BACKUP"
-sudo -u sbm psql --dbname=sbm_control_plane_restore --command='SELECT count(*) FROM control_plane_user;'
+sudo -u sbm psql --dbname=sbm_control_plane_restore --command='SELECT count(*) FROM control_plane_user; SELECT count(*) FROM control_plane_account; SELECT count(*) FROM control_plane_credential;'
 ```
 
 For recovery, select the restored name in `control_plane.database_name`, then build
@@ -195,16 +256,34 @@ signing key; keep a protected backup of infrastructure configuration too.
 
 ## Disable without removing data
 
-Set `control_plane.enabled: false` in the inventory and deploy normally.
-Deployment disables only the managed Django service. It retains PostgreSQL, the
-database, operator accounts, and signing key. It does not reverse migrations.
-Disable this feature before considering a code rollback. Older revisions do not
-understand the new settings or service. Do not assume an older deploy removes it.
+An ordinary deployment uses the incoming `authoritative` setting. `--skip-code` uses
+the deployed setting and cannot switch modes.
+
+| Incoming mode              | Node configuration                                                        | Public routes and watcher                                       |
+| -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Authoritative              | Preserve the live config during binary installation, then sync PostgreSQL | Route subscriptions/installers to Django and enable the watcher |
+| Enabled, not authoritative | Install the selected release config                                       | Remove Django routes and disable the watcher; keep Admin        |
+| Disabled                   | Install the selected release config                                       | Remove Django routes and disable the watcher and Django service |
+
+Before leaving authoritative mode, build and review the intended inventory-backed release.
+**Database-only accounts and Admin credential changes do not transfer back to inventory.**
+A return to inventory can revoke those users or restore obsolete credentials and links.
+Do not use this transition merely to bypass the import restriction.
+
+Ordinary deployments pause the watcher before node installation and wait up to 60 seconds
+for an existing sync to finish. A timeout stops deployment without killing the sync.
+Authoritative deployment enables the watcher again before the final sync.
+If deployment fails while the watcher is paused, resolve the failure and repeat deployment.
+Until then, Admin saves do not automatically apply to the node.
+
+Set both `control_plane.enabled` and `control_plane.authoritative` to `false` to disable Django.
+Deployment retains PostgreSQL, database records, and the signing key. It does not reverse
+migrations. Do not assume an older application revision can read the current schema.
 
 ## Verification
 
 ```sh
-pixi run -e control-plane-test test tests/test_control_plane.py tests/test_control_plane_integration.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py
+pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py tests/test_server_install.py
 ```
 
 The test environment supplies PostgreSQL 17. Tests start an isolated cluster with
@@ -214,6 +293,7 @@ CSRF and host checks, static files, repeat provisioning, database privileges,
 backup restoration, action aliases, the deployed wrapper, and disabled-state
 retention. They do not contact a live VPS.
 CI requires these real-database checks. It also runs a native systemd deployment
-smoke test on a disposable GitHub runner. That test checks production peer
-authentication, read-only assets, repeat deployment, and disablement.
+smoke test on a disposable GitHub runner. That test checks peer authentication,
+read-only assets, real node installation, watcher-driven account switches, no-op sync,
+Nginx authority transitions, repeat deployment, and disablement.
 See [Development](DEVELOPMENT.md).

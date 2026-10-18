@@ -70,8 +70,9 @@ if this clone still holds LFS pointer stubs.
 ## Configuration
 
 See [`config/inventory/example.yaml`](config/inventory/example.yaml) for the full
-config shape. All settings and deployment/user data live in one file, passed via
-`--config <path>` or the `SBM_CONFIG` environment variable.
+config shape. Select infrastructure settings and legacy inventory with `--config <path>`
+or `SBM_CONFIG`. In authoritative mode, PostgreSQL owns proxy accounts and credentials.
+Manage them in Django Admin, not in the inventory.
 
 `sbm serve` refuses to start without `web.session_secret`, which signs browser
 sessions and installer machine tokens. Any value works for local development. For a
@@ -197,9 +198,13 @@ Manage the control plane on the VPS after deployment:
 ```sh
 sudo -u sbm sbm control-plane migrate
 sudo -u sbm sbm control-plane createsuperuser
+# Initial import only, before enabling authoritative mode:
 sudo -u sbm sbm control-plane import
 sudo sbm control-plane sync
 ```
+
+For import restrictions, account switches, and deployment modes, see
+[the control-plane guide](docs/CONTROL_PLANE.md).
 
 The full action names `create-admin`, `import-inventory`, and `sync-node` also work.
 Other actions are `collect-static`, `serve`, `health`, and `check`.

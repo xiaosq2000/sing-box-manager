@@ -26,6 +26,7 @@ from sing_box_manager.deploy import (
     _rsync_directory,
     _Transfer,
     deploy_release,
+    node_install_command,
 )
 from sing_box_manager.release import artifacts
 from sing_box_manager.release.artifacts import ReleaseInfo, write_release_info
@@ -271,6 +272,7 @@ def _deploy(
     protocols: list[str] | None = None,
     traffic_stats_enabled: bool = False,
     control_plane_enabled: bool = False,
+    authoritative: bool = False,
     **artifact_kwargs: bool,
 ) -> _Recorder:
     config_path = tmp_path / "config" / "inventory" / "runtime.yaml"
@@ -278,6 +280,7 @@ def _deploy(
         config_path=config_path, traffic_stats_enabled=traffic_stats_enabled
     )
     settings.control_plane.enabled = control_plane_enabled
+    settings.control_plane.authoritative = authoritative
     _prepare_release_artifacts(tmp_path, settings, **artifact_kwargs)
     _prepare_code_tree(tmp_path)
     recorder = recorder or _Recorder()
@@ -739,9 +742,9 @@ def test_the_server_package_is_installed_from_a_directory_not_a_tarball(
     install = next(
         command for command in recorder.remote_commands if "server-install.sh" in command
     )
-    assert install == (
-        f"cd {shlex.quote(f'{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server')} && "
-        "./server-install.sh -p trojan"
+    assert install == node_install_command(
+        REMOTE_ROOT, f"{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server",
+        ["trojan"], authoritative=False,
     )
 
 
@@ -757,9 +760,9 @@ def test_default_deploy_leaves_available_inbound_selection_to_the_installer(
         for command in recorder.remote_commands
         if "server-install.sh" in command
     )
-    assert install == (
-        f"cd {shlex.quote(f'{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server')} && "
-        "./server-install.sh"
+    assert install == node_install_command(
+        REMOTE_ROOT, f"{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server",
+        [], authoritative=False,
     )
 
 
@@ -1191,6 +1194,41 @@ def test_control_plane_checks_precede_success_metadata(tmp_path, monkeypatch):
     assert recorder.index_of("systemctl restart sing-box-manager-web.service") < recorder.index_of("--action health")
 
 
+def test_authoritative_deploy_preserves_node_config_before_sync(tmp_path, monkeypatch):
+    from sing_box_manager.control_plane import deployment
+
+    monkeypatch.setattr(deployment, "_require_ubuntu_debian", lambda _: None)
+    recorder = _deploy(
+        tmp_path, monkeypatch, control_plane_enabled=True, authoritative=True,
+        traffic_stats_enabled=True,
+    )
+    command = node_install_command(
+        REMOTE_ROOT, f"{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server",
+        [], authoritative=True,
+    )
+    assert command in recorder.remote_commands
+    assert recorder.index_of("disable --now sing-box-manager-sync.path") < recorder.index_of("--preserve-config")
+    assert recorder.index_of("--preserve-config") < recorder.index_of("--action sync-node")
+    assert recorder.index_of("--action sync-node") < recorder.index_of("systemctl start sing-box-manager-traffic-stats.service")
+    assert recorder.index_of("systemctl start sing-box-manager-traffic-stats.service") < recorder.index_of("deployment-info.json")
+
+
+def test_failed_node_sync_cannot_publish_success_metadata(tmp_path, monkeypatch):
+    from sing_box_manager.control_plane import deployment
+
+    class FailingSync(_Recorder):
+        def __call__(self, command, **kwargs):
+            if "--action sync-node" in command[-1]:
+                raise subprocess.CalledProcessError(1, command)
+            return super().__call__(command, **kwargs)
+
+    recorder = FailingSync()
+    monkeypatch.setattr(deployment, "_require_ubuntu_debian", lambda _: None)
+    with pytest.raises(DeploymentError, match="sync sing-box"):
+        _deploy(tmp_path, monkeypatch, recorder=recorder, control_plane_enabled=True, authoritative=True)
+    assert not any("deployment-info.json" in part for command in recorder.commands for part in command)
+
+
 def test_control_plane_failure_cannot_publish_success_metadata(tmp_path, monkeypatch):
     from sing_box_manager.control_plane import deployment
     recorder = _Recorder()
@@ -1207,4 +1245,8 @@ def test_skip_code_leaves_control_plane_unchanged(tmp_path, monkeypatch):
     def unexpected(*args, **kwargs):
         raise AssertionError("skip-code must not change the control plane")
     monkeypatch.setattr(deployment, "deploy", unexpected)
-    _deploy(tmp_path, monkeypatch, options=DeployOptions(skip_code=True), control_plane_enabled=True)
+    monkeypatch.setattr(deployment, "pause_node_sync", unexpected)
+    recorder = _deploy(tmp_path, monkeypatch, options=DeployOptions(skip_code=True), control_plane_enabled=True, authoritative=True)
+    assert node_install_command(
+        REMOTE_ROOT, f"{REMOTE_ROOT}/releases/{RELEASE_DIR_NAME}/server", [], authoritative=None
+    ) in recorder.remote_commands

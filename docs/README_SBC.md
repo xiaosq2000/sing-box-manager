@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-13.
+Checked on 2026-10-18.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -40,7 +40,8 @@ failure recovery and settings ownership.
 
 ## Linux TUN
 
-`sbc` does not support Linux TUN. [M1b](REFACTOR_SPEC.md#m1b-linux-tun) is deferred.
+`sbc` does not support Linux TUN. [M1b](REFACTOR_SPEC.md#m1b-linux-tun) is the next
+feature priority after control-plane reliability and portal consolidation.
 Android and iOS apps manage their own tunnels and are not affected.
 
 The hosted installer refuses when a legacy TUN unit, transaction marker, or

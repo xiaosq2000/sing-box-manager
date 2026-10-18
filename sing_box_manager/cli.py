@@ -303,10 +303,13 @@ def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None
             raise SystemExit(1) from exc
         return
 
-    from sing_box_manager.control_plane.runner import run
+    from sing_box_manager.control_plane.runner import ControlPlaneError, run
 
     try:
         run(action, settings)
+    except ControlPlaneError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
     except Exception as exc:
         print(
             "Control-plane operation failed. Check the configuration and local database.",

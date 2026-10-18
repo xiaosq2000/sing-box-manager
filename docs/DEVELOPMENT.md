@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-14.
+Checked on 2026-10-18.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -34,18 +34,18 @@ and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 Choose checks for the files and behavior being changed. The commands below are
 available tools, not a sequence required for every edit.
 
-| Change              | Useful checks                                                                                                                                                                      |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                              |
-| Doc reviews         | `pixi run docstale check`                                                                                                                                                          |
-| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                                                                               |
-| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                                                                                |
-| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                                                                             |
-| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py`                                                   |
-| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                                                                       |
-| Django/PostgreSQL   | `pixi run -e control-plane-test test tests/test_control_plane.py tests/test_control_plane_integration.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py` |
-| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                                                                    |
-| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                                                               |
+| Change              | Useful checks                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                    |
+| Doc reviews         | `pixi run docstale check`                                                                                                                                                |
+| Python              | `pixi run lint-python`, `pixi run typecheck`, and the affected tests                                                                                                     |
+| Shared Bash scripts | `pixi run test tests/test_shell_compat.py tests/test_server_install.py`, plus `pixi run lint-shell`                                                                      |
+| Windows installer   | `pixi run test tests/test_powershell_compat.py` and `scripts/dev/test-install-ps1.ps1`                                                                                   |
+| Release and deploy  | Select tests such as `tests/test_release_builder.py`, `tests/test_deploy.py`, `tests/test_provision.py`, and `tests/test_ssh.py`                                         |
+| Rendered configs    | `pixi run fetch-sing-box` once, then `pixi run test tests/test_sing_box_114.py tests/test_desktop_config.py`                                                             |
+| Django/PostgreSQL   | `pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py tests/test_server_install.py` |
+| Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                                                          |
+| `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                                                     |
 
 Use `pixi run test tests/test_routes.py -k download` as the pattern for running a
 specific file or case. `pixi run test` runs the full Python suite when shared
@@ -230,7 +230,7 @@ environment adds PostgreSQL 17 tools and shares the runtime dependency resolutio
 It does not install or start a system database service.
 
 ```sh
-pixi run -e control-plane-test test tests/test_control_plane.py tests/test_control_plane_integration.py
+pixi run -e control-plane-test test tests/test_control_plane*.py
 ```
 
 Tests start a temporary cluster with no TCP listener, a private socket directory,
@@ -238,7 +238,13 @@ and synthetic operator records. Child environments exclude operator credentials.
 They cover Django migrations, admin permissions, CSRF, host checks, static files,
 repeat provisioning, restricted database privileges, backup/restore, idempotent
 inventory import, config parity, subscription and download serving, and single-node
-config sync.
+config sync. Reliability checks cover account-wide disablement, separate portal
+access, migration of legacy switches, import refusal in authoritative mode, Admin
+commit/rollback callbacks, and read-only reset counters. Sync fixtures cover locking
+before database reads, rejected configs, restart recovery, and recovery failure.
+Mocked restart and identity tests do not start PostgreSQL. Database tests also verify
+traffic collection for accounts that exist only in PostgreSQL.
+Deployment fixtures exercise both authority transitions, Nginx rollback, and JSON-equivalent no-op sync.
 HTTP login checks send a browser-style `Origin` header and check the `same-origin`
 referrer policy. They reject null and cross-site origins, plus missing or incorrect
 CSRF tokens.
@@ -249,8 +255,12 @@ metadata, dry runs, disablement without data removal, and `--skip-code`.
 The dedicated CI job also checks native PostgreSQL peer authentication and the
 hardened systemd service. `scripts/dev/test-control-plane-native.py` runs only on
 an explicitly enabled disposable GitHub runner. It verifies repeat deployment,
-read-only assets, and disablement without data loss. Its local unit test mocks all
-host commands. Do not run the native script on an operator machine or VPS.
+read-only assets, peer-authenticated root sync, and trigger-driven account disable/re-enable.
+It installs the pinned official sing-box binary, checks config preservation and no-op sync,
+and checks Nginx route changes when entering and leaving authoritative mode.
+Database records survive authority exit and disablement. Native node checks keep traffic
+stats off; the separate runtime job tests the custom counter binary.
+Its local unit test mocks all host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
 
 ## Traffic accounting checks
@@ -351,8 +361,10 @@ Include it in the command above to run that integration check.
 `tests/test_server_install.py` runs a scratch copy of the server installer with a
 fake systemd and a scratch filesystem. It bypasses only the root-user guard in
 that copy and tests legacy-unit migration, reinstall, protocol selection, validation
-failure, startup rollback and retention of recovery files when rollback fails; it
-does not install or stop anything on the host. The runtime tests need permission to bind loopback
+failure, startup rollback, and retention of recovery files when rollback fails.
+It also executes the deployment command with an obsolete release installer, checks
+that database-managed users survive repeated installs, and exercises the shared sync
+lock. It does not install or stop anything on the host. The runtime tests need permission to bind loopback
 sockets. They do not establish native Windows Task Scheduler, macOS launchd, or
 Linux TUN kernel compatibility. Native `sbc` lifecycle checks run on disposable
 CI runners. Future Linux TUN checks require a disposable Linux VM.

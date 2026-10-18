@@ -68,6 +68,10 @@ def test_native_harness_keeps_all_host_commands_local(harness, monkeypatch, tmp_
         "XDG_CACHE_HOME=/var/cache/sbm-control-plane-smoke" in args
         for args in arguments
     )
-    assert sum("control-plane --action health" in value for value in commands) == 2
+    assert sum("control-plane --action health" in value for value in commands) == 5
+    assert any("--preserve-config" in value for value in commands)
+    assert any("--action sync-node" in value for value in commands)
+    assert any("native_only" in value for value in commands)
+    assert any("48080/install.sh" in value and "418" in value for value in commands)
     assert any("systemctl disable --now" in value for value in commands)
     assert any("postgresql-client" in value for value in commands)

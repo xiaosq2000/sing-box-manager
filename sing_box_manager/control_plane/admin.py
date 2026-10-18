@@ -4,6 +4,7 @@ from typing import ClassVar, cast
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django.db import transaction
 from django.db.models import F
 
 from sing_box_manager.control_plane.models import Account, Credential, User
@@ -27,10 +28,10 @@ class AccountAdminForm(forms.ModelForm):
         fields: ClassVar[list[str]] = [
             "username",
             "enabled",
+            "portal_enabled",
             "is_portal_admin",
             "new_portal_password",
             "portal_password_hash",
-            "subscription_counter",
         ]
 
     def clean(self) -> dict[str, object]:
@@ -59,6 +60,7 @@ class AccountAdmin(admin.ModelAdmin):
     list_display: ClassVar[tuple[str, ...]] = (
         "username",
         "enabled",
+        "portal_enabled",
         "is_portal_admin",
         "protocols_summary",
         "user_page_url",
@@ -67,6 +69,7 @@ class AccountAdmin(admin.ModelAdmin):
     )
     list_filter: ClassVar[tuple[str, ...]] = (
         "enabled",
+        "portal_enabled",
         "is_portal_admin",
         "credentials__protocol",
     )
@@ -74,6 +77,7 @@ class AccountAdmin(admin.ModelAdmin):
     readonly_fields: ClassVar[tuple[str, ...]] = (
         "user_page_url",
         "subscription_path",
+        "subscription_counter",
         "created_at",
         "updated_at",
     )
@@ -81,7 +85,9 @@ class AccountAdmin(admin.ModelAdmin):
 
     @admin.display(description="Enabled protocols")
     def protocols_summary(self, obj: Account) -> str:
-        enabled = [c.protocol for c in obj.credentials.all() if c.enabled]
+        enabled = [
+            c.protocol for c in obj.credentials.all() if obj.enabled and c.enabled
+        ]
         return ", ".join(enabled) if enabled else "-"
 
     @admin.display(description="Subscription path")
@@ -89,7 +95,12 @@ class AccountAdmin(admin.ModelAdmin):
         from sing_box_manager.control_plane import django_settings
 
         secret = django_settings.runtime.web.subscription_secret
-        if not secret or not obj.enabled or not obj.portal_password_hash:
+        if (
+            not secret
+            or not obj.enabled
+            or not obj.portal_enabled
+            or not obj.portal_password_hash
+        ):
             return "-"
         token = subscription_token(
             secret, str(obj.username), cast("int", obj.subscription_counter)
@@ -117,12 +128,28 @@ class AccountAdmin(admin.ModelAdmin):
         runtime = django_settings.runtime
         if not force and not runtime.control_plane.authoritative:
             return
-        request_node_sync(runtime)
-        self.message_user(request, "Triggered sing-box node config sync.")
+
+        def sync_after_commit() -> None:
+            try:
+                request_node_sync(runtime)
+            except OSError:
+                self.message_user(
+                    request,
+                    "Changes saved, but the node sync request failed. "
+                    "Run sudo sbm control-plane sync on the server.",
+                    level="error",
+                )
+            else:
+                self.message_user(
+                    request,
+                    "Node sync requested. Check sing-box-manager-sync.service for the result.",
+                )
+
+        transaction.on_commit(sync_after_commit)
 
     def save_related(self, request, form, formsets, change) -> None:
         super().save_related(request, form, formsets, change)
-        created = ensure_default_credentials(form.instance)
+        created = ensure_default_credentials(form.instance) if not change else []
         if created:
             self.message_user(
                 request,

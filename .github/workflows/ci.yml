@@ -113,7 +113,11 @@ jobs:
         run: pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py
         env:
           SBM_REQUIRE_POSTGRES: "1"
-      - name: Check native PostgreSQL and hardened systemd deployment
+      - name: Fetch the pinned binary for native node acceptance
+        run: pixi run -e control-plane-test fetch-sing-box
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Check native PostgreSQL, node sync, and hardened systemd deployment
         run: pixi run -e control-plane-test python scripts/dev/test-control-plane-native.py
         env:
           SBM_CP_NATIVE_E2E: "1"
