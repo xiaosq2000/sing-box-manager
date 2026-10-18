@@ -452,3 +452,250 @@ def test_provisioning_refuses_other_owners_and_privileged_roles(postgres):
         assert result.returncode != 0
         assert "incompatible privileges" in result.stderr
         connection.execute("ALTER ROLE sbm NOCREATEDB")
+
+
+def test_inventory_import_subscriptions_admin_and_node_sync(postgres, tmp_path):
+    pg = postgres
+    assert psql(pg, "postgres", provision_sql("sbm_accounts_fixture")).returncode == 0
+    path, _, env = config(pg, tmp_path, "sbm_accounts_fixture")
+    example = yaml.safe_load((ROOT / "config/inventory/example.yaml").read_text())
+    pw_hash = example["web_portal"]["users"][0]["password_hash"]
+    sub_db = tmp_path / "subscriptions.sqlite3"
+    from sing_box_manager.release.client_downloads import client_manifest
+    from sing_box_manager.release.manifest import MANIFEST_FILENAME, Manifest, Member
+
+    releases_dir = tmp_path / "releases"
+    release_dir = releases_dir / "sing-box-v1.14.2"
+    client_dir = release_dir / "client"
+    (client_dir / "sbc" / "linux-amd64").mkdir(parents=True)
+    (client_dir / "sbc" / "linux-amd64" / "sbc").write_bytes(b"test")
+    cm_bytes = client_manifest(
+        [("sbc/linux-amd64/sbc", 4, "a" * 64)],
+        sbc="0.2.0",
+        sing_box="1.14.2",
+    )
+    (client_dir / "manifest.json").write_bytes(cm_bytes)
+    (client_dir / "manifest.json.sig").write_text("fixture-sig\n")
+    manifest = Manifest(
+        upstream_version="1.14.2",
+        prefixes=(),
+        archives=(),
+        client_members=(
+            Member(
+                arcname="manifest.json",
+                mode=0o644,
+                size=len(cm_bytes),
+                sha256="b" * 64,
+                src="client/manifest.json",
+            ),
+            Member(
+                arcname="manifest.json.sig",
+                mode=0o644,
+                size=12,
+                sha256="c" * 64,
+                src="client/manifest.json.sig",
+            ),
+            Member(
+                arcname="sbc/linux-amd64/sbc",
+                mode=0o755,
+                size=4,
+                sha256="a" * 64,
+                src="client/sbc/linux-amd64/sbc",
+            ),
+        ),
+    )
+    (release_dir / MANIFEST_FILENAME).write_text(manifest.to_json())
+
+    full_cfg = yaml.safe_load(path.read_text())
+    full_cfg.update(
+        {
+            "releases_root": str(releases_dir),
+            "web": {
+                "session_secret": "synthetic-session-secret-" + "1" * 24,
+                "subscription_secret": "synthetic-subscription-secret-" + "2" * 24,
+                "subscription_database_path": str(sub_db),
+            },
+            "deployment": example["deployment"],
+            "web_portal": {
+                "users": [
+                    {
+                        "username": "alice",
+                        "password_hash": pw_hash,
+                        "enabled": True,
+                        "admin": True,
+                    },
+                    {
+                        "username": "bob",
+                        "password_hash": pw_hash,
+                        "enabled": False,
+                        "admin": False,
+                    },
+                    {
+                        "username": "carol",
+                        "password_hash": pw_hash,
+                        "enabled": True,
+                        "admin": False,
+                    },
+                ]
+            },
+            "trojan": {
+                "users": [
+                    {"username": "alice", "password": "alice-trojan-secret", "enabled": True},
+                    {"username": "bob", "password": "bob-trojan-secret", "enabled": True},
+                    {"username": "dave", "password": "dave-trojan-secret", "enabled": True},
+                ]
+            },
+            "hysteria2": {
+                "obfs_password": "fixture-obfs-password",
+                "users": [
+                    {"username": "alice", "password": "alice-hy2-secret", "enabled": True},
+                ],
+            },
+            "naive": {
+                "users": [
+                    {"username": "alice", "password": "alice-naive-secret", "enabled": True},
+                ]
+            },
+        }
+    )
+    path.write_text(yaml.safe_dump(full_cfg))
+
+    from sing_box_manager.subscription import ResetCounters
+
+    counters = ResetCounters(sub_db)
+    assert counters.advance("alice") == 1
+    assert counters.advance("alice") == 2
+
+    assert cli(path, env, "migrate").returncode == 0
+    imported = cli(path, env, "import-inventory")
+    assert imported.returncode == 0, imported.stderr
+    assert '"accounts": 4' in imported.stdout
+    assert '"credentials": 5' in imported.stdout
+
+    # Repeat import is idempotent and never lowers subscription_counter.
+    sub_db.unlink()
+    imported_again = cli(path, env, "import-inventory")
+    assert imported_again.returncode == 0, imported_again.stderr
+
+    output = python(
+        env,
+        """
+import json
+import os
+import django
+django.setup()
+from django.test import Client
+from sing_box_manager.control_plane.admin import AccountAdmin, AccountAdminForm
+from sing_box_manager.control_plane.models import Account, Credential
+from sing_box_manager.control_plane.services import (
+    build_inventory_from_db,
+    sync_node_config,
+    verify_inventory_parity,
+)
+from sing_box_manager.settings import load_settings
+from sing_box_manager.subscription import subscription_token
+
+runtime = load_settings(os.environ["SBM_CONFIG"])
+alice = Account.objects.get(username="alice")
+assert alice.subscription_counter == 2
+assert alice.is_portal_admin is True
+
+secret = runtime.web.subscription_secret
+alice_token = subscription_token(secret, "alice", 2)
+old_alice_token = subscription_token(secret, "alice", 1)
+bob_token = subscription_token(secret, "bob", 0)
+carol_token = subscription_token(secret, "carol", 0)
+dave_token = subscription_token(secret, "dave", 0)
+
+client = Client(HTTP_HOST="127.0.0.1")
+assert client.get(f"/sub/{old_alice_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 404
+assert client.get(f"/sub/{bob_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 404
+assert client.get(f"/sub/{carol_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 404
+assert client.get(f"/sub/{dave_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 404
+
+resp = client.get(f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.14.2")
+assert resp.status_code == 200
+assert resp.headers["Referrer-Policy"] == "no-referrer"
+etag = resp.headers["ETag"]
+payload = resp.json()
+assert payload["latest"] == {"sing_box": "1.14.2", "sbc": "0.2.0"}
+assert client.get(
+    f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.14.2",
+    HTTP_IF_NONE_MATCH=etag,
+).status_code == 304
+assert client.get(f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.13.0").status_code == 409
+assert client.get(f"/sub/{alice_token}?format=raw&os=linux&sing-box=1.14.2").status_code == 400
+
+# Portal-only user carol can still fetch signed manifest files, while bob/dave cannot.
+assert client.get(f"/sub/{carol_token}/files/manifest.json").status_code == 200
+sbc_resp = client.get(f"/sub/{alice_token}/files/sbc/linux-amd64/sbc")
+assert b"".join(sbc_resp.streaming_content) == b"test"
+assert client.get(f"/sub/{alice_token}/files/../manifest.json").status_code == 404
+assert client.get(f"/sub/{bob_token}/files/manifest.json").status_code == 404
+assert client.get("/install.sh").status_code == 200
+assert client.get("/install.ps1").status_code == 200
+
+# Admin form hashes plaintext portal password and link reset invalidates old token.
+old_hash = alice.portal_password_hash
+form = AccountAdminForm(
+    data={
+        "username": "alice",
+        "enabled": True,
+        "is_portal_admin": True,
+        "new_portal_password": "new-operator-set-password",
+        "portal_password_hash": old_hash,
+        "subscription_counter": alice.subscription_counter,
+    },
+    instance=alice,
+)
+assert form.is_valid(), form.errors
+saved = form.save()
+assert saved.portal_password_hash != old_hash
+
+Account.objects.filter(pk=alice.pk).update(subscription_counter=3)
+assert client.get(f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 404
+new_token = subscription_token(secret, "alice", 3)
+assert client.get(f"/sub/{new_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 200
+
+# Corrupting a credential in DB causes parity check to fail.
+Credential.objects.filter(account=alice, protocol="trojan").update(secret="tampered")
+try:
+    verify_inventory_parity(runtime, build_inventory_from_db(runtime), runtime.traffic_stats)
+except ValueError:
+    pass
+else:
+    raise AssertionError("parity check did not detect tampered credential")
+print("ok")
+""",
+    )
+    assert output.strip() == "ok"
+
+    node_cfg = tmp_path / "sing-box-server.json"
+    sync_env = {
+        **env,
+        "SBM_SING_BOX_CONFIG": str(node_cfg),
+        "SBM_SING_BOX_BINARY": str(tmp_path / "nonexistent-sing-box"),
+    }
+    sync_out = python(
+        sync_env,
+        """
+import json
+import os
+from pathlib import Path
+import django
+django.setup()
+from sing_box_manager.control_plane.services import sync_node_config
+from sing_box_manager.settings import load_settings
+runtime = load_settings(os.environ["SBM_CONFIG"])
+result = sync_node_config(runtime, restart_service=False)
+print(json.dumps(result))
+""",
+    )
+    assert node_cfg.is_file()
+    rendered_server = yaml.safe_load(node_cfg.read_text())
+    assert [i["tag"] for i in rendered_server["inbounds"]] == [
+        "trojan",
+        "hysteria2",
+        "naive",
+    ]
+    assert "trojan" in sync_out

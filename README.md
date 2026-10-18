@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-17.
+Checked on 2026-10-13.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -10,19 +10,11 @@ The primary deployment target is a single VPS that runs:
 - the authenticated download portal behind `nginx`
 - `certbot-nginx` for CA-signed certificates
 
-An opt-in Django/PostgreSQL foundation runs beside the portal. Its private admin
-currently manages Django operators only on the VPS. Inventory still owns live proxy access.
+An opt-in Django/PostgreSQL control plane runs beside the portal. It manages
+Django operators, proxy accounts (`Account`), and protocol credentials
+(`Credential`), serves subscriptions and signed client downloads, and syncs the
+single-node `sing-box` config.
 See [the control-plane guide](docs/CONTROL_PLANE.md) for enablement and recovery.
-The separate [fixture-only importer](docs/CONTROL_PLANE_IMPORT.md) tests access
-copying in disposable databases. The separate [account-copy path](docs/CONTROL_PLANE_ACCOUNT_COPY.md)
-is implemented, independently source-reviewed, and tested with synthetic sources.
-A verified non-serving account copy is present in PostgreSQL. It activates no links
-and does not transfer account ownership. The account-copy guide records the current
-checkpoint and remaining gates. Further copying needs exact-report approval.
-The [database-owned access implementation](docs/CONTROL_PLANE_LIVE.md) adds private account
-management, a separate public Django portal, and supervised node application.
-Its isolated code and empty managed-access schema are staged. Active services remain unchanged.
-Ownership preparation and cutover are not approved.
 
 ## Public source and private operations
 

@@ -1,116 +1,96 @@
-import uuid
+from __future__ import annotations
+
 from typing import ClassVar
 
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from sing_box_manager.settings import (
+    SUPPORTED_PROTOCOLS,
+    USERNAME_PATTERN,
+    _validate_password_hash,
+)
 
 
 class User(AbstractUser):
-    """Private Django operators. Proxy subjects remain separate."""
+    """Private Django operators. Proxy accounts remain separate."""
 
     class Meta:
         verbose_name = "operator"
         verbose_name_plural = "operators"
 
 
-class ImportTarget(models.Model):
-    """Migration-created identity; fixture imports are disabled by default."""
+class Account(models.Model):
+    """A proxy user account and its subscription state."""
 
-    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
-    identity = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    fixture_enabled = models.BooleanField(default=False)
+    username = models.CharField(max_length=32, unique=True)
+    enabled = models.BooleanField(default=True)
+    is_portal_admin = models.BooleanField(default=False)
+    portal_password_hash = models.CharField(max_length=255, blank=True)
+    subscription_counter = models.PositiveBigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    credentials: models.Manager[Credential]
     objects = models.Manager()
 
     class Meta:
-        constraints: ClassVar[list] = [
-            models.CheckConstraint(
-                condition=models.Q(id=1), name="import_target_singleton"
+        ordering: ClassVar[list[str]] = ["id"]
+
+    def __str__(self) -> str:
+        return str(self.username)
+
+    def clean(self) -> None:
+        if not USERNAME_PATTERN.fullmatch(str(self.username)):
+            raise ValidationError(
+                {"username": "Username must match ^[a-zA-Z0-9_-]{3,32}$."}
             )
-        ]
-
-    def __str__(self) -> str:
-        return f"ImportTarget {self.pk}"
-
-
-class ImportSource(models.Model):
-    namespace = models.UUIDField(primary_key=True)
-    source_identity = models.UUIDField(unique=True)
-    sequence = models.PositiveBigIntegerField(default=0)
-    revision = models.PositiveBigIntegerField(default=0)
-    bundle_digest = models.CharField(max_length=64, blank=True)
-    objects = models.Manager()
-
-    def __str__(self) -> str:
-        return f"ImportSource {self.pk}"
+        if self.portal_password_hash:
+            try:
+                _validate_password_hash(str(self.portal_password_hash))
+            except ValueError as exc:
+                raise ValidationError({"portal_password_hash": str(exc)}) from exc
 
 
-class ProxySubject(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    source = models.ForeignKey(ImportSource, on_delete=models.PROTECT)
-    username = models.CharField(max_length=32)
-    present = models.BooleanField(default=True)
-    objects = models.Manager()
+class Credential(models.Model):
+    """Per-protocol proxy credential for an account."""
 
-    class Meta:
-        constraints: ClassVar[list] = [
-            models.UniqueConstraint(
-                fields=["source", "username"], name="import_subject_name"
-            )
-        ]
+    PROTOCOL_CHOICES: ClassVar[list[tuple[str, str]]] = [
+        ("trojan", "Trojan"),
+        ("hysteria2", "Hysteria2"),
+        ("naive", "Naive"),
+    ]
 
-    def __str__(self) -> str:
-        return f"ProxySubject {self.pk}"
-
-
-class ImportedAccess(models.Model):
-    subject = models.ForeignKey(ProxySubject, on_delete=models.PROTECT)
-    kind = models.CharField(
-        max_length=10,
-        choices=[(name, name) for name in ("portal", "trojan", "hysteria2", "naive")],
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="credentials"
     )
-    present = models.BooleanField(default=True)
-    payload = models.JSONField()
+    protocol = models.CharField(max_length=16, choices=PROTOCOL_CHOICES)
+    secret = models.CharField(max_length=255)
+    enabled = models.BooleanField(default=True)
     objects = models.Manager()
 
     class Meta:
-        constraints: ClassVar[list] = [
+        ordering: ClassVar[list[str]] = ["id"]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
-                fields=["subject", "kind"], name="import_access_kind"
+                fields=["account", "protocol"], name="unique_account_protocol"
             )
         ]
 
     def __str__(self) -> str:
-        return f"ImportedAccess {self.pk}"
+        return f"{self.account} ({self.protocol})"
 
-
-class LegacyAccess(models.Model):
-    source = models.ForeignKey(ImportSource, on_delete=models.PROTECT)
-    subject = models.ForeignKey(ProxySubject, on_delete=models.PROTECT, null=True)
-    token_username = models.CharField(max_length=32)
-    counter = models.PositiveBigIntegerField(default=0)
-    secret_identity = models.CharField(max_length=64)
-    objects = models.Manager()
-
-    class Meta:
-        constraints: ClassVar[list] = [
-            models.UniqueConstraint(
-                fields=["source", "token_username"], name="import_legacy_name"
+    def clean(self) -> None:
+        secret = str(self.secret)
+        if str(self.protocol) not in SUPPORTED_PROTOCOLS:
+            raise ValidationError({"protocol": "Unsupported protocol."})
+        if (
+            not secret
+            or secret.strip() != secret
+            or any(ord(char) < 32 or ord(char) == 127 for char in secret)
+        ):
+            raise ValidationError(
+                {
+                    "secret": "Secret must be a non-empty string without leading/trailing whitespace or control characters."
+                }
             )
-        ]
-
-    def __str__(self) -> str:
-        return f"LegacyAccess {self.pk}"
-
-
-class ImportRun(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    source = models.ForeignKey(ImportSource, on_delete=models.PROTECT)
-    report_digest = models.CharField(max_length=64, unique=True)
-    bundle_digest = models.CharField(max_length=64)
-    sequence = models.PositiveBigIntegerField()
-    revision = models.PositiveBigIntegerField()
-    counts = models.JSONField()
-    objects = models.Manager()
-
-    def __str__(self) -> str:
-        return f"ImportRun {self.pk}"

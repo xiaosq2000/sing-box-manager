@@ -16,6 +16,8 @@ from typing import Protocol, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
+from argon2 import PasswordHasher
+from argon2.low_level import Type
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -37,6 +39,7 @@ STATE_ROOT = Path("/var/lib/sing-box-manager")
 DEFAULT_TRAFFIC_STATS_DATABASE_PATH = STATE_ROOT / "traffic-stats.sqlite3"
 DEFAULT_SUBSCRIPTION_DATABASE_PATH = STATE_ROOT / "subscriptions.sqlite3"
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{3,32}$")
+ARGON2ID_VERIFIER = PasswordHasher(type=Type.ID)
 ARGON2ID_ENCODING = re.compile(
     r"\$argon2id(?:\$v=(?:16|19))?\$m=([1-9][0-9]{0,9}),"
     r"t=([1-9][0-9]{0,9}),p=([1-9][0-9]{0,9})"
@@ -89,7 +92,6 @@ def _valid_argon2id_encoding(value: str) -> bool:
     if match is None:
         return False
     memory, iterations, parallelism = map(int, match.groups()[:3])
-    # Argon2 uses 32-bit costs and at most 24 bits for the lane count.
     if not (
         1 <= parallelism <= 2**24 - 1
         and 8 * parallelism <= memory <= 2**32 - 1
@@ -363,57 +365,6 @@ class ControlPlaneSettings(StrictModel):
     database_name: str = "sbm_control_plane"
     database_socket_dir: Path = Path("/var/run/postgresql")
     database_port: int = Field(default=5432, ge=1, le=65535, strict=True)
-    portal_enabled: bool = Field(default=False, strict=True)
-    portal_port: int = Field(default=47072, ge=1024, le=65535, strict=True)
-    portal_origin: str | None = None
-    subscription_secret: str | None = Field(
-        default=None,
-        min_length=50,
-        max_length=128,
-        pattern=r"^[A-Za-z0-9_-]+$",
-        repr=False,
-    )
-
-    @field_validator("portal_origin")
-    @classmethod
-    def validate_portal_origin(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        from urllib.parse import urlsplit
-
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or re.fullmatch(
-                r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", parsed.hostname
-            )
-            is None
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in ("", "/")
-            or parsed.query
-            or parsed.fragment
-            or any(c.isspace() for c in value)
-        ):
-            raise ValueError("control_plane.portal_origin must be an HTTPS origin")
-        try:
-            port = parsed.port
-        except ValueError:
-            raise ValueError(
-                "control_plane.portal_origin has an invalid port"
-            ) from None
-        if port == 0 or parsed.netloc.endswith(":"):
-            raise ValueError("control_plane.portal_origin has an invalid port")
-        return value.rstrip("/")
-
-    @model_validator(mode="after")
-    def portal_requires_control_plane(self) -> Self:
-        if self.portal_enabled and (not self.enabled or self.portal_origin is None):
-            raise ValueError(
-                "The public portal requires the control plane and an HTTPS origin"
-            )
-        return self
 
     @field_validator("database_name")
     @classmethod
@@ -639,13 +590,6 @@ class Settings(StrictModel):
             )
         if self.control_plane.port in ports:
             raise ValueError("control_plane.port must differ from configured TCP ports")
-        if (
-            self.control_plane.portal_enabled
-            and self.control_plane.portal_port in ports | {self.control_plane.port}
-        ):
-            raise ValueError(
-                "control_plane.portal_port must differ from configured TCP ports"
-            )
         return self
 
     @model_validator(mode="after")

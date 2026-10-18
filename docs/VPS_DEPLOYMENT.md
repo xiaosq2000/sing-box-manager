@@ -1,7 +1,5 @@
 # VPS Deployment
 
-Checked on 2026-10-16.
-
 This is the primary deployment path for `sing-box-manager`.
 
 It assumes:
@@ -10,13 +8,6 @@ It assumes:
 - DNS for `deployment.host` already points at the VPS
 - the Pixi binary is pre-installed at `/usr/local/bin/pixi`
 - the repo lives at `/opt/sing-box-manager` (configurable with `--remote-root`)
-
-This guide describes inventory-owned installation and deployment.
-The [database-owned candidate](CONTROL_PLANE_LIVE.md) requires a separately approved cutover.
-Ordinary deploy, provisioning, and the server installer refuse a fenced host.
-System `python3` must exist before deployment or bootstrap for the read-only ownership check.
-After activation, use `deploy --managed-accounts --acknowledge-interrupt`.
-Do not use older deployment or installer code to bypass that refusal.
 
 ## Port Layout
 
@@ -28,7 +19,6 @@ Do not use older deployment or installer code to bypass that refusal.
 - `9443/tcp`: Naive
 - `47070/tcp`: local FastAPI service bound to `127.0.0.1`
 - `47071/tcp`: optional private Django admin, bound to `127.0.0.1`; no public nginx route
-- `47072/tcp`: separate public Django candidate, bound to loopback; not active on the VPS
 
 The [control-plane foundation](CONTROL_PLANE.md) is opt-in. It adds OS-managed
 PostgreSQL and a separate hardened Django service on fresh or existing hosts.

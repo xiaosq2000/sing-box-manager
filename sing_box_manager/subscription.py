@@ -19,7 +19,6 @@ from collections.abc import Iterable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
 from sing_box_manager.settings import RuntimeInventory, Settings, load_runtime_inventory
@@ -189,17 +188,8 @@ def user_protocols(inventory: RuntimeInventory, username: str) -> UserProtocols:
     )
 
 
-class EnvelopeSource(Protocol):
-    @property
-    def inventory(self) -> RuntimeInventory: ...
-    @property
-    def default_protocol(self) -> str: ...
-    @property
-    def sing_box_version(self) -> str: ...
-
-
 def build_envelope(
-    service: EnvelopeSource,
+    service: SubscriptionService,
     username: str,
     *,
     os_name: str,

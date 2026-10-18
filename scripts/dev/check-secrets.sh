@@ -45,8 +45,7 @@ tar -xzf "$tmp/gitleaks.tar.gz" -C "$tmp" gitleaks
 
 # Fail closed if an allowlist accidentally hides new credentials in fixture files.
 mkdir -p "$tmp/control/tests"
-# Avoid base64 delimiters and distinguish this control from an unlabelled hash.
-control_value="G7$(head -c 24 /dev/urandom | od -An -v -tx1 | tr -d '[:space:]')"
+control_value=$(head -c 32 /dev/urandom | base64)
 printf 'api_key = "%s"\n' "$control_value" >"$tmp/control/tests/test_inventory.py"
 control_status=0
 "$tmp/gitleaks" dir "$tmp/control" --config "$root/.gitleaks.toml" \

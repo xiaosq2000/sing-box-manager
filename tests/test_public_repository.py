@@ -104,11 +104,9 @@ def test_document_fingerprint_exception_is_exact_and_path_scoped() -> None:
         "tests/test_inventory.py",
     ):
         assert not re.fullmatch(path_pattern, path)
-    for value in ("fb3cd53af6289e44", "6e1c9c75fa200d3b"):
-        assert re.fullmatch(value_pattern, value)
+    assert re.fullmatch(value_pattern, "fb3cd53af6289e44")
     for value in (
         "fb3cd53af6289e440",
-        "6e1c9c75fa200d3b0",
         "private-api-key-0123456789",
         "0123456789abcdef",
     ):

@@ -96,25 +96,6 @@ jobs:
           test "$("$RUNNER_TEMP/sbc" version)" = "sbc ci"
         shell: pixi run bash -e {0}
 
-  managed-native:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
-        with:
-          locked: true
-          cache: true
-          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-      - run: pixi run fetch-sing-box-server
-      - name: Rehearse managed cutover and PostgreSQL 16 restore
-        run: pixi run python -B -m tests.native_managed
-        env:
-          SBM_MANAGED_NATIVE_E2E: "1"
-      # Never upload generated accounts, keys, links, runtime files, or dumps.
-
   control-plane:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -129,7 +110,7 @@ jobs:
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
       - name: Check isolated PostgreSQL and private HTTP lifecycle
-        run: pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_managed_access*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py
+        run: pixi run -e control-plane-test test tests/test_control_plane*.py tests/test_deploy.py tests/test_provision.py tests/test_remote_config.py
         env:
           SBM_REQUIRE_POSTGRES: "1"
       - name: Check native PostgreSQL and hardened systemd deployment

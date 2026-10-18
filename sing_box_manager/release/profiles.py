@@ -224,6 +224,32 @@ def build_server_config(
     config: dict = {
         "log": {"disabled": False, "level": "info", "timestamp": True},
         "inbounds": [],
+        "dns": {"servers": [{"type": "local", "tag": "server-local"}]},
+        "outbounds": [{"type": "direct", "tag": "direct"}],
+        "route": {
+            "final": "direct",
+            "rules": [
+                # Resolve first. Inspect every answer before the direct outbound
+                # uses that same address list, including its fallback addresses.
+                {"action": "resolve", "server": "server-local"},
+                # A UDP association must not change peers after its route check.
+                {"network": "udp", "action": "route-options", "udp_connect": True},
+                {"ip_is_private": True, "action": "reject"},
+                # Include IPv4-mapped forms: DNS answers need not be unmapped
+                # before CIDR matching. The private matcher omits these ranges.
+                {
+                    "ip_cidr": [
+                        "0.0.0.0/8",
+                        "100.64.0.0/10",
+                        "240.0.0.0/4",
+                        "::ffff:0:0/104",
+                        "::ffff:6440:0/106",
+                        "::ffff:f000:0/100",
+                    ],
+                    "action": "reject",
+                },
+            ],
+        },
     }
     usernames = []
     for protocol in SUPPORTED_PROTOCOLS:

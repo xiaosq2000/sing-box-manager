@@ -11,7 +11,14 @@ from typing import Literal
 from sing_box_manager.settings import Settings
 
 Action = Literal[
-    "serve", "migrate", "check", "create-admin", "collect-static", "health"
+    "serve",
+    "migrate",
+    "check",
+    "create-admin",
+    "collect-static",
+    "health",
+    "import-inventory",
+    "sync-node",
 ]
 MIGRATION_LOCK = 1396854083
 
@@ -55,10 +62,15 @@ def run(action: Action, runtime: Settings) -> None:
         return
 
     import django
+
+    django.setup()
+    _run_django_action(action, runtime)
+
+
+def _run_django_action(action: Action, runtime: Settings) -> None:
     from django.core.management import call_command
     from django.db import connection
 
-    django.setup()
     if action == "migrate":
         # Session lock serializes concurrent deployments, including migrations
         # whose individual SQL transactions finish before the whole plan does.
@@ -74,6 +86,16 @@ def run(action: Action, runtime: Settings) -> None:
         if not sys.stdin.isatty():
             raise ValueError("create-admin requires an interactive terminal")
         call_command("createsuperuser", interactive=True)
+    elif action == "import-inventory":
+        from sing_box_manager.control_plane.services import import_inventory
+
+        counts = import_inventory(runtime)
+        print(f"Imported inventory: {json.dumps(counts, sort_keys=True)}")
+    elif action == "sync-node":
+        from sing_box_manager.control_plane.services import sync_node_config
+
+        result = sync_node_config(runtime)
+        print(f"Synced node config: {json.dumps(result, sort_keys=True)}")
     else:
         call_command("check", fail_level="WARNING")
 

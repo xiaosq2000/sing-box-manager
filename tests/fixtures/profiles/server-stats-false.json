@@ -1,4 +1,7 @@
 {
+  "dns": {
+    "servers": [{ "type": "local", "tag": "server-local" }]
+  },
   "inbounds": [
     {
       "listen": "::",
@@ -67,5 +70,25 @@
     "disabled": false,
     "level": "info",
     "timestamp": true
+  },
+  "outbounds": [{ "type": "direct", "tag": "direct" }],
+  "route": {
+    "final": "direct",
+    "rules": [
+      { "action": "resolve", "server": "server-local" },
+      { "network": "udp", "action": "route-options", "udp_connect": true },
+      { "ip_is_private": true, "action": "reject" },
+      {
+        "ip_cidr": [
+          "0.0.0.0/8",
+          "100.64.0.0/10",
+          "240.0.0.0/4",
+          "::ffff:0:0/104",
+          "::ffff:6440:0/106",
+          "::ffff:f000:0/100"
+        ],
+        "action": "reject"
+      }
+    ]
   }
 }

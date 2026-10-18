@@ -115,8 +115,6 @@ class _Recorder:
         if len(command) < 3 or command[0] != "ssh":
             return ""
         remote_command = command[-1]
-        if "/etc/os-release" in remote_command:
-            return "ubuntu"
         if remote_command.endswith("--version"):
             return RSYNC_VERSION_LINE
         if remote_command.startswith("sha256sum"):
@@ -280,11 +278,6 @@ def _deploy(
         config_path=config_path, traffic_stats_enabled=traffic_stats_enabled
     )
     settings.control_plane.enabled = control_plane_enabled
-    if options.managed_accounts:
-        settings.control_plane.enabled = True
-        settings.control_plane.portal_enabled = True
-        settings.control_plane.portal_origin = "https://vpn.example.com"
-        settings.deployment_data = _runtime_inventory().deployment
     _prepare_release_artifacts(tmp_path, settings, **artifact_kwargs)
     _prepare_code_tree(tmp_path)
     recorder = recorder or _Recorder()
@@ -520,12 +513,7 @@ def test_bootstrap_does_not_require_a_pixi_environment_that_cannot_exist_yet(
         tmp_path, monkeypatch, options=DeployOptions(bootstrap=True)
     )
 
-    assert (
-        "sudo python3 -I -B -c" in recorder.remote_commands[0]
-        and "/var/lib/sing-box-manager-control-plane/owner.json"
-        in recorder.remote_commands[0]
-    )
-    preflight = recorder.remote_commands[1]
+    preflight = recorder.remote_commands[0]
     assert "command -v rsync" in preflight
     assert "command -v pixi" in preflight
     assert REMOTE_RSYNC_PATH not in preflight
@@ -540,7 +528,7 @@ def test_the_preflight_no_longer_demands_a_git_checkout(
 
     assert not any("git" in command for command in recorder.remote_commands)
     assert f"test -f {shlex.quote(f'{REMOTE_ROOT}/pixi.toml')}" in (
-        recorder.remote_commands[1]
+        recorder.remote_commands[0]
     )
 
 

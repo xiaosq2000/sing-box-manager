@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-17.
+Checked on 2026-10-14.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -25,7 +25,7 @@ bash scripts/dev/check-secrets.sh
 
 The scanner is pinned by version and SHA-256 and redacts findings. Its narrow
 allowlists cover only reviewed non-secret values, including synthetic fixtures
-and exact documentation fingerprints. A negative control checks that they do
+and one exact documentation fingerprint. A negative control checks that they do
 not hide new credentials. Keep these safeguards
 and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 
@@ -236,7 +236,9 @@ pixi run -e control-plane-test test tests/test_control_plane.py tests/test_contr
 Tests start a temporary cluster with no TCP listener, a private socket directory,
 and synthetic operator records. Child environments exclude operator credentials.
 They cover Django migrations, admin permissions, CSRF, host checks, static files,
-repeat provisioning, restricted database privileges, and backup/restore.
+repeat provisioning, restricted database privileges, backup/restore, idempotent
+inventory import, config parity, subscription and download serving, and single-node
+config sync.
 HTTP login checks send a browser-style `Origin` header and check the `same-origin`
 referrer policy. They reject null and cross-site origins, plus missing or incorrect
 CSRF tokens.
@@ -250,100 +252,6 @@ an explicitly enabled disposable GitHub runner. It verifies repeat deployment,
 read-only assets, and disablement without data loss. Its local unit test mocks all
 host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
-
-The [fixture-only importer](CONTROL_PLANE_IMPORT.md) has separate unit and
-PostgreSQL checks:
-
-```sh
-SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_import.py tests/test_control_plane_import_integration.py
-```
-
-Only these disposable fixture databases enable the import target marker.
-The tests cover strict private inputs, redacted/sealed reports, transactional
-preview/apply, rollback, races, stale captures, retries, counter/identity history,
-and parity from database-loaded records. Post-copy fault tests require rollback
-for altered absent payloads, deleted retained rows, and replaced subject IDs.
-No-op checks cover durable receipts, receipt failures, concurrent retries, and
-supersession without replay. Credential checks reject NUL and unpaired surrogates,
-while valid Unicode round-trips through PostgreSQL.
-A synthetic HTTP harness checks copied access rules, revoked tokens, ETags,
-versions, and signed downloads.
-These tests do not read runtime inventory, inspect real backups, or change services.
-
-The separate [account-copy path](CONTROL_PLANE_ACCOUNT_COPY.md) has synthetic export,
-CLI, private-file, and disposable PostgreSQL checks:
-
-```sh
-SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test \
-  tests/test_control_plane_account_copy.py \
-  tests/test_control_plane_account_copy_review.py \
-  tests/test_control_plane_account_copy_integration.py
-```
-
-These cover separate admission, complete account/config parity without token state,
-private source reads, stale reports, exact/no-op receipts, concurrent copies, corruption
-rollback, closure, and migration without the deferred capture schema. Review regressions
-cover bounded first reads, YAML expansion rejection, JSON type preservation, and
-structural Argon2id checks without password computation. Run the fixture importer
-checks too when shared projections, file helpers, or parity code changes.
-No test uses production data or opens an operational database.
-
-The [managed-access candidate](CONTROL_PLANE_LIVE.md) has separate checks:
-
-```sh
-SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test \
-  tests/test_managed_access_validation.py \
-  tests/test_managed_access_integration.py \
-  tests/test_managed_access_portal.py \
-  tests/test_managed_access_node.py \
-  tests/test_managed_access_storage.py \
-  tests/test_managed_access_deployment.py
-```
-
-The `control-plane` CI job includes this suite and requires PostgreSQL.
-These tests use synthetic accounts and disposable PostgreSQL. They cover migration
-drift, explicit ownership, admin permissions, CSRF, session isolation, password/link
-races, bounded password work, subscription rules, and managed deployment.
-Supervisor tests use synthetic files and stand-in process, service, and database
-operations. Bounded-output tests launch only disposable Python child processes.
-Nginx tests execute the generated script against temporary files with mocked commands.
-No test installs a system unit, changes nginx, opens runtime inventory, or contacts a VPS.
-These local checks do not prove native cutover, restore/rebind recovery, or peak VPS capacity.
-
-The separate `managed-native` CI job runs `tests/native_managed.py` on a disposable
-GitHub-hosted Ubuntu 24.04 runner. It requires `GITHUB_ACTIONS=true`,
-`RUNNER_ENVIRONMENT=github-hosted`, and `SBM_MANAGED_NATIVE_E2E=1`.
-**Do not run it on an operator machine or VPS. Do not set these markers locally.**
-The guard rejects existing application paths, state, units, and the `sbm` account.
-Environment markers prevent mistakes. They are not a security sandbox.
-
-The rehearsal uses generated keys, a locally trusted TLS fixture, one synthetic
-account, loopback traffic, and the pinned sing-box server build. Only SSH transport
-uses local substitutes. PostgreSQL 16, systemd, sing-box, Gunicorn, and nginx are real. Fixture setup makes `/usr/local/bin` and `/etc/systemd/system`
-root-owned and non-writable by other users. Product path guards remain unchanged.
-It checks:
-
-- Account copy, permanent closure, preparation, fencing, node application, activation,
-  and public routing as separate operations. Fixture import admission stays disabled.
-- A usable legacy link before cutover and its rejection afterward. Fresh links,
-  password exchange, versions, ETags, signed downloads, and link revocation.
-- Real Trojan traffic before and after cutover. A database-owned credential edit,
-  pending subscriptions, reapplication, and rejection of the replaced credential.
-- PostgreSQL 16 dump/restore of all 19 tables, logical columns, constraints, and exact
-  sequence state. Restored active ownership remains blocked by its changed destination.
-
-Generated credentials, keys, links, runtime files, dumps, and process output are not
-uploaded as artifacts. The runner retains fixture files until its disposal.
-Local tests in `tests/test_managed_access_native_harness.py` mock host commands.
-They check refusal guards, transport, proxy removal, fixture construction, and node
-state creation with a private umask. They do not execute the native rehearsal.
-This CI fixture does not measure VPS capacity, prove full-host recovery, rebind a
-restored database, install `sbc`, or test Hysteria2/Naive client connections.
-See [the recovery boundary](CONTROL_PLANE_LIVE.md#failure-and-recovery).
-
-The witness/journal capture protocol is deferred and is not part of this implementation.
-Do not expand that protocol for the [one-time first-copy plan](CONTROL_PLANE_CAPTURE.md).
-Keep separately retained prototype artifacts outside the account-copy change set.
 
 ## Traffic accounting checks
 
@@ -391,6 +299,9 @@ The command loads local rule sets but does not load a remote rule's `initial_pat
 so initial files also need a startup check.
 
 The tests in `tests/test_sing_box_114.py` use generated certificates and loopback
+ports, while `tests/test_server_egress.py` verifies that the server route resolves
+hostnames through local DNS, pins UDP associations, and rejects private and reserved
+destinations.
 DNS, HTTP, and proxy servers. They check every rendered client profile on every
 platform it is rendered for, since the desktop configs differ by platform in the
 system resolver that `ai-only` and `direct` use, plus desktop startup with failed rule

@@ -3,20 +3,14 @@
 from __future__ import annotations
 
 import importlib
-import json
 import logging
 import os
 import sys
-from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
-from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import uvicorn
-
-from sing_box_manager.account_copy.command import AccountCopyCommand
-from sing_box_manager.managed_access.command import ManagedAccessCommand
 
 tyro: Any = importlib.import_module("tyro")
 
@@ -54,10 +48,6 @@ class DeployCommand:
     pixi environment, and enable all managed systemd services."""
     skip_code: bool = False
     """Sync artifacts only, leaving the remote code tree as it is."""
-    managed_accounts: bool = False
-    """Use active PostgreSQL account ownership, never inventory-built access."""
-    acknowledge_interrupt: bool = False
-    """Apply current database memberships and allow proxy connections to disconnect."""
     dry_run: bool = False
     """Print every command and let rsync report what it would transfer or
     delete, without changing anything on the remote."""
@@ -96,41 +86,21 @@ class StatsStreamCommand:
 
 @dataclass
 class ControlPlaneCommand:
-    """Manage the private Django service. This does not change proxy users."""
+    """Manage the Django control plane, account imports, and node config sync."""
 
     action: Literal[
-        "serve", "migrate", "check", "create-admin", "collect-static", "health"
+        "serve",
+        "migrate",
+        "check",
+        "create-admin",
+        "collect-static",
+        "health",
+        "import-inventory",
+        "sync-node",
     ] = "check"
 
 
-@dataclass
-class ControlPlaneImportCommand:
-    """Preview or apply a synthetic access snapshot in an enabled fixture database."""
-
-    action: Literal["preview", "apply"]
-    snapshot: Path
-    report: Path | None = None
-    """New private output file. Required for preview only."""
-    approved_report: Path | None = None
-    """Reviewed private input file. Required for apply only."""
-
-    def report_path(self) -> Path:
-        if (
-            self.action == "preview"
-            and self.report is not None
-            and self.approved_report is None
-        ):
-            return self.report
-        if (
-            self.action == "apply"
-            and self.approved_report is not None
-            and self.report is None
-        ):
-            return self.approved_report
-        raise ValueError("Invalid import report arguments")
-
-
-ExistingCommand = (
+Command = (
     Annotated[ControlPlaneCommand, tyro.conf.subcommand(name="control-plane")]
     | Annotated[ServeCommand, tyro.conf.subcommand(name="serve")]
     | Annotated[ReleaseCommand, tyro.conf.subcommand(name="release")]
@@ -138,14 +108,6 @@ ExistingCommand = (
     | Annotated[GcCommand, tyro.conf.subcommand(name="gc")]
     | Annotated[StatsCollectCommand, tyro.conf.subcommand(name="stats-collect")]
     | Annotated[StatsStreamCommand, tyro.conf.subcommand(name="stats-stream")]
-)
-Command = (
-    ExistingCommand
-    | Annotated[
-        ControlPlaneImportCommand, tyro.conf.subcommand(name="control-plane-import")
-    ]
-    | Annotated[AccountCopyCommand, tyro.conf.subcommand(name="account-copy")]
-    | Annotated[ManagedAccessCommand, tyro.conf.subcommand(name="managed-access")]
 )
 
 
@@ -223,8 +185,6 @@ def _run_deploy(command: DeployCommand, settings: Settings) -> None:
                 skip_code=command.skip_code,
                 dry_run=command.dry_run,
                 certbot_email=command.certbot_email,
-                managed_accounts=command.managed_accounts,
-                acknowledge_interrupt=command.acknowledge_interrupt,
             ),
         )
     except DeploymentError as exc:
@@ -319,86 +279,7 @@ def _run_stats_stream(_: StatsStreamCommand, settings: Settings) -> None:
         raise SystemExit(1) from exc
 
 
-def _run_import(command: ControlPlaneImportCommand, settings: Settings) -> None:
-    from sing_box_manager.control_plane.import_runner import run as run_import
-    from sing_box_manager.control_plane.import_schema import ImportRejected
-
-    try:
-        result = run_import(
-            command.action, command.snapshot, command.report_path(), settings
-        )
-    except ImportRejected as exc:
-        print(f"Import rejected: {exc}.", file=sys.stderr)
-        raise SystemExit(2) from None
-    except Exception:
-        print(
-            "Import operation failed. No error details are logged. Retry the exact inputs if the commit outcome is uncertain.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from None
-    label = (
-        "Receipt confirmed"
-        if result.get("noop")
-        else "Preview ready"
-        if command.action == "preview"
-        else "Copy applied"
-    )
-    print(f"{label}. Counts: {json.dumps(result['counts'], sort_keys=True)}")
-
-
-def _run_account_copy(command: AccountCopyCommand, settings: Settings) -> None:
-    from sing_box_manager.account_copy.runner import run
-    from sing_box_manager.control_plane.import_schema import ImportRejected
-
-    try:
-        result = run(command.action, settings, command.options())
-    except ImportRejected as error:
-        print(f"Account copy rejected: {error}.", file=sys.stderr)
-        raise SystemExit(2) from None
-    except Exception:
-        print(
-            "Account copy operation failed. Retry exact apply inputs if the commit outcome is uncertain.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from None
-    safe = {
-        key: result[key]
-        for key in (
-            "counts",
-            "noop",
-            "superseded",
-            "authorized",
-            "closed",
-            "exported",
-            "subjects",
-        )
-        if key in result
-    }
-    print(f"Account copy {command.action} complete. {json.dumps(safe, sort_keys=True)}")
-
-
 def _dispatch(command: Command, settings: Settings) -> None:
-    if isinstance(command, ControlPlaneImportCommand):
-        _run_import(command, settings)
-    elif isinstance(command, AccountCopyCommand):
-        _run_account_copy(command, settings)
-    elif isinstance(command, ManagedAccessCommand):
-        from sing_box_manager.managed_access.runner import run
-
-        try:
-            result = run(command, settings)
-        except Exception:
-            print(
-                "Managed access operation failed. Inspect its state before retrying.",
-                file=sys.stderr,
-            )
-            raise SystemExit(1) from None
-        print(json.dumps(result, sort_keys=True))
-    else:
-        _dispatch_existing(command, settings)
-
-
-def _dispatch_existing(command: ExistingCommand, settings: Settings) -> None:
     if isinstance(command, ControlPlaneCommand):
         from sing_box_manager.control_plane.runner import run
 
@@ -435,9 +316,7 @@ def _dispatch_existing(command: ExistingCommand, settings: Settings) -> None:
     _run_deploy(command, settings)
 
 
-def _resolve_config_path(
-    cli_config: Path | None, *, invalid_exit_code: int = 1
-) -> Path:
+def _resolve_config_path(cli_config: Path | None) -> Path:
     if cli_config is not None:
         return cli_config
 
@@ -449,107 +328,26 @@ def _resolve_config_path(
         "Error: --config flag or SBM_CONFIG environment variable is required.",
         file=sys.stderr,
     )
-    raise SystemExit(invalid_exit_code)
-
-
-def _parse_cli(argv: list[str] | None) -> Cli:
-    arguments = sys.argv[1:] if argv is None else argv
-    if not {"control-plane-import", "account-copy", "managed-access"}.intersection(
-        arguments
-    ):
-        return tyro.cli(Cli, args=arguments, prog="sbm", description=CLI_DESCRIPTION)
-    output, errors = StringIO(), StringIO()
-    try:
-        with redirect_stdout(output), redirect_stderr(errors):
-            parsed = tyro.cli(
-                Cli, args=arguments, prog="sbm", description=CLI_DESCRIPTION
-            )
-    except SystemExit as error:
-        if error.code == 0:
-            print(output.getvalue(), end="")
-            print(errors.getvalue(), end="", file=sys.stderr)
-        else:
-            print(
-                "Invalid managed-access arguments. Use managed-access --help."
-                if "managed-access" in arguments
-                else "Invalid account-copy arguments. Use account-copy --help."
-                if "account-copy" in arguments
-                else "Invalid import arguments. Use control-plane-import --help.",
-                file=sys.stderr,
-            )
-        raise
-    return parsed
+    raise SystemExit(1)
 
 
 def main(argv: list[str] | None = None) -> None:
-    cli = _parse_cli(argv)
-    if isinstance(cli.command, ControlPlaneImportCommand):
-        try:
-            cli.command.report_path()
-        except ValueError:
-            print("Invalid import report arguments.", file=sys.stderr)
-            raise SystemExit(2) from None
-    if isinstance(cli.command, AccountCopyCommand):
-        try:
-            cli.command.options()
-        except ValueError:
-            print(
-                "Invalid account-copy arguments. Use account-copy --help.",
-                file=sys.stderr,
-            )
-            raise SystemExit(2) from None
-    if isinstance(cli.command, ManagedAccessCommand):
-        try:
-            cli.command.validate()
-        except ValueError:
-            print(
-                "Invalid managed-access arguments. Use managed-access --help.",
-                file=sys.stderr,
-            )
-            raise SystemExit(2) from None
-    config_path = _resolve_config_path(
-        cli.config,
-        invalid_exit_code=2
-        if isinstance(cli.command, (ControlPlaneImportCommand, AccountCopyCommand))
-        else 1,
+    cli = tyro.cli(
+        Cli,
+        args=argv,
+        prog="sbm",
+        description=CLI_DESCRIPTION,
     )
-    if (
-        isinstance(cli.command, AccountCopyCommand)
-        and cli.command.action == "export"
-        and config_path.name.endswith((".sops.yaml", ".sops.yml"))
-    ):
-        print(
-            "Account export requires a plaintext stored source config.", file=sys.stderr
-        )
-        raise SystemExit(2)
-    settings = _load_cli_settings(cli, config_path)
-    _dispatch(cli.command, settings)
-
-
-def _load_cli_settings(cli: Cli, config_path: Path) -> Settings:
+    config_path = _resolve_config_path(cli.config)
     from sing_box_manager.settings import load_settings
 
     try:
-        if isinstance(cli.command, ManagedAccessCommand) or (
-            isinstance(cli.command, AccountCopyCommand)
-            and cli.command.action == "export"
-        ):
-            from sing_box_manager.account_copy.export import load_source_settings
-
-            settings = load_source_settings(config_path)
-        else:
-            settings = load_settings(config_path)
+        settings = load_settings(config_path)
     except Exception as exc:
-        if isinstance(cli.command, ManagedAccessCommand):
-            print("Managed access configuration could not be loaded.", file=sys.stderr)
-            raise SystemExit(2) from None
-        if isinstance(cli.command, (ControlPlaneImportCommand, AccountCopyCommand)):
-            print("Import configuration could not be loaded.", file=sys.stderr)
-            raise SystemExit(2) from None
         print(f"Failed to load settings: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    return settings
+    _dispatch(cli.command, settings)
 
 
 if __name__ == "__main__":

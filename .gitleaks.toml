@@ -14,14 +14,13 @@ regexTarget = "secret"
 regexes = ['''^A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=$''']
 targetRules = ["generic-api-key"]
 
-# These generated documentation fingerprints are public, not API keys.
-# Retain exact older values for reachable history scans.
+# This generated documentation fingerprint is public, not an API key.
 [[allowlists]]
 condition = "AND"
 description = "Reviewed public fingerprint for docs/SECRET_HANDLING.md"
 paths = ['''^docstale\.lock$''']
 regexTarget = "secret"
-regexes = ['''^(fb3cd53af6289e44|6e1c9c75fa200d3b|3de8da97d6cf8142)$''']
+regexes = ['''^fb3cd53af6289e44$''']
 targetRules = ["generic-api-key"]
 
 [[allowlists]]

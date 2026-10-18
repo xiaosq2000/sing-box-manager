@@ -68,9 +68,7 @@ select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 # Django generates migration operation lists as class attributes.
-"sing_box_manager/account_copy/migrations/*.py" = ["RUF012"]
 "sing_box_manager/control_plane/migrations/*.py" = ["RUF012"]
-"sing_box_manager/managed_access/migrations/*.py" = ["RUF012"]
 "tests/**/*.py" = ["D", "INP001", "PLC0415", "S101", "S603", "T201"]
 
 [tool.ruff.format]

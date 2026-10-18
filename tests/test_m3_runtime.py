@@ -3,6 +3,7 @@
 import os
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,23 @@ from sing_box_manager.subscription import user_protocols
 from tests.test_m3_profiles import profile_inventory
 from tests.test_sing_box_114 import binary as binary
 from tests.test_sing_box_114 import deployment as deployment
-from tests.test_sing_box_114 import _DirectHandler, _connect, _port, _running, _server
+from tests.test_sing_box_114 import _SocksHandler, _connect, _port, _running, _server
 from tests.traffic_fixtures import usage_rows
+
+
+@contextmanager
+def _destination(config):
+    # Keep the destination policy. Only the final transport is a local stand-in.
+    with _server(_SocksHandler) as destination:
+        config["outbounds"] = [
+            {
+                "type": "socks",
+                "tag": "direct",
+                "server": "127.0.0.1",
+                "server_port": destination.server_address[1],
+            }
+        ]
+        yield destination
 
 
 def test_one_node_authenticates_all_protocols_and_reports_separate_usage(
@@ -59,8 +75,8 @@ def test_one_node_authenticates_all_protocols_and_reports_separate_usage(
 
     monkeypatch.setattr(connection_stats, "open_stream", observed_stream)
     with (
+        _destination(server),
         _running(Path(server_binary), server_root, server),
-        _server(_DirectHandler) as destination,
     ):
         thread = threading.Thread(
             target=collector._run_service, args=(collector.endpoints[0],), daemon=True
@@ -91,9 +107,7 @@ def test_one_node_authenticates_all_protocols_and_reports_separate_usage(
                     "route": {"final": "proxy"},
                 }
                 with _running(binary, client_root, config):
-                    assert b"direct" in _connect(
-                        port, "127.0.0.1", destination.server_address[1]
-                    )
+                    assert b"proxied" in _connect(port, "192.0.2.10", 18080)
                 snapshot = traffic_stats._query_service_snapshot(
                     traffic_stats._ServiceTarget(protocol, stats.api_listen, ("alice",))
                 )
