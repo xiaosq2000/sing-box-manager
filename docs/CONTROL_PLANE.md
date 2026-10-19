@@ -1,6 +1,6 @@
 # Control-plane guide
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 The Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
 accounts, proxy user accounts (`Account`), per-protocol credentials (`Credential`),
@@ -17,7 +17,7 @@ Existing proxy credentials, subscription tokens, and signed download contracts r
 | Admin          | `http://127.0.0.1:47071/admin/`, through an SSH tunnel (returns 404 off loopback)       |
 | Subscriptions  | `/sub/<token>` (`sbc` & mobile), `/sub/<token>/` (browser page), `/sub/<token>/files/…` |
 | Installers     | `/install.sh`, `/install/linux.sh`, `/install/macos.sh`, `/install.ps1`                 |
-| Readiness      | `/health/`; checks database access, migrations, and an admin static asset               |
+| Readiness      | `/health/`; checks database access, migrations, and admin/portal static assets          |
 | Service        | `sing-box-manager-control-plane.service`, running as `sbm`                              |
 | Database       | OS-managed PostgreSQL 14 or later; database `sbm_control_plane`                         |
 | Database login | Local Unix socket, role `sbm`, peer authentication                                      |
@@ -174,7 +174,8 @@ it can contain credentials. Database edits remain saved even when node sync fail
 ## User pages and private traffic views
 
 Users open `/sub/<token>/` to read their subscription link, installation commands,
-current usage, and mobile configuration downloads. They cannot change credentials or reset links there.
+current usage, and [mobile import buttons, local QR codes, and JSON downloads](README_MOBILE.md).
+They cannot change credentials or reset links there.
 The link grants access. A user who loses it must request it from an operator.
 `traffic_stats.show_user_domains` controls personal domain visibility in both the page and `/api/usage`.
 

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Subscription · {{ account.username }}</title>
     <link rel="stylesheet" href="{% static 'portal/styles.css' %}" />
+    <script src="{% static 'portal/subscription.js' %}" defer></script>
   </head>
   <body>
     <main class="page-shell page-shell--wide">
@@ -13,7 +14,9 @@
       <section class="card">
         <h2>订阅链接</h2>
         <p>链接就是凭据，不要分享。请保存此页面。丢失链接时，请联系管理员。</p>
-        <pre>{{ subscription_url }}</pre>
+        <label for="subscription-url">通用订阅链接</label>
+        <input id="subscription-url" class="subscription-url" type="url" value="{{ subscription_url }}" readonly spellcheck="false" autocomplete="off" />
+        <button type="button" data-copy-target="subscription-url" hidden>复制订阅链接</button>
         <p>Protocols: {{ protocols }}</p>
         <h3>Linux / macOS install</h3>
         <pre>curl -fsSL "{{ origin }}/install.sh" | sh</pre>
@@ -21,15 +24,26 @@
         <pre>&amp; ([scriptblock]::Create((irm '{{ origin }}/install.ps1')))</pre>
         <p>按提示粘贴订阅链接。安装器也支持从旧版客户端迁移。</p>
         <h3>Android / iOS</h3>
-        <p>在 sing-box 客户端中添加远程配置，使用上面的订阅链接。</p>
-        <p>需要离线导入时，可下载当前协议配置：</p>
-        {% for protocol in mobile_protocols %}
-        <a
-          href="{{ subscription_url }}?format=mobile&amp;protocol={{ protocol }}"
-          download="{{ protocol }}-client.json"
-          >{{ protocol }}</a
-        >
-        {% endfor %}
+        <p>安装官方 sing-box 应用后，选择一个协议添加远程配置。同一台手机可点“在 sing-box 中打开”；另一台设备可扫描二维码。</p>
+        <p>如果浏览器不能打开应用，请在应用中添加远程配置并粘贴对应链接。iOS 可用系统相机扫码，Android 可用应用内扫码。</p>
+        <p>二维码同样是凭据。请勿转发截图或上传到在线扫码网站。二维码由本服务生成，不使用第三方服务。</p>
+        <div class="mobile-profiles">
+          {% for profile in mobile_profiles %}
+          <section class="mobile-profile" aria-labelledby="mobile-title-{{ profile.protocol }}">
+            <h4 id="mobile-title-{{ profile.protocol }}">{{ profile.label }}</h4>
+            <p><a class="button-link" href="{{ profile.import_uri }}" rel="noreferrer">在 sing-box 中打开</a></p>
+            <img class="mobile-qr" src="{{ profile.qr }}" alt="导入 {{ profile.label }} 远程配置的二维码" loading="lazy" />
+            <label for="mobile-url-{{ profile.protocol }}">{{ profile.label }} 远程配置链接</label>
+            <input id="mobile-url-{{ profile.protocol }}" class="subscription-url" type="url" value="{{ profile.url }}" readonly spellcheck="false" autocomplete="off" />
+            <p class="mobile-actions">
+              <button type="button" data-copy-target="mobile-url-{{ profile.protocol }}" hidden>复制链接</button>
+              <a href="{{ profile.url }}" download="{{ profile.protocol }}-client.json">下载 JSON</a>
+            </p>
+          </section>
+          {% endfor %}
+        </div>
+        <p>下载的 JSON 是当前配置的副本，不会自动更新。优先使用远程配置；自动更新设置由移动应用管理。</p>
+        <p id="copy-status" role="status" aria-live="polite"></p>
       </section>
       {% timezone traffic_timezone %} {% include 'control_plane/usage.html' %}
       {% include 'control_plane/domains.html' %} {% endtimezone %}

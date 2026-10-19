@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -133,6 +133,7 @@ or check out config state with git.
 - [`docs/README_SBC.md`](docs/README_SBC.md): client installation, legacy migration, commands, help, and shell completion
 - [`docs/WEBRTC.md`](docs/WEBRTC.md): cross-platform `sbc webrtc` behavior and browser cleanup
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
+- [`docs/README_MOBILE.md`](docs/README_MOBILE.md): official iOS/Android import links, local QR codes, and device acceptance
 - [`docs/REMOTE_DEPLOYMENT.md`](docs/REMOTE_DEPLOYMENT.md): sync the active release artifacts to a remote host and install them
 - [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md): Django portal, PostgreSQL accounts, private admin, and recovery
 - [`docs/REFACTOR_SPEC.md`](docs/REFACTOR_SPEC.md): target architecture and refactoring milestones

@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -289,6 +289,25 @@ pixi run test tests/test_connection_stats.py tests/test_connection_collector.py 
 It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer
 migration, token revocation, traffic-viewer permissions, personal-domain privacy,
 cache headers, and refusal to use inventory when PostgreSQL fails.
+
+## Mobile import checks
+
+`tests/test_mobile_import.py` decodes locally generated PNG QR images with ZXing.
+It checks the official import URI, Unicode names, selected protocols, and absence
+of network access during generation. Node.js fixtures exercise clipboard success,
+denied permission, and manual-copy fallback. Pillow and ZXing are development
+dependencies. Segno generates the images at runtime.
+
+The PostgreSQL route fixtures verify rendered import links, decoded QR contents,
+authenticated JSON, ETag responses, disabled protocols, host checks, and token
+revocation. No test uses an operator subscription or changes a device.
+
+```sh
+pixi run -e control-plane-test test tests/test_mobile_import.py tests/test_routes.py
+```
+
+These checks do not replace [physical-device acceptance](README_MOBILE.md#acceptance-boundary).
+Record iOS/Android app and core versions before claiming native compatibility.
 
 ## sing-box version checks
 
