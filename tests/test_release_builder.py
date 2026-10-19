@@ -89,8 +89,10 @@ def test_self_signed_tls_is_in_server_package_not_client_private_keys(tmp_path, 
     for inbound in node["inbounds"]:
         assert inbound["tls"]["key"] == KEY_LINES
         assert inbound["tls"]["certificate"] == CERTIFICATE_LINES
+    labels = [label for label, _ in checked]
+    assert "validation/linux-tun" in labels
     clients = [cfg for label, cfg in checked if label.startswith("validation/")]
-    assert len(clients) == 6
+    assert len(clients) == 7
     assert all(KEY_LINES[1] not in json.dumps(cfg) for cfg in clients)
     assert all(CERTIFICATE_LINES[1] in json.dumps(cfg) for cfg in clients)
 

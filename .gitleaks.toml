@@ -21,7 +21,9 @@ condition = "AND"
 description = "Reviewed public fingerprint for docs/SECRET_HANDLING.md"
 paths = ['''^docstale\.lock$''']
 regexTarget = "secret"
-regexes = ['''^(fb3cd53af6289e44|6e1c9c75fa200d3b|3de8da97d6cf8142)$''']
+regexes = [
+  '''^(fb3cd53af6289e44|6e1c9c75fa200d3b|3de8da97d6cf8142|c60c8b9f114a3e58)$''',
+]
 targetRules = ["generic-api-key"]
 
 [[allowlists]]
