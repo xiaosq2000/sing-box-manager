@@ -492,7 +492,7 @@ func singBoxPID(t *testing.T, binary string) string {
 func expectServiceGone(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		for _, task := range []string{"sbc-proxy", "sbc-refresh"} {
+		for _, task := range []string{"sbc-proxy", "sbc-refresh", "sbc-config-refresh", "sbc-upgrade"} {
 			if exec.Command("schtasks.exe", "/Query", "/TN", task).Run() == nil {
 				t.Errorf("uninstall left the task %s", task)
 			}
@@ -515,12 +515,12 @@ func serviceFiles(t *testing.T) []string {
 	}
 	if runtime.GOOS == "darwin" {
 		dir := filepath.Join(home, "Library", "LaunchAgents")
-		return []string{filepath.Join(dir, "io.sbc.proxy.plist"), filepath.Join(dir, "io.sbc.refresh.plist")}
+		return []string{filepath.Join(dir, "io.sbc.proxy.plist"), filepath.Join(dir, "io.sbc.refresh.plist"), filepath.Join(dir, "io.sbc.config.refresh.plist"), filepath.Join(dir, "io.sbc.upgrade.plist")}
 	}
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		dir = filepath.Join(home, ".config")
 	}
 	dir = filepath.Join(dir, "systemd", "user")
-	return []string{filepath.Join(dir, "sbc.service"), filepath.Join(dir, "sbc-refresh.service"), filepath.Join(dir, "sbc-refresh.timer")}
+	return []string{filepath.Join(dir, "sbc.service"), filepath.Join(dir, "sbc-refresh.service"), filepath.Join(dir, "sbc-refresh.timer"), filepath.Join(dir, "sbc-config-refresh.service"), filepath.Join(dir, "sbc-config-refresh.timer"), filepath.Join(dir, "sbc-upgrade.service"), filepath.Join(dir, "sbc-upgrade.timer")}
 }

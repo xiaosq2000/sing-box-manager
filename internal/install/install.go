@@ -91,6 +91,9 @@ type Installer struct {
 	Arch   string
 	Log    io.Writer
 	Auth   Auth
+	// BeforeRestore revokes startup permission and stops a failed candidate.
+	// An error must preserve recovery files without overwriting live files.
+	BeforeRestore func() error
 	// Shared reports whether other people use this machine. Nil means
 	// SharedHost.
 	Shared func() bool
@@ -378,6 +381,9 @@ func (i *Installer) installRules(link Link, manifest *trust.Manifest) error {
 		if !strings.HasPrefix(file.Path, "rules/") {
 			continue
 		}
+		if path.Clean(file.Path) != file.Path || strings.Contains(file.Path, "\\") {
+			return i18n.New("invalid rule snapshot path")
+		}
 		data, err := i.download(link, manifest, file.Path)
 		if err != nil {
 			return err
@@ -518,10 +524,20 @@ func (i *Installer) Refresh(link Link, restart func() error, ready func() error)
 			return true, paths.WriteFile(i.Layout.ETag(), []byte(etag+"\n"), 0o600)
 		}
 	}
+	if i.BeforeRestore != nil {
+		if err := i.BeforeRestore(); err != nil {
+			return false, err
+		}
+	}
 	if err := os.Rename(previous, i.Layout.ConfigFile()); err != nil {
 		return false, err
 	}
-	restart()
+	if err := restart(); err != nil {
+		return false, err
+	}
+	if err := ready(); err != nil {
+		return false, err
+	}
 	return false, i18n.New("sing-box did not start with the new config, so the previous one is back")
 }
 
@@ -549,36 +565,4 @@ func (i *Installer) CheckUpgrade(link Link, sbcVersion string) (Available, *trus
 		available.SingBox = manifest.SingBox
 	}
 	return available, manifest, nil
-}
-
-// Upgrade installs the release's sbc and sing-box where they differ from what
-// runs here, each checked against the signed manifest, and reports what it
-// installed.
-func (i *Installer) Upgrade(link Link, sbcVersion string) (Available, error) {
-	available, manifest, err := i.CheckUpgrade(link, sbcVersion)
-	if err != nil || !available.Any() {
-		return available, err
-	}
-	if available.SingBox != "" {
-		if err := i.installSingBox(link, manifest, i.OS+"-"+i.Arch); err != nil {
-			return Available{}, err
-		}
-		if err := i.installRules(link, manifest); err != nil {
-			return Available{}, err
-		}
-		if err := paths.WriteFile(i.Layout.SingBoxVersion(), []byte(manifest.SingBox+"\n"), 0o644); err != nil {
-			return Available{}, err
-		}
-	}
-	if available.SBC != "" {
-		fmt.Fprintf(i.Log, i18n.T("Downloading sbc %s...\n"), manifest.SBC)
-		data, err := i.download(link, manifest, "sbc/"+i.OS+"-"+i.Arch+"/sbc")
-		if err != nil {
-			return Available{}, err
-		}
-		if err := paths.WriteFile(i.Layout.SBC(), data, 0o755); err != nil {
-			return Available{}, err
-		}
-	}
-	return available, nil
 }

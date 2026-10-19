@@ -1,6 +1,6 @@
 # Sing-box VPN Client for Windows
 
-Checked on 2026-10-13.
+Checked on 2026-10-19.
 
 `sbc` is the Sing-box client CLI for Windows. It runs unelevated, manages background
 services via Windows Task Scheduler, and configures user and desktop proxy settings.
@@ -26,7 +26,7 @@ subscription link at the prompt. The installer:
 1. Downloads `sbc.exe` and verifies the signed manifest.
 2. Downloads `sing-box.exe` and default rule snapshots.
 3. Tests proxy connectivity through a loopback inbound.
-4. Registers scheduled tasks `sbc-proxy` and `sbc-refresh`.
+4. Registers `sbc-proxy`, `sbc-config-refresh`, and `sbc-upgrade` scheduled tasks.
 5. Adds `%LOCALAPPDATA%\sbc\cli` to the user `PATH`.
 6. Sets user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`).
 
@@ -51,28 +51,33 @@ If installation fails, the legacy client remains active and untouched.
 
 ## Commands
 
-| Command                     | Description                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| `sbc on`                    | Set user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)  |
-| `sbc off`                   | Clear user environment proxy variables; leaves sing-box running                 |
-| `sbc desktop on`            | Direct Windows system/browser proxy (WinINet) to the local proxy                |
-| `sbc desktop off`           | Clear Windows system proxy settings; retain WebRTC protection                   |
-| `sbc webrtc on`             | Enable persistent browser WebRTC protection; may request administrator approval |
-| `sbc webrtc off`            | Remove owned policies, reset Firefox WebRTC preferences, stop automatic setup   |
-| `sbc env`                   | Print PowerShell commands to apply proxy settings to the current session        |
-| `sbc env off`               | Print PowerShell commands to clear proxy settings from the current session      |
-| `sbc route <strategy>`      | Switch route strategy without restarting; `--list` shows names and meanings     |
-| `sbc protocol <name>`       | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting    |
-| `sbc port <number>`         | Move local proxy listen port and update associated settings                     |
-| `sbc status`                | Show proxy state, active protocol and route, and monthly traffic usage          |
-| `sbc ip`                    | Query exit IP addresses and geo-location through the proxy                      |
-| `sbc speed`                 | Test latency; add `--download` to test download throughput                      |
-| `sbc update`                | Fetch latest subscription configuration and check for updates                   |
-| `sbc start` / `sbc stop`    | Start or stop the background service                                            |
-| `sbc restart`               | Restart sing-box background service                                             |
-| `sbc link` / `sbc link set` | Display or replace the active subscription URL                                  |
-| `sbc uninstall`             | Remove scheduled tasks, files, PATH entry, and owned proxy settings             |
-| `sbc version`               | Display `sbc` version and commit information                                    |
+| Command                           | Description                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------- |
+| `sbc on`                          | Set user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)  |
+| `sbc off`                         | Clear user environment proxy variables; leaves sing-box running                 |
+| `sbc desktop on`                  | Direct Windows system/browser proxy (WinINet) to the local proxy                |
+| `sbc desktop off`                 | Clear Windows system proxy settings; retain WebRTC protection                   |
+| `sbc webrtc on`                   | Enable persistent browser WebRTC protection; may request administrator approval |
+| `sbc webrtc off`                  | Remove owned policies, reset Firefox WebRTC preferences, stop automatic setup   |
+| `sbc env`                         | Print PowerShell commands to apply proxy settings to the current session        |
+| `sbc env off`                     | Print PowerShell commands to clear proxy settings from the current session      |
+| `sbc route <strategy>`            | Switch route strategy without restarting; `--list` shows names and meanings     |
+| `sbc protocol <name>`             | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting    |
+| `sbc port <number>`               | Move local proxy listen port and update associated settings                     |
+| `sbc status`                      | Show proxy state, active protocol and route, and monthly traffic usage          |
+| `sbc ip`                          | Query exit IP addresses and geo-location through the proxy                      |
+| `sbc speed`                       | Test latency; add `--download` to test download throughput                      |
+| `sbc refresh`                     | Fetch subscription configuration and check the signed release                   |
+| `sbc upgrade`                     | Install signed binary upgrades and matching configuration                       |
+| `sbc refresh auto [on\|off]`      | Show or change automatic configuration refresh                                  |
+| `sbc upgrade auto [on\|off]`      | Show or change automatic binary upgrades                                        |
+| `sbc refresh interval [duration]` | Show or change the configuration refresh interval                               |
+| `sbc upgrade interval [duration]` | Show or change the binary upgrade interval                                      |
+| `sbc start` / `sbc stop`          | Start or stop the background service                                            |
+| `sbc restart`                     | Restart sing-box background service                                             |
+| `sbc link` / `sbc link set`       | Display or replace the active subscription URL                                  |
+| `sbc uninstall`                   | Remove scheduled tasks, files, PATH entry, and owned proxy settings             |
+| `sbc version`                     | Display `sbc` version and commit information                                    |
 
 ### Current session environment
 
@@ -119,16 +124,39 @@ requests require `--ai --allow-direct-ai`. See
 
 ### Scheduled tasks
 
-`sbc` manages two Windows scheduled tasks registered via `schtasks.exe`:
+`sbc` manages three Windows scheduled tasks registered via `schtasks.exe`:
 
-| Task          | Schedule             | Purpose                                                         |
-| ------------- | -------------------- | --------------------------------------------------------------- |
-| `sbc-proxy`   | At user logon / boot | Runs `sbc run`, keeping sing-box active in a Windows Job Object |
-| `sbc-refresh` | Every 6 hours        | Refreshes configuration and checks signed manifest updates      |
+| Task                 | Schedule                     | Purpose                                                   |
+| -------------------- | ---------------------------- | --------------------------------------------------------- |
+| `sbc-proxy`          | At user logon                | Runs `sbc run` and keeps sing-box in a Windows Job Object |
+| `sbc-config-refresh` | Enabled by default, every 6h | Refreshes subscription configuration                      |
+| `sbc-upgrade`        | Enabled by default, every 6h | Installs binaries from the operator's signed release      |
+
+The two maintenance policies are independent. Saved switches and intervals survive
+reinstall and subsequent upgrades. Policy changes do not immediately upgrade or
+restart the proxy. Manual actions ignore the automatic switches. See
+[automatic maintenance](README_SBC.md#automatic-maintenance) for intervals, recovery,
+and migration from `sbc-refresh`.
+
+Background task registration or retirement failures do not block manual refresh,
+upgrade, start, or restart. These commands report a warning and still attempt their
+action. Invalid maintenance settings, failed settings writes, and failed recovery
+remain errors.
+
+The wrapper holds an engine lock until sing-box exits. A controlled startup window
+allows maintenance to restart it without admitting unrelated starts during file
+replacement. Failed startup must stop before rollback. If Windows refuses process
+cleanup setup, the wrapper does not start the engine.
+
+Windows permits renaming a running executable but can prevent its removal.
+Upgrades use separate retired filenames so rollback can restore a binary while
+the updater still runs. A later proxy start removes retired executables and
+libraries that Windows no longer holds open.
 
 Tasks default to S4U (Service-for-User) logon, running without a console window. If
 system policy forbids S4U for unelevated users, `sbc` falls back to an interactive
-task. Task output logs to `%LOCALAPPDATA%\sbc\data\sing-box.log`.
+task. Proxy output logs to `%LOCALAPPDATA%\sbc\sing-box.log`. `sbc status` shows
+recent maintenance results. Run a manual action to inspect its error.
 
 ### System and desktop proxy
 
@@ -232,13 +260,16 @@ Microsoft account. Check the effective policy in the profile used for testing.
 
 Client files and binaries reside in `%LOCALAPPDATA%\sbc`:
 
-| Path                          | Contents                                         |
-| ----------------------------- | ------------------------------------------------ |
-| `cli\`                        | `sbc.exe` CLI executable (on user `PATH`)        |
-| `bin\`                        | sing-box executable and runtime libraries        |
-| `config.json`, `subscription` | Cached configuration and subscription credential |
-| `webrtc-mode`                 | Explicit WebRTC opt-out                          |
-| `sing-box.log`                | Runtime log                                      |
+| Path                                   | Contents                                         |
+| -------------------------------------- | ------------------------------------------------ |
+| `cli\`                                 | `sbc.exe` CLI executable (on user `PATH`)        |
+| `bin\`                                 | sing-box executable and runtime libraries        |
+| `config.json`, `subscription`          | Cached configuration and subscription credential |
+| `webrtc-mode`                          | Explicit WebRTC opt-out                          |
+| `maintenance.json`                     | Automatic policies and recent action results     |
+| `sbc.version`                          | Installed client build                           |
+| `upgrade-recovery.json`, `.upgrade-*\` | Pending upgrade recovery record and backups      |
+| `sing-box.log`                         | Runtime log                                      |
 
 `%LOCALAPPDATA%\sbc\webrtc-mode` records the WebRTC opt-out. Policy ownership records
 are separate, under `HKCU\Software\Policies\sbc\WebRTC`. This key is protected against

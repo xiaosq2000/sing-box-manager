@@ -33,6 +33,7 @@ sbc = [
   "internal/cli/",
   "internal/shell/",
   "internal/i18n/",
+  "internal/maintenance/",
   "internal/routes/",
   "internal/api/",
   "internal/probe/",
@@ -159,6 +160,8 @@ control-plane = [
 
 "docs/README_WIN.md" = [
   "internal/cli/",
+  "internal/maintenance/",
+  "internal/install/",
   "internal/routes/",
   "internal/desktop/",
   "internal/winsettings/",

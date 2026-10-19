@@ -1,12 +1,12 @@
 # Refactoring spec
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
-move the repo there. Each milestone ships on its own and keeps the service working
-for current users. When a milestone lands, update its status and the docs it
-affects. Before starting a milestone, reread its section and revise it if earlier
-work changed the plan.
+move the repo there. Milestones preserve current access until the planned
+[clean break](#clean-break-and-legacy-removal). That cutover requires users to enroll
+again and rejects old credentials and links. It needs separate production authorization.
+When a milestone lands, update its status and affected docs. Review its scope before implementation.
 
 ## Why
 
@@ -27,14 +27,16 @@ complexity comes from machinery built around premises that the target design dro
 | Decision                                                                                          | Status                                     |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | Build a minimal Django control plane instead of adopting an existing panel                        | Decided                                    |
-| Accounts are free and invite-only first; paid plans come later                                    | Decided                                    |
+| Operators create free accounts and issue single-use device enrollment codes                       | Decided                                    |
+| Ordinary users have no login password, public registration, or password-recovery flow             | Decided                                    |
 | sing-box is the only proxy core on nodes and clients                                              | Decided                                    |
 | Security fixes come first, then the client CLI                                                    | Decided                                    |
 | The control plane uses Django and Postgres                                                        | Decided                                    |
 | The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                    |
-| Add a node agent, with Go as the proposed language                                                | Deferred until an operational need exists  |
-| Give each enrolled installation its own subscription token and proxy credentials                  | Deferred until device management is needed |
-| A client runs one config per user, with routes as Clash modes and protocols in a selector         | Decided                                    |
+| Add a node agent, with Go as the proposed language                                                | Planned after device management            |
+| Give each enrolled installation its own subscription token and proxy credentials                  | Planned after Linux TUN                    |
+| Support multiple nodes before invalidating all legacy user credentials and links                  | Decided                                    |
+| A client runs one config per installation, with routes as Clash modes and protocols in a selector | Decided                                    |
 | Configs are built in code and pass `sing-box check` before release                                | Implemented                                |
 | Nodes run the official sing-box build                                                             | Proposed                                   |
 | Per-user traffic comes from the sing-box API stream only                                          | Deferred; requires accounting parity       |
@@ -46,53 +48,67 @@ accepts a server config and a client config that use it.
 
 ## Target architecture
 
-The diagram and extended schema below are future proposals, not the current build scope.
 The current system is one Django/PostgreSQL control plane and one sing-box node,
-with systemd-triggered config sync and SQLite traffic history. Node agents, device
-records, plans, and multi-node interfaces require a separate need and scope decision.
+with systemd-triggered config sync and SQLite traffic history.
+Linux TUN, device management, a node agent, and multiple nodes are the planned scope.
+The diagram describes that target, not deployed functionality. Detailed schemas and
+interfaces need review in their implementation PRs. Quotas, public registration,
+plans, and payments remain outside this delivery sequence.
 
 ```text
 browsers, client apps, sbc
-        │ HTTPS through a CDN
+        │ HTTPS
         ▼
 control plane (Django + Postgres)
-accounts, invites, plans, nodes, traffic, subscriptions, admin
+accounts, devices, nodes, traffic, subscriptions, private admin
         ▲
         │ each node pulls its config and pushes traffic over HTTPS
         │
 node agent + sing-box on each VPS  ◀── proxy traffic from clients
 ```
 
-| Component     | Runs on                                             | Built with             | Job                                                                                                                                                                                                     |
-| ------------- | --------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Control plane | Its own host behind a CDN; the current VPS until M6 | Django, Postgres       | Accounts, invites, plans, nodes, credentials, traffic, subscriptions, admin and user pages                                                                                                              |
-| Node agent    | Each VPS                                            | Go                     | Fetches the node's rendered config, checks it, writes it and reloads sing-box. Reports per-user traffic from the sing-box API stream. Keeps serving the last good config when the control plane is down |
-| sing-box      | Each VPS and client                                 | Official release       | Proxies traffic                                                                                                                                                                                         |
-| Client CLI    | Linux, macOS, Windows                               | Go (`sbc`)             | Installs from a subscription URL, runs the service, sets the system proxy, switches route and protocol without a restart, shows status and quota, updates and uninstalls. Linux TUN. Users type `sbc`   |
-| Mobile        | Android, iOS                                        | Official sing-box apps | Import the subscription as a remote profile                                                                                                                                                             |
+| Component     | Runs on                                 | Built with                          | Job                                                                                                                                                                         |
+| ------------- | --------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Control plane | Current VPS, hosting/CDN decision in M6 | Django, Postgres                    | Accounts, device enrollment, nodes, credentials, traffic, subscriptions, private admin and read-only user pages                                                             |
+| Node agent    | Each VPS                                | Go                                  | Fetches, checks and applies config. Reports applied revision, health and traffic through reviewed interfaces. Keeps the last good config during control-plane outages       |
+| sing-box      | Each VPS and client                     | Official or compatible custom build | Proxies traffic                                                                                                                                                             |
+| Client CLI    | Linux, macOS, Windows                   | Go (`sbc`)                          | Enrolls with a single-use code, installs signed artifacts, manages the proxy, switches route and protocol, shows usage, updates and uninstalls. Linux TUN. Users type `sbc` |
+| Mobile        | Android, iOS                            | Official sing-box apps              | Import the subscription as a remote profile                                                                                                                                 |
 
 ### Control plane data
 
-| Table           | Holds                                                                          |
-| --------------- | ------------------------------------------------------------------------------ |
-| `users`         | Name, email, status, admin flag, inviter                                       |
-| `invites`       | Code, creator, uses left, expiry                                               |
-| `devices`       | User, installation name, revocation state, subscription reset counter          |
-| `user_policies` | User, allowance, accounting period, expiry, node groups, enrolled-device limit |
-| `credentials`   | Device, protocol and secret                                                    |
-| `plans`         | Traffic quota, period, node groups, device limit, and a price from M8          |
-| `subscriptions` | User, plan, start, expiry, reset day                                           |
-| `nodes`         | Name, region, host, protocols and ports, group, capacity, agent token hash     |
-| `traffic_daily` | User, node, day, upload bytes, download bytes                                  |
-| `node_reports`  | Node and sequence number, so a repeated report changes nothing                 |
+These are logical entities, not a finalized migration schema.
 
-Each enrolled installation gets distinct proxy credentials. One secret may serve
-its allowed protocols. Enrollment consumes a device slot in one transaction.
-The limit counts enrolled installations, not physical devices. A copied profile
-uses the same identity. Migration must explicitly map legacy shared subscriptions
-and preserve valid links without restoring revoked ones.
+| Entity               | Responsibility                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| Operators (`User`)   | Private Django login and administrative permissions                                               |
+| Accounts (`Account`) | Proxy user identity and master enable switch, without a user login password                       |
+| Enrollment codes     | Operator-issued permission to enroll one device for one account, with expiry and single-use state |
+| Devices              | Account, installation identity, enable switch, and independent subscription state                 |
+| Credentials          | Device, protocol, and secret                                                                      |
+| Nodes                | Endpoint, supported protocols, and separate agent authentication                                  |
+| Traffic              | Account/device/node attribution and retained historical usage                                     |
+
+Operators manage accounts, device enrollment, revocation, replacement codes, and
+any enrollment limits through private Admin. Consuming a code and creating its
+device must be atomic. A code grants no account-management or cross-device access.
+A subscription grants read-only configuration/download access, not enrollment or management rights.
+Users need no portal password or password recovery. Django operator authentication remains separate.
+An account disable applies to every device. A device disable revokes its subscription
+and protocol access. There is no independent portal-only switch in the target model.
+
+Each enrolled installation gets distinct proxy credentials and a subscription.
+A copied profile still uses the same device identity. An enrollment limit counts
+registered installations, not physical devices. Keep existing traffic history and
+account attribution. No PostgreSQL traffic migration is required for this scope.
 
 ### Interfaces
+
+The device PR defines the enrollment request and response. It consumes an
+operator-issued code and returns a device subscription. Mobile enrollment must
+produce a device profile usable by a supported sing-box app.
+The subscription paths below remain read-only. Their legacy account tokens expire
+at the clean break, even if the URL shape stays the same.
 
 | Request                                           | Caller      | Purpose                                                                   |
 | ------------------------------------------------- | ----------- | ------------------------------------------------------------------------- |
@@ -119,8 +135,8 @@ avoid automatic egress changes. This does not guarantee provider acceptance.
 - The local proxy on clients listens on `127.0.0.1`. On hosts with other user
   accounts, it requires authentication. Sharing it with a LAN or with Docker
   containers is opt-in and requires authentication.
-- Subscription tokens stay out of shell history, process arguments and nginx logs.
-  Servers store only the counters that derive them.
+- Enrollment codes and subscription tokens stay out of shell history, process arguments and logs.
+  The device PR defines token storage and delivery without granting management rights.
 - Clients install a binary only when it matches a manifest signed by a key that
   never reaches a server.
 - Nodes only make outbound requests to the control plane. The control plane holds
@@ -157,18 +173,18 @@ current location.
 
 ## Milestones
 
-| Milestone | Name                                       | Status                                                      |
-| --------- | ------------------------------------------ | ----------------------------------------------------------- |
-| M0        | Security fixes                             | Done                                                        |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                                        |
-| M1b       | Linux TUN in the client CLI                | Next feature after control-plane delivery and consolidation |
-| M2        | Client CLI for Windows                     | Done                                                        |
-| M3        | Configs in code, one server process        | Done                                                        |
-| M4b       | Control plane, devices and subscriptions   | In progress                                                 |
-| M5        | Node agent, traffic and budget enforcement | Deferred pending need                                       |
-| M6        | Multiple nodes                             | Deferred pending need                                       |
-| M7        | Invitation self-service and reusable plans | Deferred pending need                                       |
-| M8        | Paid plans                                 | Deferred pending need                                       |
+| Milestone | Name                                       | Status                                   |
+| --------- | ------------------------------------------ | ---------------------------------------- |
+| M0        | Security fixes                             | Done                                     |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                     |
+| M1b       | Linux TUN in the client CLI                | Next feature                             |
+| M2        | Client CLI for Windows                     | Done                                     |
+| M3        | Configs in code, one server process        | Done                                     |
+| M4b       | Control plane, devices and subscriptions   | Core deployed, devices planned after TUN |
+| M5        | Node agent                                 | Planned after device management          |
+| M6        | Multiple nodes                             | Planned after the node agent             |
+| M7        | Invitation self-service and reusable plans | Deferred pending need                    |
+| M8        | Paid plans                                 | Deferred pending need                    |
 
 ### Delivery order
 
@@ -176,19 +192,56 @@ current location.
    Isolated PostgreSQL, real sing-box, native systemd, and cross-platform CI passed.
    Production acceptance verified existing subscriptions and a database-only account's
    connectivity, disable/re-enable, and traffic accounting. The test account was removed.
-   Protected pre/post-deployment backups and verified encrypted off-host copies are retained.
-2. **PR 2: portal and account-source consolidation.** Implemented for review; not deployed.
+   Protected recovery backups and verified encrypted off-host copies are retained.
+2. **PR 2: portal and account-source consolidation.** Merged and deployed as `d4ae81c`.
    One Django service provides subscription pages, private operational views, and
    PostgreSQL-backed legacy-client migration. Public password login, FastAPI, runtime
    authentication snapshots, and new per-user archives are removed. Signed downloads,
    the shared store, SQLite traffic history, and installer compatibility remain.
-   Production deployment needs separate authorization and measured proxy interruption below 60 seconds.
+   Production acceptance passed for existing subscriptions, legacy-client migration,
+   signed downloads, private traffic views, and historical data. Measured proxy
+   interruption stayed below 60 seconds. The retired Web service is stopped and disabled.
 3. **M1b: Linux TUN.** A user now needs native Linux TUN. This is the highest-priority
    feature after those two delivery steps. Define activation, DNS, routing, privilege,
    and recovery behavior before implementation. Do not restore the legacy Bash client.
 
-Devices, node agents, and automated quotas remain deferred until a concrete need exists.
-Keep the systemd sync path while it meets the single-node requirement.
+4. **M4b device management.** Add operator-issued single-use enrollment codes,
+   device subscriptions, independent credentials, and revocation. Do not add public user login.
+5. **M5 node agent.** Deliver authenticated config distribution, status, and safe
+   application of changes. Keep proven collectors until replacements pass acceptance.
+6. **M6 multiple nodes.** Validate device access and revocation across nodes.
+7. **Clean break.** Issue new device identities and invalidate the entire legacy
+   credential/subscription system. Remove its compatibility code and fields.
+
+Quotas, invitation self-service, plans, and payments remain deferred.
+Keep the current systemd sync path until the agent replaces it safely.
+
+### Clean break and legacy removal
+
+This is an approved product direction, not authorization to reset production credentials now.
+The cutover follows Linux TUN, device management, the node agent, and multi-node acceptance.
+
+- Preserve account records, operator authentication, infrastructure settings, signed
+  downloads, and traffic history. Do not reset the database or rewrite proven config builders.
+- Provide the new client, enrollment instructions, and operator-issued codes before
+  withdrawing old access. Users must enroll again through the new flow.
+- Revoke all old protocol credentials and terminate their existing sessions on every node.
+  A node without the revocation must not remain an available legacy entry point.
+- Invalidate old account subscriptions, portal passwords, and machine tokens together.
+  Remove the legacy exchange path so an old token cannot obtain a new subscription.
+- Remove `Account.portal_enabled`, `portal_password_hash`, and `is_portal_admin`.
+  Use account and device enable switches. Remove account-level subscription state
+  once device subscriptions replace it. Keep Django operator passwords and permissions.
+- Delete legacy Basic/Bearer authentication, its signing settings, compatibility APIs,
+  installer authentication migration, and obsolete inventory account-import code.
+  Keep installer checks that prevent conflicts with existing services or legacy TUN state.
+- Test that new devices work and that every old credential, token, and subscription fails.
+  A recovery procedure must not restore revoked legacy access.
+
+Before cutover, existing users retain access. After cutover, old-client refusal is
+intentional, not an outage to repair by restoring compatibility. Infrastructure
+interruptions must still stay below 60 seconds. Version checks enforce supported
+contracts but do not prove which client binary runs on a user's device.
 
 ### M0: Security fixes
 
@@ -217,17 +270,17 @@ Replace the sourced bash client with `sbc`, one Go binary that reads a subscript
 and replaces the `proxy` command with `sbc`. M1a ships mixed mode, and M1b moves
 Linux TUN.
 
-| Area         | Bash client                                                                  | `sbc`                                                                                                    |
-| ------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Client code  | `setup.sh` and four libraries, about 8,500 lines, sourced into every shell   | A Go binary with a Cobra command layer, and one `sbc init` line in the rc file                           |
-| Install      | `bash <(curl …/install/linux.sh)` or `macos.sh` downloads a per-user archive | `curl -fsSL …/install.sh \| sh` downloads `sbc`, which asks for the subscription URL                     |
-| Auth         | Portal password, then a machine token                                        | A subscription token                                                                                     |
-| Config       | The archive holds a config for each protocol and route                       | The server renders one config per user, and `sbc` fetches it                                             |
-| Switching    | Swaps the config and restarts sing-box                                       | Sets a Clash mode or a selector through sing-box's local API, without a restart                          |
-| Updates      | `proxy upgrade` reinstalls the archive; a daily check prints a hint          | A timer refreshes the config every 6 hours; `sbc upgrade` installs binaries that match a signed manifest |
-| Local proxy  | Loopback without auth                                                        | Loopback, with auth on shared hosts. LAN and Docker bridge sharing require auth                          |
-| Integrations | Shell, git, desktop, Docker daemon and containers                            | Shell, desktop, Docker daemon and containers                                                             |
-| Diagnostics  | 13 `proxy check` subcommands                                                 | `sbc status`, which shows traffic, `sbc ip` and `sbc speed`; `sbc doctor` follows M1a                    |
+| Area         | Bash client                                                                  | `sbc`                                                                                 |
+| ------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Client code  | `setup.sh` and four libraries, about 8,500 lines, sourced into every shell   | A Go binary with a Cobra command layer, and one `sbc init` line in the rc file        |
+| Install      | `bash <(curl …/install/linux.sh)` or `macos.sh` downloads a per-user archive | `curl -fsSL …/install.sh \| sh` downloads `sbc`, which asks for the subscription URL  |
+| Auth         | Portal password, then a machine token                                        | A subscription token                                                                  |
+| Config       | The archive holds a config for each protocol and route                       | The server renders one config per user, and `sbc` fetches it                          |
+| Switching    | Swaps the config and restarts sing-box                                       | Sets a Clash mode or a selector through sing-box's local API, without a restart       |
+| Updates      | `proxy upgrade` reinstalls the archive; a daily check prints a hint          | Independent refresh and signed-upgrade jobs default to on, every 6 hours              |
+| Local proxy  | Loopback without auth                                                        | Loopback, with auth on shared hosts. LAN and Docker bridge sharing require auth       |
+| Integrations | Shell, git, desktop, Docker daemon and containers                            | Shell, desktop, Docker daemon and containers                                          |
+| Diagnostics  | 13 `proxy check` subcommands                                                 | `sbc status`, which shows traffic, `sbc ip` and `sbc speed`; `sbc doctor` follows M1a |
 
 #### M1a: Mixed mode
 
@@ -260,8 +313,8 @@ Portal:
   snapshots with an ed25519 key from the inventory. The key stays on the build
   machine, and deploy leaves it out of the server's config. The portal serves the
   files and the manifest under the subscription path.
-- `sbm release` stops packing Linux, macOS and Windows archives. Android
-  archives stay until the M4b migration.
+- `sbm release` builds shared client artifacts, not per-user archives.
+  Mobile clients use remote profiles or current JSON downloads.
 
 Client:
 
@@ -283,9 +336,25 @@ Client:
   port and secret, and `sbc route` and `sbc protocol` call it. sing-box clears its DNS cache when
   the mode changes, and its cache file keeps the mode and the selector choice across
   restarts. This was checked in the sing-box 1.14.2 source.
-- A timer refreshes the config every 6 hours after a random delay and sends the
-  ETag. A changed config must pass `sing-box check`. `sbc` keeps the last good
-  config and restores it if sing-box fails to restart.
+- `sbc refresh` refreshes configuration. `sbc upgrade` installs signed binaries
+  and any required configuration adaptation. Each action has independent
+  `auto [on|off]` and `interval [duration]` controls. Both default to on, every 6h.
+  Saved policies survive reinstall and upgrades. Policy changes do not immediately
+  upgrade or restart the proxy. Manual actions ignore automatic switches.
+  A background task registration failure warns but does not block manual refresh
+  or upgrade. Invalid settings and failed recovery still block these actions.
+- Refresh sends the ETag. A changed config must pass `sing-box check` and retain
+  a working service. Upgrades validate candidates before replacing live files.
+  Failed upgrades stop the candidate before restoring binaries and configuration.
+  An engine lifetime lock spans Unix exec or the Windows wrapper's child lifetime.
+  Shared/exclusive startup permission separates file writes from controlled restarts.
+  An operation lock prevents
+  conflicting maintenance writes. A recovery record protects interrupted commits.
+- The installed build receipt prevents a successful upgrade from recreating its
+  own notification. The old `update` task entry only migrates schedules. Remove
+  that entry at the device-enrollment clean break. See
+  [automatic maintenance](README_SBC.md#automatic-maintenance) for migration and
+  recovery details.
 - `sbc` installs a downloaded binary only when it matches the signed manifest. It
   carries a list of public keys, so a new key can ship before the old one retires.
   The first download, by `install.sh`, relies on TLS.
@@ -297,7 +366,7 @@ Client:
   reinstall keeps the earlier choice. If port 1080 is taken for TCP or UDP,
   `sbc install` picks a free port.
 - Cobra and pflag define commands, flags, validation, help and completion.
-  Existing valid syntax stays supported, including `sbc speed --download [MB]`.
+  Existing flags stay supported, including `sbc speed --download [MB]`.
   `sbc <command> --help` and `sbc help <command>` show localized help without
   performing the command's action. Unknown flags and extra arguments fail.
   `sbc completion bash|zsh|powershell` prints completion code. Bash and Zsh
@@ -313,11 +382,11 @@ Client:
   `LC_ALL`, `LC_MESSAGES` and `LANG` that is set starts with `zh_CN` or `zh_SG`,
   and in English otherwise. `SBC_LANG=zh` or `SBC_LANG=en` overrides the locale.
 - Commands: `install`, `init`, `link`, `upgrade`, `uninstall`, `on`, `off`, `env`,
-  `status`, `ip`, `speed`, `route`, `protocol`, `port`, `update`, `start`, `stop`,
+  `status`, `ip`, `speed`, `route`, `protocol`, `port`, `refresh`, `start`, `stop`,
   `restart`, `run`, `desktop on|off`, `docker on|off` and `version`. `on` and `off`
   point shells, and the desktop after `desktop on`, at the proxy or away from it,
   and leave sing-box running, so an agent that runs `sbc off` keeps its own
-  connection. `start` and `stop` control the service. `update` refreshes the config
+  connection. `start` and `stop` control the service. `refresh` refreshes the config
   now, and `link set` replaces the subscription URL.
 - `sbc ip` asks ipinfo.io and cip.cc through the active route. `--ai` adds
   unauthenticated Gemini, ChatGPT and Claude checks through the proxy-only
@@ -394,7 +463,7 @@ the Docker bridge address with auth.
 
 #### M1b: Linux TUN
 
-Required and prioritized after control-plane reliability and portal consolidation.
+Required after automatic client maintenance and official mobile-app import.
 `sbc` supports mixed mode, not Linux TUN. The legacy implementation is not maintained.
 Confirm the initial Linux environment and routing requirements before implementation.
 
@@ -422,10 +491,10 @@ user's hive, not the administrator's `HKCU`.
 | Piece         | Linux and macOS                          | Windows                                                                                                                                                                                                                                                                                                      |
 | ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Files         | `~/.config/sbc`, `~/.local/share/sbc`    | One folder, `%LOCALAPPDATA%\sbc`, whose permissions already exclude other users. A scheduled task may lack the profile variables, so an `sbc` under `cli\` finds the folder from its own path                                                                                                                |
-| Service       | systemd user unit, LaunchAgent           | Scheduled tasks `sbc-proxy` and `sbc-refresh`, written as XML and registered with `schtasks.exe`. They run whether the user is logged on or not (S4U), so there is no console window and sign-out keeps them                                                                                                 |
+| Service       | systemd user unit, LaunchAgent           | Scheduled tasks `sbc-proxy`, `sbc-config-refresh`, and `sbc-upgrade`, written as XML and registered with `schtasks.exe`. They run whether the user is logged on or not (S4U), so there is no console window and sign-out keeps them                                                                          |
 | `sbc run`     | execs sing-box                           | Runs sing-box as a child in a job object, so ending the task ends sing-box, and records its process id, which stopping the task waits on: Task Scheduler gives an ended task's process a few seconds before it terminates it. Without a console, output goes to `sing-box.log`, which starts over past 10 MB |
 | Service state | `systemctl is-active`, `launchctl print` | PowerShell's `Get-ScheduledTask`, whose states are the same in every display language, where `schtasks` prints them in the display language                                                                                                                                                                  |
-| Programs      | replaced in place                        | A running program cannot be replaced, so `WriteFile` moves it to `.old`, which the next `sbc run` deletes. Uninstall removes the folder sbc runs from after sbc exits                                                                                                                                        |
+| Programs      | replaced in place                        | `WriteFile` moves a running program to a unique retired path. This permits rollback while an older updater still runs. A later `sbc run` removes unused retired files. Uninstall removes the folder sbc runs from after sbc exits                                                                            |
 | Desktop proxy | gsettings, networksetup                  | `ProxyEnable`, `ProxyServer` and `ProxyOverride` under `HKCU\...\Internet Settings`, plus a WinINet refresh so open browsers notice                                                                                                                                                                          |
 | Shells        | rc file runs `sbc init`, prompt hook     | User environment variables `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, which new terminals, VS Code, git, pip and curl read; `sbc install` adds `cli\` to the user PATH                                                                                                                                      |
 | Installer     | `install.sh`                             | `install.ps1` for Windows PowerShell 5.1: ask for the link, download `sbc.exe`, run `sbc install`. A native program needs no execution policy                                                                                                                                                                |
@@ -512,12 +581,13 @@ successfully, and every protocol available to that client passed connection test
 ### M4b: Control plane, devices and subscriptions
 
 Reuse the config builders, signed-download contract, and hosted installers.
-The single-node account/credential cutover is deployed. Device management remains
-unimplemented, so M4b is not complete under its original acceptance criteria.
-The items below describe current implementation, not authorization for a live rollout.
+The single-node account, credential, and subscription core is deployed, including portal consolidation.
+Device management remains unimplemented, so M4b is not complete under its original acceptance criteria.
+Items 1–3 describe the deployed core. Item 4 is planned work.
+Neither this status nor the roadmap authorizes a production cutover.
 
 1. **Deployable foundation.** Implemented and deployed on the single VPS.
-   Django/PostgreSQL provides the only portal in PR 2. Private admin access
+   Django/PostgreSQL provides the only portal. Private admin access
    uses an SSH tunnel. Deploy provisions the database, applies migrations, collects
    root-owned static files, and checks readiness. Repeat operations retain data.
    See [the control-plane guide](CONTROL_PLANE.md).
@@ -538,14 +608,17 @@ The items below describe current implementation, not authorization for a live ro
    checks it with `sing-box check`, and applies it to `sing-box.service`.
    The deployed reliability changes include transaction-safe sync requests, config preservation,
    shared locking, service recovery, and database-backed traffic collection.
-   Migration `0003_account_portal_enabled` is applied. Production acceptance passed.
+   Migrations `0003_account_portal_enabled` and `0004_traffic_permission` are applied.
+   Production acceptance passed.
    Operational details belong in [the control-plane guide](CONTROL_PLANE.md).
-4. **Device management: deferred.** Require a concrete need for independent device
-   credentials, revocation, or enrollment limits before designing enrollment.
-   A subscription token alone must not authorize device or policy management.
+4. **Device management: planned after Linux TUN.** Operators issue single-use
+   enrollment codes through private Admin. Each enrolled device gets its own
+   subscription and protocol credentials. Operators manage revocation and enrollment limits.
+   No ordinary-user login or password recovery is required. Codes and subscription
+   tokens grant no account-management or cross-device permissions.
 
-The single-node service uses a systemd path unit for credential sync. Keep it unless
-an approved requirement needs a node agent. Do not add quota fields without defined
+The single-node service uses a systemd path unit for credential sync. Keep it until
+the node agent passes acceptance. Do not add quota fields without defined
 suspension, manual-disable, reset, and reactivation rules.
 
 PR 2 consolidates portal routes and account state. `/api/sub` and machine-token
@@ -555,46 +628,39 @@ Traffic operators need a separate Django permission; old portal-admin flags gran
 Keep the shared store, signed manifests, hosted installers, `sbm gc`, and historical data.
 The next feature after consolidation acceptance is native Linux TUN.
 
-### M5: Node agent, traffic and budget enforcement
+### M5: Node agent
 
-Deferred proposal, not the automatic next milestone. Define an operational need
-before implementing an agent, replacing collectors, or enforcing quotas.
-The removal list below applies only after each replacement passes acceptance checks.
+Planned after device management. Config distribution and node status are the core scope.
+The agent does not require quotas, a traffic-storage rewrite, or an official-binary switch.
 
-- Add `cmd/sbm-node` to the Go module. The agent fetches its config, runs
-  `sing-box check`, writes the config and reloads sing-box. It reports per-user
-  traffic from the API stream with sequence numbers and keeps reports on disk while
-  the control plane is unreachable.
-- Read users, devices, and policies from the database after the M4b ownership cutover.
-  Suspend over-budget or expired users across their devices. Nodes must stop existing
-  sessions as well as reject new ones. Reevaluate access after a reset or allowance change.
-  Measure enforcement delay and interruption before rollout.
-- Traffic lands in `traffic_daily`. The user page, `sbc status` and the
-  `subscription-userinfo` header read it. Migrate history from the SQLite database.
-- Before dropping the V2Ray counters, compare them with the stream. The live
-  database's `__unattributed__` rows measure the gap between the two.
-- `sbm deploy` ships the control plane and the agent. Code and binaries on the VPS
-  are root-owned.
+- Add a node agent, with Go as the proposed language. Use separate node authentication.
+  Validate candidate configs, apply them safely, and report the applied revision and health.
+- Preserve the last good config during control-plane outages. Define how stale or
+  unreachable nodes are excluded from a credential-revocation cutover.
+- Apply account/device revocation to new and existing connections. Measure propagation
+  delay and service interruption before production acceptance.
+- Reuse proven configuration builders, validation, locking, and recovery behavior.
+  Replace systemd sync and deployment duties only where the agent assumes them.
+- Preserve traffic collection, account attribution, and historical data. Define the
+  reporting contract before moving collection into the agent. Report replay must not double-count usage.
+- Keep code, binaries, and applied configs root-owned on nodes.
 
-Removes the V2Ray poller, the custom sing-box build and its Go toolchain use, the
-reconciliation tables, the SQLite store, and the stats units only if their replacements
-meet the accounting and recovery requirements. Retire legacy passwords, machine tokens,
-and `POST /api/sub` only after supported installers no longer use them.
-Replace server scripts or deployment code only where the agent assumes their duties.
-Keep portal templates, styles, fonts, and shared downloads.
+Done when authenticated distribution, repeat application, invalid-config rejection,
+outage recovery, revocation, and node status pass fixture and disposable native checks.
+The legacy client interfaces remain until the later clean break.
 
-Done when the VPS runs sing-box, the agent, and the control plane without the old
-portal or collectors. Usage must match the old counters within an accepted gap.
-Fixture checks must cover report replay, outages, suspension of existing sessions,
-and resumption after reset. Define report intervals and the long-outage policy
-before rollout.
+API-stream-only accounting is separate work. Compare it with existing counters
+before removing the poller, reconciliation logic, or custom server build.
+Quota enforcement and a PostgreSQL traffic migration are not prerequisites for M5 or M6.
 
 ### M6: Multiple nodes
 
+Planned after the node agent and required before the clean break.
+
 - Enroll a node with one command and a one-time token. A provisioning script sets up
   the agent, the hardened units and the firewall, and reads the real sshd port.
-- Move the control plane to its own host behind a CDN, on a domain unrelated to
-  node IPs.
+- Decide control-plane hosting and CDN placement before provisioning additional infrastructure.
+  Review the separation between the public control-plane domain and node endpoints.
 - Add node groups. Subscriptions list every node in the user's groups, with an
   auto-select group for normal traffic and a fixed node for proxied AI traffic.
 - Track each node's traffic against its provider allowance and reset day. KiwiVM
@@ -606,16 +672,13 @@ touching clients.
 
 ### M7: Invitation self-service and reusable plans
 
-- Registration by invite code, with email verification, login and password reset.
-- Add reusable free plans when shared per-user policies justify them.
-- Expose device enrollment, revocation, and quota information to authenticated users.
-  Use the device limits from M4b and enforcement from M5.
-- Stop recording per-destination traffic for users who aren't admins.
-- Reject SMTP port 25 and BitTorrent on nodes. Add rate limits and captcha to
-  registration.
+Deferred and outside the clean-break scope. The approved user flow has no public
+registration, login password, or password recovery. Operators manage accounts and devices.
+User self-service would require a new identity, authorization, and recovery design.
+Do not infer approval for it from device enrollment.
 
-Done when an invited stranger can register, use the service and hit their quota
-without operator action.
+Plans and automated quotas need separate requirements for accounting periods,
+suspension, manual disablement, resets, and reactivation.
 
 ### M8: Paid plans
 
@@ -624,18 +687,22 @@ invites. Details are planned when M7 lands.
 
 ## Working rules
 
-- Each milestone lands in small pull requests, and the service keeps working between
-  them.
-- Delete replaced code in the same milestone. Compatibility code lives for at most
-  one release.
+- Each milestone lands in small pull requests. Preserve current access until the
+  explicitly authorized clean break, then reject the retired credentials and contracts.
+- Delete replaced code in the same milestone. Remove the legacy compatibility layer
+  at the clean break rather than carrying it into the new device model.
 - Update the docs a milestone touches, and delete docs for removed parts.
 - Test behavior. Real sing-box binaries run in CI, and tests don't assert source
   text.
 
 ## Open questions
 
-| Question                                 | Decide by |
-| ---------------------------------------- | --------- |
-| Control plane host and CDN provider      | M6        |
-| VLESS-Reality for nodes without a domain | M6        |
-| Payment provider                         | M8        |
+| Question                                                  | Decide by           |
+| --------------------------------------------------------- | ------------------- |
+| First Linux TUN environment, DNS and routing requirements | M1b                 |
+| Enrollment code expiry, delivery and safe retry behavior  | Device PR           |
+| Agent outage handling and revocation acknowledgement      | M5                  |
+| Control plane host and CDN provider                       | M6                  |
+| VLESS-Reality for nodes without a domain                  | M6                  |
+| Production cutover date and recovery procedure            | After M6 acceptance |
+| Payment provider                                          | M8                  |

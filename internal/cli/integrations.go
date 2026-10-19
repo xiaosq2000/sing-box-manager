@@ -254,7 +254,7 @@ func startService(env Env, layout paths.Layout) error {
 	if manager.Active() {
 		return nil
 	}
-	if err := manager.Start(); err != nil {
+	if err := startManaged(env, layout, manager, false); err != nil {
 		return i18n.Errorf("start the service: %w", err)
 	}
 	return nil

@@ -159,11 +159,18 @@ func (c *Client) Delay(name string, timeout time.Duration) (time.Duration, error
 	return time.Duration(result.Delay) * time.Millisecond, nil
 }
 
+// Ready makes one bounded readiness request.
+func (c *Client) Ready(timeout time.Duration) error {
+	client := *c.http
+	client.Timeout = timeout
+	return c.callWith(&client, http.MethodGet, "/version", nil, nil)
+}
+
 // WaitReady waits for the API to answer, which sing-box does once it started.
 func (c *Client) WaitReady(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		err := c.call(http.MethodGet, "/version", nil, nil)
+		err := c.Ready(max(time.Millisecond, min(time.Second, time.Until(deadline))))
 		if err == nil {
 			return nil
 		}

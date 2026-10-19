@@ -192,7 +192,7 @@ func TestSpeedDownloadSaysWhatItNeeds(t *testing.T) {
 	}
 
 	h.errOut.Reset()
-	if code := Run(h.env, []string{"speed", "--download"}); code != 1 || !strings.Contains(h.errOut.String(), "'sbc update' adds it") {
+	if code := Run(h.env, []string{"speed", "--download"}); code != 1 || !strings.Contains(h.errOut.String(), "'sbc refresh' adds it") {
 		t.Errorf("without a speed test port: code %d, %s", code, h.errOut)
 	}
 
@@ -269,6 +269,7 @@ func TestStatusShowsTheTrafficCountOfTheLastRefresh(t *testing.T) {
 
 	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\n" +
 		"traffic:  700.00 MiB up, 15.30 GiB down this billing cycle, as of 2026-10-03 14:05\n" +
+		"refresh: auto on, interval 6h, last attempt not run yet\nupgrade: auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\n" +
 		"route:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out)

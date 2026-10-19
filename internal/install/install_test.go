@@ -29,6 +29,7 @@ import (
 )
 
 const token = "abcdefghijklmnopqrstuv"
+const fakeSBC = "#!/bin/sh\nprintf 'sbc abc123\\n'\n"
 
 // A stand-in sing-box: `check` passes unless the config says "reject".
 const fakeSingBox = "#!/bin/sh\nif grep -q reject \"$5\"; then echo 'FATAL bad config' >&2; exit 1; fi\n"
@@ -60,7 +61,7 @@ func newPortal(t *testing.T) *portal {
 				"sing-box-1.14.2-linux-amd64/LICENSE":      "license",
 			}),
 			"rules/abc.srs":       []byte("rules"),
-			"sbc/linux-amd64/sbc": []byte("new sbc"),
+			"sbc/linux-amd64/sbc": []byte(fakeSBC),
 		},
 		config: `{"inbounds":[{"type":"mixed","tag":"mixed","listen":"127.0.0.1","listen_port":1080}],"experimental":{"clash_api":{"default_mode":"china"}}}`,
 	}
@@ -463,7 +464,12 @@ func TestRefreshRestoresThePreviousConfigWhenSingBoxDoesNotComeUp(t *testing.T) 
 
 	changed, err := i.Refresh(link(t, p),
 		func() error { restarts++; return nil },
-		func() error { return errors.New("no answer") },
+		func() error {
+			if restarts == 1 {
+				return errors.New("no answer")
+			}
+			return nil
+		},
 	)
 
 	if err == nil || changed || !strings.Contains(err.Error(), "the previous one is back") {
@@ -513,19 +519,19 @@ func TestCheckUpgradeComparesWithWhatIsInstalled(t *testing.T) {
 func TestUpgradeInstallsTheCheckedSbc(t *testing.T) {
 	p, i, layout := installed(t)
 
-	upgraded, err := i.Upgrade(link(t, p), "older")
+	upgraded, err := i.Upgrade(link(t, p), "older", nil, nil)
 	if err != nil || upgraded != (Available{SBC: "abc123"}) {
 		t.Fatalf("got %+v, %v", upgraded, err)
 	}
 	data, _ := os.ReadFile(layout.SBC())
 	info, _ := os.Stat(layout.SBC())
-	if string(data) != "new sbc" || info.Mode().Perm() != 0o755 {
+	if string(data) != fakeSBC || info.Mode().Perm() != 0o755 {
 		t.Errorf("sbc %q with mode %v", data, info.Mode().Perm())
 	}
 
 	p.tamper = "sbc/linux-amd64/sbc"
 	os.Remove(layout.SBC())
-	if _, err := i.Upgrade(link(t, p), "older"); err == nil || !strings.Contains(err.Error(), "does not match") {
+	if _, err := i.Upgrade(link(t, p), "older", nil, nil); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("tampered: %v", err)
 	}
 	if _, err := os.Stat(layout.SBC()); !os.IsNotExist(err) {
