@@ -4,13 +4,13 @@
 
 "CONTRIBUTING.md" = "3773cb1b1fee80c9"
 
-"README.md" = "c3054301997894f8"
+"README.md" = "61982d4a9fd5e989"
 
 "SECURITY.md" = "ad7e0e0027732c09"
 
 "docs/CONTROL_PLANE.md" = "f47d09ee5e5a9bd1"
 
-"docs/DEVELOPMENT.md" = "d3f2cb83bd03fe25"
+"docs/DEVELOPMENT.md" = "aedf262f07242213"
 
 "docs/README_MOBILE.md" = "722f6043c5b09d24"
 
@@ -18,9 +18,9 @@
 
 "docs/README_WIN.md" = "c13b7eb908dcf618"
 
-"docs/REFACTOR_SPEC.md" = "c4c489d86027efc7"
+"docs/REFACTOR_SPEC.md" = "572054678c6ad1dd"
 
-"docs/RELEASE_AND_PORTAL.md" = "a602241feb94c37d"
+"docs/RELEASE_AND_PORTAL.md" = "ca355ca317dbe925"
 
 "docs/REMOTE_DEPLOYMENT.md" = "880995532a9aadd3"
 
