@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -78,6 +79,42 @@ func TestUpgradeFailureKeepsTheWorkingInstallation(t *testing.T) {
 				t.Fatalf("temporary stages remain: %v", stages)
 			}
 		})
+	}
+}
+
+func TestUpgradeWriteFailureRetainsRecoveryWithoutRestarting(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires unprivileged POSIX file permissions")
+	}
+	p, i, l := installed(t)
+	if err := paths.WriteFile(l.SBC(), []byte("previous client"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(l.ConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chmod(l.Config, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(l.Config, 0o700) })
+	if _, err := i.Upgrade(link(t, p), "previous", func() error { t.Error("restarted after an incomplete write"); return nil }, nil); err == nil {
+		t.Fatal("accepted a failed live write")
+	}
+	if after, err := os.ReadFile(l.ConfigFile()); err != nil || !bytes.Equal(before, after) {
+		t.Fatal("failed write changed the config")
+	}
+	if after, _ := os.ReadFile(l.SBC()); string(after) != "previous client" {
+		t.Fatal("failed write changed the client")
+	}
+	if _, err := os.Stat(RecoveryFile(l)); err != nil {
+		t.Fatal("lost pending recovery")
+	}
+	if err = os.Chmod(l.Config, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if recovered, err := i.Recover(nil, nil); err != nil || !recovered {
+		t.Fatalf("recovery after repair: %t %v", recovered, err)
 	}
 }
 
