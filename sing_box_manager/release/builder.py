@@ -904,6 +904,13 @@ class ReleaseBuilder:
             inventory = inventory.without_accounts()
         rendered = build_server_config(inventory, self._settings.traffic_stats)
         self._check_config(rendered, "server/config.json", server=True)
+        if self._custom_server_binary_path is not None:
+            # The payload store and the server package now hold the binary.
+            # A copy at the release root has no manifest entry, but rsync
+            # would upload it again on every new release.
+            staging_binary = self._custom_server_binary_path
+            if staging_binary.is_relative_to(self._staging_dir):
+                staging_binary.unlink(missing_ok=True)
         _write_file_with_mode(
             server_dir / "config.json",
             json.dumps(rendered, indent=4).encode("utf-8"),

@@ -100,12 +100,14 @@ def test_stats_build_keeps_the_custom_server_binary(tmp_path, monkeypatch):
     settings.traffic_stats = TrafficStatsSettings(enabled=True)
     builder = _builder(settings, monkeypatch)
     def custom():
-        path = builder._staging_dir / "custom"
+        path = builder._staging_dir / "sing-box-linux-amd64-server"
         path.write_bytes(b"custom binary")
         return path
     monkeypatch.setattr(builder, "_build_custom_server_binary", custom)
     result = builder.build()
     assert (result.server_package_dir / "sing-box").read_bytes() == b"custom binary"
+    assert (result.server_package_dir / "sing-box").is_symlink()
+    assert not (result.release_dir / "sing-box-linux-amd64-server").exists()
     node = json.loads((result.server_package_dir / "config.json").read_text())
     assert node["experimental"]["v2ray_api"]["listen"] == settings.traffic_stats.api_listen
     assert len(node["services"]) == 1
