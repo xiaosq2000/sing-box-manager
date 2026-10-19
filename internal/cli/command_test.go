@@ -39,6 +39,9 @@ func TestCommandHelpNeverInvokesActions(t *testing.T) {
 	root := newCommand(env, &exit)
 	root.InitDefaultHelpCmd()
 	for _, command := range root.Commands() {
+		if command.Hidden {
+			continue
+		}
 		for _, args := range [][]string{{command.Name(), "--help"}, {command.Name(), "-h"}, {"help", command.Name()}} {
 			out.Reset()
 			errOut.Reset()
@@ -47,7 +50,7 @@ func TestCommandHelpNeverInvokesActions(t *testing.T) {
 			}
 		}
 	}
-	for _, args := range [][]string{{"uninstall", "--yes", "--help"}, {"install", "--auth", "on", "--help"}, {"docker", "on", "--yes", "--help"}} {
+	for _, args := range [][]string{{"refresh", "auto", "--help"}, {"upgrade", "interval", "--help"}, {"uninstall", "--yes", "--help"}, {"install", "--auth", "on", "--help"}, {"docker", "on", "--yes", "--help"}} {
 		if code := Run(env, args); code != 0 {
 			t.Fatalf("%v: code %d", args, code)
 		}
@@ -60,7 +63,8 @@ func TestCLIValidationRejectsInputBeforeActions(t *testing.T) {
 		{"status", "extra"}, {"route", "china", "extra"}, {"protocol", "naive", "extra"},
 		{"port", "1080", "extra"}, {"on", "extra"}, {"off", "--bogus"},
 		{"start", "--bogus"}, {"stop", "extra"}, {"restart", "extra"}, {"run", "extra"},
-		{"ip", "extra"}, {"upgrade", "extra"}, {"update", "extra"}, {"version", "extra"},
+		{"ip", "extra"}, {"upgrade", "extra"}, {"refresh", "extra"},
+		{"refresh", "auto", "maybe"}, {"upgrade", "auto", "on", "extra"}, {"refresh", "interval", "0s"}, {"upgrade", "interval", "1h", "extra"}, {"version", "extra"},
 		{"env", "maybe"}, {"desktop", "on", "extra"}, {"webrtc"}, {"webrtc", "maybe"},
 		{"docker", "on", "off"}, {"docker", "--bogus"}, {"uninstall", "--yes", "extra"},
 		{"link", "set", "extra"}, {"link", "show"}, {"init", "fish"},

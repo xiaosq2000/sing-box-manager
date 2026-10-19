@@ -14,11 +14,9 @@ import (
 	"strings"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
+	"github.com/xiaosq2000/sing-box-manager/internal/maintenance"
 	"github.com/xiaosq2000/sing-box-manager/internal/powershell"
 )
-
-// RefreshSeconds is how often the timer refreshes the config.
-const RefreshSeconds = 6 * 60 * 60
 
 // Runner runs a command and reports whether it succeeded.
 type Runner func(name string, args ...string) error
@@ -45,7 +43,7 @@ func Output(name string, args ...string) (string, error) {
 	return string(output), nil
 }
 
-// Manager installs and controls the proxy service and its refresh timer.
+// Manager controls the proxy service and the two maintenance schedules.
 type Manager interface {
 	// Install writes the service files and enables them, without starting.
 	Install() error
@@ -53,6 +51,10 @@ type Manager interface {
 	Stop() error
 	Restart() error
 	Active() bool
+	// Schedule changes background tasks without restarting the proxy.
+	Schedule(maintenance.Settings) error
+	// RetireRefresh removes the old task after the new schedules are recorded.
+	RetireRefresh() error
 	// Remove stops and deletes everything Install wrote.
 	Remove() error
 }
@@ -89,11 +91,12 @@ func New(goos, sbc string, run Runner) (Manager, error) {
 		return &Systemd{Dir: filepath.Join(dir, "systemd", "user"), SBC: sbc, Run: run}, nil
 	case "darwin":
 		return &Launchd{
-			Dir: filepath.Join(home, "Library", "LaunchAgents"),
-			SBC: sbc,
-			Log: filepath.Join(filepath.Dir(filepath.Dir(sbc)), "sing-box.log"),
-			UID: os.Getuid(),
-			Run: run,
+			Dir:  filepath.Join(home, "Library", "LaunchAgents"),
+			SBC:  sbc,
+			Log:  filepath.Join(filepath.Dir(filepath.Dir(sbc)), "sing-box.log"),
+			UID:  os.Getuid(),
+			Run:  run,
+			Read: Output,
 		}, nil
 	default:
 		return nil, i18n.Errorf("sbc cannot run a service on %s yet", goos)
@@ -134,13 +137,6 @@ func (s *Systemd) Units() map[string]string {
 			"After=network-online.target\n\n" +
 			"[Service]\nExecStart=" + sbc + " run\nRestart=on-failure\nRestartSec=5s\n\n" +
 			"[Install]\nWantedBy=default.target\n",
-		refreshUnit: "[Unit]\nDescription=Refresh the sing-box config (sbc)\n\n" +
-			"[Service]\nType=oneshot\nExecStart=" + sbc + " update\n",
-		refreshTimer: "[Unit]\nDescription=Refresh the sing-box config every 6 hours (sbc)\n\n" +
-			"[Timer]\nOnBootSec=10min\nOnUnitActiveSec=" + strconv.Itoa(RefreshSeconds) + "s\n" +
-			// Spreads every client's refresh across half an hour.
-			"RandomizedDelaySec=30min\n\n" +
-			"[Install]\nWantedBy=timers.target\n",
 	}
 }
 
@@ -155,11 +151,11 @@ func (s *Systemd) Install() error {
 	if err := s.systemctl("daemon-reload"); err != nil {
 		return err
 	}
-	return s.systemctl("enable", proxyUnit, refreshTimer)
+	return s.systemctl("enable", proxyUnit)
 }
 
 func (s *Systemd) Start() error {
-	return s.systemctl("start", proxyUnit, refreshTimer)
+	return s.systemctl("start", proxyUnit)
 }
 
 func (s *Systemd) Stop() error { return s.systemctl("stop", proxyUnit) }
@@ -170,7 +166,13 @@ func (s *Systemd) Active() bool { return s.systemctl("is-active", "--quiet", pro
 
 func (s *Systemd) Remove() error {
 	// Removal goes on when a unit was already stopped or never enabled.
-	_ = s.systemctl("disable", "--now", proxyUnit, refreshTimer)
+	_ = s.systemctl("disable", "--now", proxyUnit)
+	if err := s.removeSchedules(); err != nil {
+		return err
+	}
+	if err := s.RetireRefresh(); err != nil {
+		return err
+	}
 	for name := range s.Units() {
 		if err := os.Remove(filepath.Join(s.Dir, name)); err != nil && !os.IsNotExist(err) {
 			return err
@@ -181,11 +183,12 @@ func (s *Systemd) Remove() error {
 
 // Launchd manages LaunchAgents. They run while the user is logged in.
 type Launchd struct {
-	Dir string
-	SBC string
-	Log string
-	UID int
-	Run Runner
+	Dir  string
+	SBC  string
+	Log  string
+	UID  int
+	Run  Runner
+	Read Reader
 }
 
 const (
@@ -224,8 +227,6 @@ func (l *Launchd) Plists() map[string]string {
 			"  <key>RunAtLoad</key>\n  <true/>\n  <key>KeepAlive</key>\n  <true/>\n"+
 				"  <key>StandardOutPath</key>\n  <string>"+log+"</string>\n"+
 				"  <key>StandardErrorPath</key>\n  <string>"+log+"</string>\n"),
-		refreshLabel + ".plist": plist(refreshLabel, []string{l.SBC, "update"},
-			"  <key>StartInterval</key>\n  <integer>"+strconv.Itoa(RefreshSeconds)+"</integer>\n"),
 	}
 }
 
@@ -234,7 +235,7 @@ func (l *Launchd) domain() string { return "gui/" + strconv.Itoa(l.UID) }
 func (l *Launchd) Install() error { return writeFiles(l.Dir, l.Plists()) }
 
 func (l *Launchd) Start() error {
-	for _, label := range []string{proxyLabel, refreshLabel} {
+	for _, label := range []string{proxyLabel} {
 		path := filepath.Join(l.Dir, label+".plist")
 		// bootstrap fails for a label that is already loaded, so unload first.
 		_ = l.Run("launchctl", "bootout", l.domain(), path)
@@ -258,6 +259,12 @@ func (l *Launchd) Active() bool {
 }
 
 func (l *Launchd) Remove() error {
+	if err := l.removeSchedules(); err != nil {
+		return err
+	}
+	if err := l.retireRefresh(true); err != nil {
+		return err
+	}
 	for name := range l.Plists() {
 		path := filepath.Join(l.Dir, name)
 		_ = l.Run("launchctl", "bootout", l.domain(), path)

@@ -118,6 +118,11 @@ can start before rule downloads succeed. DNS answers persist across service rest
 with normal DNS expiry. See the
 [release guide](docs/RELEASE_AND_PORTAL.md#build-the-release) for build requirements.
 
+`sbc` enables automatic configuration refresh and signed binary upgrades by default,
+with separate 6h intervals. Use `sbc refresh auto off` or `sbc upgrade auto off` to
+disable either policy. See [automatic maintenance](docs/README_SBC.md#automatic-maintenance)
+for intervals, saved preferences, and migration from older clients.
+
 `sbm release` can also read a repo-root `.env` for local operator secrets such as
 `SOPS_AGE_KEY` and `GITHUB_TOKEN`; the secret-handling doc covers the tradeoffs.
 

@@ -5,6 +5,8 @@ Checked on 2026-10-19.
 The subscription page provides remote-profile import buttons, QR codes, copyable
 URLs, and JSON downloads for enabled protocols. Use the latest official stable
 iOS or Android app. Older app versions are not a compatibility target.
+Android device compatibility is not yet verified. See the
+[acceptance record](#acceptance-boundary) for tested coverage.
 
 ## Import a remote profile
 
@@ -73,8 +75,9 @@ Do not expose credentials through a public preview or third-party tunnel.
 Record each result as pass, fail, or not tested. Include the tested commit, date,
 network type, protocol, import method, and a redacted error for failures.
 Do not include tokens, QR images, full profiles, or private screenshots in the
-public result. An unavailable Android device leaves Android acceptance pending.
-iOS results alone do not complete the two-platform acceptance gate.
+public result. This mobile-import change uses iOS device acceptance as its merge
+gate. Android device testing is deferred because no device is available. This
+exception permits merging the change; it does not establish Android compatibility.
 
 ## Credentials and revocation
 
@@ -124,14 +127,24 @@ Fixture checks decode generated PNG images with ZXing. They verify the URI,
 profile name, selected protocol, authenticated JSON response, ETag, and revocation.
 Clipboard tests cover success, denied permission, and an unavailable clipboard API.
 
-**Physical-device acceptance is pending.** Source inspection and QR decoding do
-not prove that a specific installed app imports and runs the profile.
-Before claiming device acceptance, record both platform rows:
+**iOS functional acceptance passed by user report. Android device acceptance is
+deferred and does not block this change.** Source inspection and QR decoding do
+not prove device behavior. Keep Android results unverified until a device test.
 
-| Platform | App version | Embedded core | Import button | QR scan | Manual URL | Refresh and connection |
-| -------- | ----------- | ------------- | ------------- | ------- | ---------- | ---------------------- |
-| iOS      | Pending     | Pending       | Pending       | Pending | Pending    | Pending                |
-| Android  | Pending     | Pending       | Pending       | Pending | Pending    | Pending                |
+| Platform | App version | Embedded core | Import button | QR scan    | Manual URL | Refresh and connection |
+| -------- | ----------- | ------------- | ------------- | ---------- | ---------- | ---------------------- |
+| iOS      | 1.14.3      | Unknown       | Pass          | Pass       | Pass       | Pass                   |
+| Android  | Not tested  | Not tested    | Not tested    | Not tested | Not tested | Not tested             |
+
+The user tested portal source `8a39dd5` on 2026-10-19. Trojan, Hysteria2, and Naive
+each passed button import, Camera QR import, profile refresh, and connection.
+Manual URL import and nearby clipboard feedback also passed. Their per-protocol
+coverage was not recorded.
+
+The iPhone model, iOS version, embedded core version, and network type were not
+supplied. The app version does not establish the embedded core version. Android
+import buttons, QR codes, and manual URL fallback remain available but unverified
+on a physical Android device.
 
 Use a private test account or authorized subscription. Keep its links, QR images,
 configuration, and screenshots outside public Git. Do not deploy or publish a

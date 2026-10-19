@@ -64,7 +64,7 @@ func runIP(env Env, options ipOptions) int {
 				port, safe = singbox.ProxyOnlyProbePort(config)
 			}
 			if !safe {
-				skipped = i18n.T("skipped: proxy-only inlet unavailable (run sbc update)")
+				skipped = i18n.T("skipped: proxy-only inlet unavailable (run sbc refresh)")
 			} else {
 				fmt.Fprintln(env.Stdout, i18n.T("AI checks use the remote proxy, not the active route's destination rules."))
 			}
@@ -220,7 +220,7 @@ const (
 // not share the line, and prints each speed as it is known.
 func runDownloadTest(env Env, client *api.Client, local singbox.Local, current string, tested []string, options speedOptions) int {
 	if local.SpeedPort == 0 {
-		return fail(env, i18n.New("this config has no speed test yet; 'sbc update' adds it"))
+		return fail(env, i18n.New("this config has no speed test yet; 'sbc refresh' adds it"))
 	}
 	if _, _, err := client.Selected(singbox.SpeedTestTag); err != nil {
 		return fail(env, i18n.New("sing-box runs a config without the speed test; 'sbc restart' loads the new one"))

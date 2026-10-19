@@ -108,7 +108,10 @@ jobs:
           fi
       - name: Test Windows settings with a disposable registry key
         if: runner.os == 'Windows'
-        run: go test -count=1 ./internal/winsettings ./internal/desktop ./internal/powershell
+        run: go test -count=1 ./internal/winsettings ./internal/desktop ./internal/powershell ./internal/maintenance ./internal/paths
+      - name: Test Windows wrapper cleanup with a disposable child process
+        if: runner.os == 'Windows'
+        run: go test -count=1 ./internal/cli -run '^TestWindowsEngineJob'
       - name: Test CLI help, validation and native PowerShell completion
         if: runner.os == 'Windows'
         run: go test -count=1 ./internal/cli -run 'Test(CommandHelp|CLIValidation|Completion)'

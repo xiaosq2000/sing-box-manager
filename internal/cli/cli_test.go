@@ -69,7 +69,8 @@ func TestInstallNeedsALinkOnStandardInput(t *testing.T) {
 }
 
 func TestRunHandsTheProcessToSingBox(t *testing.T) {
-	layout := paths.Layout{Config: "/config", Data: "/data"}
+	root := t.TempDir()
+	layout := paths.Layout{Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data")}
 	var got []string
 	env := DefaultEnv("1.2.3", strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	env.Layout = func() (paths.Layout, error) { return layout, nil }
@@ -81,7 +82,7 @@ func TestRunHandsTheProcessToSingBox(t *testing.T) {
 	if code := Run(env, []string{"run"}); code != 0 {
 		t.Fatalf("got code %d", code)
 	}
-	want := []string{"/data/bin/sing-box", "/data/bin/sing-box", "run", "-D", "/data", "-c", "/config/config.json"}
+	want := []string{layout.SingBox(), layout.SingBox(), "run", "-D", layout.Data, "-c", layout.ConfigFile()}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("exec %v", got)
 	}

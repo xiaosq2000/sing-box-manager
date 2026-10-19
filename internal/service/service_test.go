@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -47,18 +46,10 @@ func TestSystemdInstallsEnablesAndStartsTheUnits(t *testing.T) {
 	if !strings.Contains(string(proxy), `ExecStart="/home/me/.local/share/sbc/bin/sbc" run`) {
 		t.Errorf("sbc.service:\n%s", proxy)
 	}
-	timer, _ := os.ReadFile(filepath.Join(dir, "sbc-refresh.timer"))
-	if !strings.Contains(string(timer), "OnUnitActiveSec=21600s") || !strings.Contains(string(timer), "RandomizedDelaySec=30min") {
-		t.Errorf("sbc-refresh.timer:\n%s", timer)
-	}
-	refresh, _ := os.ReadFile(filepath.Join(dir, "sbc-refresh.service"))
-	if !strings.Contains(string(refresh), `ExecStart="/home/me/.local/share/sbc/bin/sbc" update`) {
-		t.Errorf("sbc-refresh.service:\n%s", refresh)
-	}
 	want := []string{
 		"systemctl --user daemon-reload",
-		"systemctl --user enable sbc.service sbc-refresh.timer",
-		"systemctl --user start sbc.service sbc-refresh.timer",
+		"systemctl --user enable sbc.service",
+		"systemctl --user start sbc.service",
 	}
 	if strings.Join(r.calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s", strings.Join(r.calls, "\n"))
@@ -67,7 +58,7 @@ func TestSystemdInstallsEnablesAndStartsTheUnits(t *testing.T) {
 
 func TestSystemdRemoveDeletesTheUnitsEvenWhenTheyAreStopped(t *testing.T) {
 	dir := t.TempDir()
-	r := &recorder{fail: map[string]bool{"systemctl --user disable --now sbc.service sbc-refresh.timer": true}}
+	r := &recorder{fail: map[string]bool{"systemctl --user disable --now sbc.service": true}}
 	s := &Systemd{Dir: dir, SBC: "/sbc", Run: r.run}
 	s.Install()
 
@@ -102,10 +93,6 @@ func TestLaunchdUnloadsBeforeLoadingEachAgent(t *testing.T) {
 		if !strings.Contains(string(proxy), want) {
 			t.Errorf("io.sbc.proxy.plist lacks %s:\n%s", want, proxy)
 		}
-	}
-	refresh, _ := os.ReadFile(filepath.Join(dir, "io.sbc.refresh.plist"))
-	if !strings.Contains(string(refresh), "<integer>21600</integer>") {
-		t.Errorf("io.sbc.refresh.plist:\n%s", refresh)
 	}
 	proxyPath := filepath.Join(dir, "io.sbc.proxy.plist")
 	if r.calls[0] != "launchctl bootout gui/501 "+proxyPath || r.calls[1] != "launchctl bootstrap gui/501 "+proxyPath {
@@ -201,22 +188,8 @@ func TestTasksRunInTheBackgroundAndStartAtLogon(t *testing.T) {
 			t.Errorf("sbc-proxy.xml lacks %s:\n%s", want, proxy)
 		}
 	}
-	refresh := readUTF16(t, filepath.Join(tasks.Dir, "sbc-refresh.xml"))
-	for _, want := range []string{
-		"<StartBoundary>2026-10-03T09:10:00</StartBoundary>",
-		"<Interval>PT6H</Interval>",
-		"<RandomDelay>PT30M</RandomDelay>",
-		"<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>",
-		"<Arguments>update</Arguments>",
-	} {
-		if !strings.Contains(string(refresh), want) {
-			t.Errorf("sbc-refresh.xml lacks %s:\n%s", want, refresh)
-		}
-	}
-	sort.Strings(r.calls[:2])
 	want := []string{
 		"schtasks.exe /Create /TN sbc-proxy /XML " + filepath.Join(tasks.Dir, "sbc-proxy.xml") + " /F",
-		"schtasks.exe /Create /TN sbc-refresh /XML " + filepath.Join(tasks.Dir, "sbc-refresh.xml") + " /F",
 		"schtasks.exe /Run /TN sbc-proxy",
 	}
 	if strings.Join(r.calls, "\n") != strings.Join(want, "\n") {

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/powershell"
 )
 
@@ -59,10 +60,12 @@ func joinJob() error {
 	limits := jobExtendedLimit{LimitFlags: jobObjectLimitKillOnJobClose}
 	if ok, _, err := setInformationJobObject.Call(handle, jobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&limits)), unsafe.Sizeof(limits)); ok == 0 {
+		syscall.CloseHandle(syscall.Handle(handle))
 		return err
 	}
 	process, _ := syscall.GetCurrentProcess()
 	if ok, _, err := assignProcessToJobObject.Call(handle, uintptr(process)); ok == 0 {
+		syscall.CloseHandle(syscall.Handle(handle))
 		return err
 	}
 	return nil
@@ -74,7 +77,7 @@ func joinJob() error {
 // manager reads to wait for it after stopping sbc.
 func execProcess(binary string, args []string, output io.Writer, pidFile string) error {
 	if err := joinJob(); err != nil {
-		fmt.Fprintf(output, "sbc: cannot tie sing-box's life to its own: %v\n", err)
+		return i18n.Errorf("Cannot start sing-box without process cleanup: %w", err)
 	}
 	command := exec.Command(binary, args[1:]...)
 	command.Stdout, command.Stderr = output, output

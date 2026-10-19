@@ -139,6 +139,14 @@ Account disablement removes those credentials from the node after a successful s
 A changed config requires a sing-box restart, which interrupts existing connections on this single node.
 All portal entry points query PostgreSQL. There is no inventory or authentication-snapshot fallback.
 
+The [planned clean break](REFACTOR_SPEC.md#clean-break-and-legacy-removal) follows
+Linux TUN, device management, the node agent, and multi-node acceptance.
+Its user flow uses operator-issued single-use device enrollment codes, not user login passwords.
+At that cutover, `portal_enabled`, `portal_password_hash`, and `is_portal_admin`
+are removed with legacy authentication and account subscriptions. They remain operational today.
+Do not reset credentials or remove these fields merely because the roadmap approves their retirement.
+Django operator authentication and permissions remain separate and are retained.
+
 - **New portal password** is optional legacy-client authentication. Blank preserves
   an existing hash. New accounts need no portal password or generated hash.
 - New accounts with no supplied credentials receive three random protocol secrets.
