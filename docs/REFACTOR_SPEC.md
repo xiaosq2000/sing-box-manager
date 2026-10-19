@@ -42,6 +42,10 @@ complexity comes from machinery built around premises that the target design dro
 | Per-user traffic comes from the sing-box API stream only                                          | Deferred; requires accounting parity       |
 | Nodes apply user changes by reloading sing-box in batches                                         | Proposed, revisit if reloads disturb users |
 | Protocols stay trojan, hysteria2 and naive; VLESS-Reality is an option for nodes without a domain | Open until M6                              |
+| The subscription envelope carries the Linux TUN config beside the mixed config                    | Decided                                    |
+| Linux TUN answers DNS through its route rules, not through the systemd-resolved stub              | Decided                                    |
+| Linux TUN is refused in WSL2, containers and remote shells                                        | Decided                                    |
+| The Linux TUN uses `auto_redirect`, prefers IPv4, and rejects UDP except DNS and NTP              | Decided                                    |
 
 sing-box 1.14.0 supports VLESS-Reality as both server and client, and `sing-box check`
 accepts a server config and a client config that use it.
@@ -112,7 +116,7 @@ at the clean break, even if the URL shape stays the same.
 
 | Request                                           | Caller      | Purpose                                                                   |
 | ------------------------------------------------- | ----------- | ------------------------------------------------------------------------- |
-| `GET /sub/<token>?format=sbc&os=...&sing-box=...` | `sbc`       | Returns the envelope with the user's config, nodes and latest versions    |
+| `GET /sub/<token>?format=sbc&os=...&sing-box=...` | `sbc`       | Returns the envelope with the user's configs, nodes and latest versions   |
 | `GET /sub/<token>`                                | Mobile apps | Returns the user's sing-box config                                        |
 | `GET /sub/<token>/`                               | Browsers    | User page with the subscription link, QR code, install commands and usage |
 | `GET /node/config`                                | Node agent  | Returns the node's rendered sing-box config with an ETag                  |
@@ -168,7 +172,7 @@ current location.
 | Billing            | Per-user counters see one leg of relayed traffic; a host that bills both directions charges about twice that. A reset day past a short month's end moves to its last day                                                                                                                                                                            | `settings.py`, `traffic_models.py`                                          |
 | Windows            | Launch the hosted installer with `& ([scriptblock]::Create((irm URL)))`. Use an S4U task with `ExecutionTimeLimit=PT0S`, limited run level and an Interactive fallback. Refuse to run elevated. Set WinINet as one `host:port`, separate bypass entries with `;`, refresh with InternetSetOption 39 then 95. Stop the task before replacing the exe | `internal/service/`, `internal/winsettings/`, `web/client/install.ps1`      |
 | macOS              | Run `launchctl bootout` before `bootstrap` and poll after start. Clear the quarantine attribute. Read the login shell with `dscl`. Pick the `networksetup` service from the default-route interface                                                                                                                                                 | `internal/service/`, `internal/desktop/`; login-shell detection requirement |
-| Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin                                                                                                                                                                                                                                                   | M1b requirements                                                            |
+| Linux TUN          | Keep the hardened root unit, the systemd-run capability probe, and admin tools resolved from sbin. Never use the systemd-resolved stub as a DNS server under TUN: captured resolver upstream queries loop back into it                                                                                                                              | M1b requirements                                                            |
 | Downloads in China | No CDN-hosted page assets. PowerShell `irm` needs `text/plain`. Send auth headers up front, since PowerShell 5.1 and wget wait for a challenge otherwise                                                                                                                                                                                            | `control_plane/views.py`, `web/client/install.ps1`                          |
 
 ## Milestones
@@ -209,8 +213,8 @@ current location.
    Android device testing is deferred and does not block this change. See the
    [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
 5. **M1b: Linux TUN.** This is the next feature after maintenance and mobile import.
-   Define activation, DNS, routing, privilege, and recovery behavior before implementation.
-   Do not restore the legacy Bash client.
+   Environment, routing, DNS, privilege, and recovery behavior are defined in
+   [M1b](#m1b-linux-tun). Do not restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
 7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
@@ -471,20 +475,96 @@ the Docker bridge address with auth.
 
 Required after automatic client maintenance and official mobile-app import.
 `sbc` supports mixed mode, not Linux TUN. The legacy implementation is not maintained.
-Confirm the initial Linux environment and routing requirements before implementation.
 
-Requirements for a new implementation:
+Add `sbc tun on|off` for native Linux. The portal renders the Linux TUN config
+beside the mixed config in the `sbc` subscription envelope, and release validation
+runs `sing-box check` on both. The `config_tun` field is additive, so the envelope
+version stays 1 and older clients ignore it. `sbc` selects the profile for the mode
+it runs and keeps its local patches in both.
 
-- Add `sbc tun on|off` for native Linux. Keep root-owned binaries and configs,
-  a hardened unit, a dedicated runtime account, and the capability probe.
-- Mixed mode and TUN must never run together. Load one exact config with `-c`.
-- Check interface capture, routing, DNS, and egress before accepting activation.
-- Release the operation lock when `sbc` exits, including after Ctrl-C.
-- Keep legacy TUN refusal in the hosted installer until a safe migration exists.
+Environment:
+
+| Check       | Requirement                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| Host        | Native Linux, a running systemd system manager, and `/dev/net/tun`                                                  |
+| Refused     | WSL2, containers, and a remote shell (`SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` is set)                           |
+| Tools       | Resolve `ip`, `useradd` and `userdel` through sbin, and fail closed when one is missing                             |
+| Capability  | Create and remove a disposable interface with `systemd-run` under the unit's user, capability set and device policy |
+| Names       | `sbc-tun0`, `/etc/sbc/tun`, `/var/lib/sbc-tun` and `sbc-tun.service`                                                |
+| Ownership   | One owner per machine. Record the owner UID in a manifest and refuse automatic takeover                             |
+| Shared host | Refused when another login account exists, by the check that also gives the mixed proxy a password                  |
+
+Root owns binaries, configs, rule snapshots and the unit. `sbc-tun` runs sing-box
+with `CAP_NET_ADMIN` only and writes only its state directory. Stage the signed
+binary and record its hash, and re-sync it on every `tun on`. Copy rule snapshots
+into the root-owned config directory and set each `initial_path` to its absolute
+path, so the first start works without a download.
+
+Routing:
+
+- One exact config with `-c`. Mixed mode and TUN never run together. The user unit
+  refuses to start while TUN is active, including after login, so a delayed start
+  cannot restore mixed mode.
+- Use `auto_route: true`, `strict_route: true`, `auto_redirect: true`,
+  `auto_detect_interface: true` and interface `sbc-tun0`. Do not set
+  `route.default_mark` or a dial `routing_mark`; `auto_redirect` conflicts with them.
+- Require nftables support. Verify it under the unit's capability set before
+  publishing, and refuse when it is missing. Check Docker bridge networking and
+  `SO_BINDTODEVICE` traffic against the documented behavior.
+- Use `172.19.0.1/30` and `fdfe:dcba:9876::1/126`, and refuse activation when a
+  foreign interface or route claims them.
+- Capture every destination. Send `ip_is_private` traffic to `direct`; do not
+  exclude private ranges.
+- Keep the five Clash modes and the protocol selector through the local API.
+  `sbc tun on` generates the API port and secret and writes them to the owner's
+  state (0600) and the root config (0640 `root:sbc-tun`), so `sbc route`,
+  `sbc protocol`, `sbc ip` and `sbc speed` keep working without sudo.
+- Before accepting activation, check a stable process, the interface, routes and
+  rules, DNS answers, a request through the tunnel, and increasing interface packet
+  counts.
+- Stop the mixed service and clear owned proxy settings before publishing. `sbc on`,
+  `desktop on` and `docker on` refuse while TUN is active.
+- Keep a journal, the previous generation, a `safe-off`, `active` or `dirty` status,
+  and a transient timer that stops the unit when the controlling process dies.
+  Release the operation lock when `sbc` exits, including after Ctrl-C.
+- `sbc tun off` does not restore mixed mode. Under TUN, `sbc off` reports that
+  capture remains, and `sbc status` reports the TUN service.
+- `sbc tun on` enables the unit at boot after verification, and `sbc tun off`
+  disables it. There is no fail-open: while the unit runs, a failed proxy leaves
+  captured traffic without an exit. `sbc status` and the docs name the local
+  recovery command.
+
+DNS:
+
+- Set `dns_mode: disabled`, and answer captured queries with the route's
+  `hijack-dns` rule.
+- Resolve proxied names through Google over the proxy and direct names through
+  Aliyun (`223.5.5.5`). Never use the systemd-resolved stub as a DNS server in a
+  TUN config: captured upstream queries would loop back into it.
+- Give both direct outbounds the Aliyun resolver, and keep the deployment host and
+  `direct_domain_suffixes` exceptions direct.
+- Set `dns.strategy: prefer_ipv4` in the TUN config.
+- Route NTP (UDP 123) direct and reject every other non-private UDP destination
+  after DNS and NTP. The proxy's own UDP connections are unaffected.
+- Verify with `auto_redirect` and `dns_mode: disabled` that DNS from applications
+  and from systemd-resolved is captured and answered. If it is not, switch the TUN
+  config to `dns_mode: hijack` instead of adding a resolved stub server.
+
+Maintenance:
+
+- While TUN is active, the automatic refresh and upgrade jobs check but do not
+  apply. A changed config or a newer signed build writes a pending-update hint,
+  and `sbc status` asks the user to update manually.
+- A manual `sbc refresh` or `sbc upgrade` re-stages the root generation and
+  restarts the TUN service. It never starts the mixed service.
+
+Stop an active TUN before install or upgrade.
 
 Done when a disposable Linux runner checks activation, deactivation, failed
-activation recovery, and interrupted-operation cleanup. Keep `scripts/lib/ui.sh`
-while the server scripts use it.
+activation recovery, interrupted-operation cleanup, DNS in every Clash mode, and
+nftables routing with Docker and `SO_BINDTODEVICE`.
+The end-to-end checks run in a nested VM, so they cannot capture the runner's own
+network. Keep `scripts/lib/ui.sh` while the server scripts use it.
 
 ### M2: Client CLI for Windows
 
@@ -703,12 +783,11 @@ invites. Details are planned when M7 lands.
 
 ## Open questions
 
-| Question                                                  | Decide by           |
-| --------------------------------------------------------- | ------------------- |
-| First Linux TUN environment, DNS and routing requirements | M1b                 |
-| Enrollment code expiry, delivery and safe retry behavior  | Device PR           |
-| Agent outage handling and revocation acknowledgement      | M5                  |
-| Control plane host and CDN provider                       | M6                  |
-| VLESS-Reality for nodes without a domain                  | M6                  |
-| Production cutover date and recovery procedure            | After M6 acceptance |
-| Payment provider                                          | M8                  |
+| Question                                                 | Decide by           |
+| -------------------------------------------------------- | ------------------- |
+| Enrollment code expiry, delivery and safe retry behavior | Device PR           |
+| Agent outage handling and revocation acknowledgement     | M5                  |
+| Control plane host and CDN provider                      | M6                  |
+| VLESS-Reality for nodes without a domain                 | M6                  |
+| Production cutover date and recovery procedure           | After M6 acceptance |
+| Payment provider                                         | M8                  |
