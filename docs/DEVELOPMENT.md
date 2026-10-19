@@ -314,6 +314,27 @@ It checks database-only accounts, signed-download allowlists, legacy Basic/Beare
 migration, token revocation, traffic-viewer permissions, personal-domain privacy,
 cache headers, and refusal to use inventory when PostgreSQL fails.
 
+## Mobile import checks
+
+`tests/test_mobile_import.py` decodes locally generated PNG QR images with ZXing.
+It checks the official import URI, Unicode names, selected protocols, and absence
+of network access during generation. Node.js fixtures exercise clipboard success,
+denied permission, and manual-copy fallback. Pillow and ZXing are development
+dependencies. Segno generates the images at runtime.
+
+The PostgreSQL route fixtures verify rendered import links, decoded QR contents,
+authenticated JSON, ETag responses, disabled protocols, host checks, and token
+revocation. No test uses an operator subscription or changes a device.
+
+```sh
+pixi run -e control-plane-test test tests/test_mobile_import.py tests/test_routes.py
+```
+
+These checks do not replace [physical-device acceptance](README_MOBILE.md#acceptance-boundary).
+Record app and embedded core versions separately. Mark unavailable values as unknown.
+iOS device acceptance covers the mobile-import merge gate. Android device checks
+are deferred, not passed. See the acceptance record for tested protocol coverage.
+
 ## sing-box version checks
 
 `pixi run fetch-sing-box` downloads the sing-box release that `sing_box_version` in

@@ -15,6 +15,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
+from sing_box_manager.control_plane.mobile import mobile_imports
 from sing_box_manager.control_plane.models import Account
 from sing_box_manager.control_plane.services import (
     account_protocols,
@@ -179,6 +180,7 @@ def health(_request):
                 "admin/css/base.css",
                 "portal/styles.css",
                 "portal/traffic.css",
+                "portal/subscription.js",
             )
         ):
             return JsonResponse({"status": "not-ready"}, status=503)
@@ -232,15 +234,17 @@ def subscription_page(request, token: str):
     from sing_box_manager.control_plane.portal import user_usage
 
     origin = public_origin(request)
+    subscription_url = f"{origin}/sub/{token}"
     return render(
         request,
         "control_plane/subscription.html",
         {
             "account": account,
-            "subscription_url": f"{origin}/sub/{token}",
+            "subscription_url": subscription_url,
             "origin": origin,
-            "protocols": ", ".join(held),
-            "mobile_protocols": held,
+            "mobile_profiles": mobile_imports(
+                subscription_url, str(account.username), held
+            ),
             "traffic_timezone": runtime.traffic_stats.timezone,
             **user_usage(runtime, str(account.username)),
         },

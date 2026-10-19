@@ -59,11 +59,18 @@ control-plane = [
   "scripts/dev/test-control-plane-native.py",
   "tests/test_control_plane*.py",
   "tests/test_routes.py",
+  "tests/test_mobile_import.py",
   "tests/test_auth.py",
   "tests/test_vps_info.py",
 ]
 
 [documents]
+"docs/README_MOBILE.md" = [
+  "@control-plane",
+  "sing_box_manager/release/profiles.py",
+  "sing_box_manager/release/renderers.py",
+]
+
 "docs/CONTROL_PLANE.md" = [
   "@control-plane",
   ".github/workflows/ci.yml",

@@ -101,6 +101,88 @@ assert client.get(bob_url).status_code == 200
 """)
 
 
+def test_mobile_import_buttons_and_qr_share_authorized_remote_profiles(portal_runtime):
+    python(portal_runtime, SETUP + """
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, urlsplit, unquote
+from io import BytesIO
+from PIL import Image
+import zxingcpp
+class Elements(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.elements = []
+    def handle_starttag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
+page = client.get(url + '/', secure=True, HTTP_HOST='testserver')
+assert page.status_code == 200
+assert page['Cache-Control'] == 'private, no-store'
+assert page['Referrer-Policy'] == 'no-referrer'
+parser = Elements()
+parser.feed(page.content.decode())
+imports = [a['href'] for tag, a in parser.elements if tag == 'a' and a.get('href', '').startswith('sing-box:')]
+images = [a['src'] for tag, a in parser.elements if tag == 'img' and a.get('class') == 'mobile-qr']
+assert len(imports) == len(images) == 3
+for protocol, uri, image in zip(('trojan', 'hysteria2', 'naive'), imports, images):
+    parts = urlsplit(uri)
+    assert (parts.scheme, parts.netloc) == ('sing-box', 'import-remote-profile')
+    remote = parse_qs(parts.query)['url'][0]
+    assert remote == 'https://testserver' + url + '?format=mobile&protocol=' + protocol
+    assert unquote(parts.fragment).startswith('db_alice - ')
+    decoded = zxingcpp.read_barcode(Image.open(BytesIO(base64.b64decode(image.split(',', 1)[1]))).convert('RGB'))
+    assert decoded is not None and decoded.text == uri
+    response = client.get(remote)
+    assert response.status_code == 200
+    assert 'synthetic-db_alice-' + protocol in response.content.decode()
+    assert 'synthetic-db_bob' not in response.content.decode()
+    assert client.get(remote, HTTP_IF_NONE_MATCH=response['ETag']).status_code == 304
+inputs = [attrs for tag, attrs in parser.elements if tag == 'input']
+assert len(inputs) == 4 and all('readonly' in attrs for attrs in inputs)
+assert all(attrs['value'].startswith('https://testserver/sub/') for attrs in inputs)
+buttons = [attrs for tag, attrs in parser.elements if tag == 'button']
+statuses = {attrs['id']: attrs for tag, attrs in parser.elements if attrs.get('role') == 'status'}
+assert len(buttons) == len(statuses) == 4
+assert len({button['data-copy-status'] for button in buttons}) == 4
+for button in buttons:
+    assert button['data-copy-target'] in {attrs['id'] for attrs in inputs}
+    assert statuses[button['data-copy-status']]['aria-live'] == 'polite'
+    button_index = next(index for index, (_, attrs) in enumerate(parser.elements) if attrs == button)
+    status_index = next(index for index, (_, attrs) in enumerate(parser.elements) if attrs.get('id') == button['data-copy-status'])
+    assert 0 < status_index - button_index <= 2
+assert 'Protocols:' not in page.content.decode()
+assert len([attrs for tag, attrs in parser.elements if tag == 'a' and attrs.get('download')]) == 3
+assert all(attrs['src'].startswith('/static/') for tag, attrs in parser.elements if tag == 'script')
+alice.subscription_counter += 1
+alice.save()
+assert client.get(url + '/').status_code == 404
+for uri in imports:
+    assert client.get(parse_qs(urlsplit(uri).query)['url'][0]).status_code == 404
+new_token = subscription_token(runtime.web.subscription_secret, alice.username, alice.subscription_counter)
+assert client.get('/sub/' + new_token + '/').status_code == 200
+""")
+
+
+def test_readiness_requires_the_subscription_script(portal_runtime):
+    python(portal_runtime, SETUP + """
+assert client.get('/health/').status_code == 200
+with patch.object(views.staticfiles_storage, 'exists', side_effect=lambda name: not name.endswith('.js')):
+    assert client.get('/health/').status_code == 503
+""")
+
+
+def test_mobile_page_omits_disabled_protocols_and_rejects_unknown_hosts(portal_runtime):
+    python(portal_runtime, SETUP + """
+Credential.objects.filter(account=alice).exclude(protocol='trojan').update(enabled=False)
+page = client.get(url + '/')
+assert page.status_code == 200
+text = page.content.decode()
+assert 'mobile-title-trojan' in text
+assert 'mobile-title-naive' not in text and 'mobile-title-hysteria2' not in text
+assert client.get(url, {'format':'mobile', 'protocol':'naive'}).status_code == 400
+assert client.get(url + '/', HTTP_HOST='attacker.example.com').status_code == 400
+""")
+
+
 def test_legacy_exchange_uses_current_postgres_counter_and_credentials(portal_runtime):
     python(portal_runtime, SETUP + """
 for authorization in (basic, bearer):

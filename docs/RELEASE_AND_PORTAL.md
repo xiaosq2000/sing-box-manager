@@ -1,6 +1,6 @@
 # Release Build and Portal Usage
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 This guide covers the local operator workflow for:
 
@@ -134,7 +134,8 @@ Releases contain shared artifacts, not per-user archives or authentication snaps
 In authoritative mode, the packaged server config has no inventory users. Deployment
 preserves the live config and then applies PostgreSQL accounts.
 Linux, macOS and Windows install `sbc`. Android and iOS use remote subscription
-profiles or current JSON downloads from the subscription page.
+profiles or current JSON downloads from the subscription page. The page provides
+[official-app import buttons, local QR codes, and copyable URLs](README_MOBILE.md).
 
 With `client_signing_key` set, the release also builds the downloads the `sbc`
 client installs, under `client/` in the release directory. Without it, the build
@@ -446,7 +447,7 @@ crafted name cannot break the admin page that charts the row.
 `/admin/traffic/` shows a domain ranking chart and top destinations across all
 users. Each `/admin/traffic/users/<username>/` page shows one user's breakdown, plus a
 table of top destination IPs. `/admin/traffic/connections/` is a private live view of open connections for
-debugging. It refreshes itself with a meta tag because the portal ships no JavaScript.
+debugging. It refreshes itself with a meta tag without JavaScript.
 A subscription ending clears that service's live view while preserving replay
 checkpoints. Clean daemon shutdown clears the view, and snapshots older than three
 minutes are hidden if the daemon exits without cleanup.

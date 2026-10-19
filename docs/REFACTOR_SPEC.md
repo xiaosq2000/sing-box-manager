@@ -201,16 +201,22 @@ current location.
    Production acceptance passed for existing subscriptions, legacy-client migration,
    signed downloads, private traffic views, and historical data. Measured proxy
    interruption stayed below 60 seconds. The retired Web service is stopped and disabled.
-3. **M1b: Linux TUN.** A user now needs native Linux TUN. This is the highest-priority
-   feature after those two delivery steps. Define activation, DNS, routing, privilege,
-   and recovery behavior before implementation. Do not restore the legacy Bash client.
-
-4. **M4b device management.** Add operator-issued single-use enrollment codes,
+3. **Automatic client maintenance.** Merged as `c19a43c`. Independent refresh and
+   signed-upgrade policies, startup serialization, and recovery passed native CI.
+   This change has no published client release yet.
+4. **Official mobile import.** Import buttons, local QR codes, and manual URL fallback
+   are implemented. iOS App 1.14.3 passed user testing for Trojan, Hysteria2, and Naive.
+   Android device testing is deferred and does not block this change. See the
+   [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
+5. **M1b: Linux TUN.** This is the next feature after maintenance and mobile import.
+   Define activation, DNS, routing, privilege, and recovery behavior before implementation.
+   Do not restore the legacy Bash client.
+6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
-5. **M5 node agent.** Deliver authenticated config distribution, status, and safe
+7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
    application of changes. Keep proven collectors until replacements pass acceptance.
-6. **M6 multiple nodes.** Validate device access and revocation across nodes.
-7. **Clean break.** Issue new device identities and invalidate the entire legacy
+8. **M6 multiple nodes.** Validate device access and revocation across nodes.
+9. **Clean break.** Issue new device identities and invalidate the entire legacy
    credential/subscription system. Remove its compatibility code and fields.
 
 Quotas, invitation self-service, plans, and payments remain deferred.
@@ -626,7 +632,7 @@ compatibility remain because hosted installers use them. Mobile clients use remo
 profiles or current JSON downloads, not new per-user release archives.
 Traffic operators need a separate Django permission; old portal-admin flags grant nothing.
 Keep the shared store, signed manifests, hosted installers, `sbm gc`, and historical data.
-The next feature after consolidation acceptance is native Linux TUN.
+The next feature after automatic maintenance and official mobile import is native Linux TUN.
 
 ### M5: Node agent
 

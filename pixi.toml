@@ -20,6 +20,7 @@ python-dotenv = ">=1.2.2,<2"
 pyyaml = "6.0.3.*"
 rich = ">=14.3.3,<15"
 rsync = ">=3.4.3,<4"
+segno = ">=1.6.6,<2"
 whitenoise = ">=6.9,<7"
 
 [pypi-dependencies]
@@ -99,7 +100,9 @@ typecheck = { cmd = "ty check" }
 [feature.dev.pypi-dependencies]
 docstale = { git = "https://github.com/xiaosq2000/docstale.git" }
 grpcio-tools = ">=1.81.1,<2"
+pillow = ">=12,<13"
 pytest-gitignore = ">=1.3, <2"
+zxing-cpp = ">=2.3,<4"
 
 # Go never downloads another toolchain, and cgo stays off. The style environment
 # includes Go so the hooks can format Go code.
