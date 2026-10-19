@@ -24,8 +24,11 @@ from sing_box_manager.settings import (
 from sing_box_manager.desktop_config import (
     DIRECT_SYSTEM_TAG,
     DIRECT_TAG,
+    LINUX_TUN_ADDRESSES,
+    LINUX_TUN_INTERFACE,
     UserProtocols,
     build_desktop_config,
+    build_linux_tun_config,
 )
 from sing_box_manager.release import renderers
 from sing_box_manager.release.platforms import ROUTE_ALIASES, ROUTE_STRATEGIES
@@ -221,6 +224,90 @@ def test_selector_holds_the_enabled_protocols_in_order() -> None:
     assert selector["default"] == "hysteria2"
     assert "naive" not in _by_tag(config["outbounds"])
     assert config["experimental"]["clash_api"] == {"default_mode": "gfw-proxy"}
+
+
+def test_linux_tun_config_replaces_the_mixed_inbound_and_resolved_stub() -> None:
+    config = build_linux_tun_config(
+        DEPLOYMENT,
+        ALL_PROTOCOLS,
+        default_protocol="trojan",
+        default_route="china-direct",
+    )
+    assert config["inbounds"] == [
+        {
+            "type": "tun",
+            "tag": "tun-in",
+            "interface_name": LINUX_TUN_INTERFACE,
+            "address": list(LINUX_TUN_ADDRESSES),
+            "auto_route": True,
+            "strict_route": True,
+            "auto_redirect": True,
+            "dns_mode": "disabled",
+        }
+    ]
+    assert config["route"]["auto_detect_interface"] is True
+    assert config["outbounds"][0]["tag"] == "proxy"
+    outbounds = _by_tag(config["outbounds"])
+    assert DIRECT_SYSTEM_TAG not in outbounds
+    assert outbounds[DIRECT_TAG]["domain_resolver"] == {"server": "aliyun"}
+
+    dns = config["dns"]
+    assert dns["strategy"] == "prefer_ipv4"
+    assert set(_by_tag(dns["servers"])) == {"google", "aliyun"}
+    assert all(rule.get("server") != "system" for rule in dns["rules"])
+    assert config["experimental"]["clash_api"] == {"default_mode": "china-direct"}
+
+    rules = config["route"]["rules"]
+    assert all(rule.get("outbound") != DIRECT_SYSTEM_TAG for rule in rules)
+    hijack = next(
+        index for index, rule in enumerate(rules) if rule.get("action") == "hijack-dns"
+    )
+    private = next(
+        index
+        for index, rule in enumerate(rules)
+        if rule.get("ip_is_private") is True
+    )
+    assert hijack < private
+    assert rules[private + 1] == {
+        "network": "udp",
+        "port": 123,
+        "outbound": DIRECT_TAG,
+    }
+    assert rules[private + 2] == {"network": "udp", "action": "reject"}
+    assert any(rule.get("clash_mode") == "china-direct" for rule in rules)
+
+    # The mixed config keeps the mixed inbound and the system resolver.
+    mixed = build_desktop_config(
+        DEPLOYMENT,
+        ALL_PROTOCOLS,
+        os_name="linux",
+        default_protocol="trojan",
+        default_route="china-direct",
+    )
+    assert mixed["inbounds"][0]["type"] == "mixed"
+    assert "system" in _by_tag(mixed["dns"]["servers"])
+
+
+def test_linux_tun_config_passes_sing_box_check(
+    tmp_path: Path,
+    binary: Path,
+    deployment: DeploymentConfig,
+) -> None:
+    config = build_linux_tun_config(
+        deployment,
+        ALL_PROTOCOLS,
+        default_protocol="naive",
+        default_route="gfw",
+    )
+    path = tmp_path / "linux-tun.json"
+    path.write_text(json.dumps(config))
+    result = subprocess.run(
+        [str(binary), "check", "-D", str(tmp_path), "-c", str(path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "deprecated" not in result.stderr.lower()
 
 
 def test_ai_mode_sends_direct_traffic_through_the_system_resolver() -> None:

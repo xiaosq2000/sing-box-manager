@@ -122,8 +122,9 @@ After a successful build, the main generated outputs are:
   rejects private and reserved IPv4/IPv6 ranges) and one `server/sing-box.service`
 
 Before publishing, the builder runs `sing-box check` on mobile profiles, desktop
-configs for Linux, macOS and Windows, and the server config. Client validation uses
-synthetic credentials rather than the inventory roster. Any failed check aborts the build.
+configs for Linux, macOS and Windows, the Linux TUN config, and the server config.
+Client validation uses synthetic credentials rather than the inventory roster.
+Any failed check aborts the build.
 Server CA certificate paths usually exist only on the VPS: when absent locally,
 the check uses an ephemeral ECDSA certificate in a private copy. Inline self-signed
 material is checked as rendered. The installer checks the real node certificate
@@ -227,6 +228,11 @@ address, while macOS and Windows use sing-box's `local` transport. That
 transport queries the link's upstream servers itself and binds the query socket
 to the link, which kernels that require `CAP_NET_RAW` for the bind refuse in an
 unprivileged client service, failing every lookup the route sends direct.
+
+The Linux TUN config (`config_tun`) is the exception: it never uses the
+systemd-resolved stub, because captured upstream queries would loop back into
+it. It resolves direct and `ai-only` names through Aliyun, sets
+`dns.strategy: prefer_ipv4`, keeps NTP direct, and rejects other non-private UDP.
 
 The rule sets ship as binary snapshots under `sing-box/rules/`, with a
 `files.txt` inventory containing one filename per line.
@@ -580,8 +586,8 @@ see [the Windows guide](README_WIN.md).
 
 ## Subscription Links
 
-`GET /sub/<token>?format=sbc&os=<os>&sing-box=<version>` returns the config the `sbc`
-client runs. It needs `web.subscription_secret`; without it, requests return 404.
+`GET /sub/<token>?format=sbc&os=<os>&sing-box=<version>` returns the envelope the
+`sbc` client uses for its config. It needs `web.subscription_secret`; without it, requests return 404.
 
 A token is the first 16 bytes of an HMAC-SHA256 of the username and a reset counter,
 keyed by `web.subscription_secret` and written in URL-safe base64. The portal keeps
@@ -605,7 +611,8 @@ The JSON response holds:
 | Field                               | Contents                                                                                                      |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `version`                           | The envelope schema, `1`                                                                                      |
-| `config`                            | The sing-box config, with every route as a Clash mode and every protocol behind the `proxy` selector          |
+| `config`                            | The mixed sing-box config, with every route as a Clash mode and every protocol behind the `proxy` selector    |
+| `config_tun`                        | The Linux TUN variant of `config`. Additive; clients without TUN support ignore it                            |
 | `default_route`, `default_protocol` | Where a new install starts. The protocol falls back to the user's first one when they lack `default_protocol` |
 | `nodes`                             | Each server and the protocols the user holds on it, one entry for now                                         |
 | `latest.sing_box`                   | The sing-box version the inventory pins                                                                       |

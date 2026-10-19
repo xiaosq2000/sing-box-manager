@@ -45,6 +45,13 @@ DIRECT_SYSTEM_TAG = "direct-system"
 MIXED_INBOUND_TAG = "mixed"
 CACHE_FILE = "cache.db"
 
+# The Linux TUN client keeps the desktop selector and Clash modes. Its inbound
+# and DNS differ because captured queries must not loop through the
+# systemd-resolved stub.
+LINUX_TUN_INTERFACE = "sbc-tun0"
+LINUX_TUN_ADDRESSES = ("172.19.0.1/30", "fdfe:dcba:9876::1/126")
+TUN_INBOUND_TAG = "tun-in"
+
 GFWLIST_TAG = "GFWList"
 CHINA_DOMAIN_TAGS = ["GeoSite-CN", "GeoSite-Apple-CN"]
 CHINA_IP_TAG = "GeoIP-CN"
@@ -151,6 +158,82 @@ def build_desktop_config(
             "clash_api": {"default_mode": default_route},
         },
     }
+
+
+def build_linux_tun_config(
+    deployment: DeploymentConfig,
+    protocols: UserProtocols,
+    *,
+    default_protocol: str,
+    default_route: str,
+) -> dict:
+    """Return the Linux TUN variant of the desktop config.
+
+    The mixed config's selector, Clash modes and protocol outbounds stay the
+    same. The mixed inbound becomes a TUN inbound, direct and AI DNS use
+    Aliyun instead of the systemd-resolved stub, and captured UDP other than
+    DNS and NTP is rejected.
+    """
+    config = build_desktop_config(
+        deployment,
+        protocols,
+        os_name="linux",
+        default_protocol=default_protocol,
+        default_route=default_route,
+    )
+    config["inbounds"] = [
+        {
+            "type": "tun",
+            "tag": TUN_INBOUND_TAG,
+            "interface_name": LINUX_TUN_INTERFACE,
+            "address": list(LINUX_TUN_ADDRESSES),
+            "auto_route": True,
+            "strict_route": True,
+            "auto_redirect": True,
+            "dns_mode": "disabled",
+        }
+    ]
+
+    dns = config["dns"]
+    dns["strategy"] = "prefer_ipv4"
+    dns["servers"] = [
+        server for server in dns["servers"] if server.get("tag") != "system"
+    ]
+    for rule in dns.get("rules", []):
+        if rule.get("server") == "system":
+            rule["server"] = "aliyun"
+
+    config["outbounds"] = [
+        outbound
+        for outbound in config["outbounds"]
+        if outbound.get("tag") != DIRECT_SYSTEM_TAG
+    ]
+    route = config["route"]
+    route["auto_detect_interface"] = True
+    for rule in route.get("rules", []):
+        if rule.get("outbound") == DIRECT_SYSTEM_TAG:
+            rule["outbound"] = DIRECT_TAG
+
+    # DNS must be intercepted before the private-address shortcut: the
+    # systemd-resolved stub is a loopback address. Keep NTP direct, then reject
+    # the remaining non-private UDP; private UDP matched the direct rule.
+    rules = route["rules"]
+    hijack = next(
+        index for index, rule in enumerate(rules) if rule.get("action") == "hijack-dns"
+    )
+    hijack_rule = rules.pop(hijack)
+    sniff = next(
+        index for index, rule in enumerate(rules) if rule.get("action") == "sniff"
+    )
+    rules.insert(sniff + 1, hijack_rule)
+    private = next(
+        index for index, rule in enumerate(rules) if rule.get("ip_is_private") is True
+    )
+    rules[private + 1 : private + 1] = [
+        {"network": "udp", "port": 123, "outbound": DIRECT_TAG},
+        {"network": "udp", "action": "reject"},
+    ]
+    return config
 
 
 def _protocol_outbounds(

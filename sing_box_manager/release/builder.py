@@ -16,7 +16,11 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, TypeVar, cast
 
-from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
+from sing_box_manager.desktop_config import (
+    UserProtocols,
+    build_desktop_config,
+    build_linux_tun_config,
+)
 from sing_box_manager.release.artifacts import build_release_info, write_release_info
 from sing_box_manager.release.client_downloads import (
     CLIENT_DIR_NAME,
@@ -779,6 +783,15 @@ class ReleaseBuilder:
                 default_route="china-direct",
             )
             self._check_config(config, f"validation/{os_name}/sbc")
+        self._check_config(
+            build_linux_tun_config(
+                inventory.deployment,
+                protocols,
+                default_protocol=self._settings.default_protocol,
+                default_route="china-direct",
+            ),
+            "validation/linux-tun",
+        )
         for protocol in ("trojan", "hysteria2", "naive"):
             self._check_config(
                 build_client_profile(

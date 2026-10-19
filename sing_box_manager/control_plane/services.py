@@ -16,7 +16,11 @@ from django.db import transaction
 from sing_box_manager.control_plane.models import Account, Credential
 from sing_box_manager.control_plane.runner import ControlPlaneError
 from sing_box_manager.deploy import SERVICE_USER
-from sing_box_manager.desktop_config import UserProtocols, build_desktop_config
+from sing_box_manager.desktop_config import (
+    UserProtocols,
+    build_desktop_config,
+    build_linux_tun_config,
+)
 from sing_box_manager.release.platforms import MOBILE_TUN_PROFILE
 from sing_box_manager.release.profiles import build_client_profile, build_server_config
 from sing_box_manager.release.renderers import SUPPORTED_CLIENT_OS
@@ -369,6 +373,12 @@ def build_account_envelope(
             runtime.deployment,
             protocols,
             os_name=os_name,
+            default_protocol=default_protocol,
+            default_route=DEFAULT_ROUTE,
+        ),
+        "config_tun": build_linux_tun_config(
+            runtime.deployment,
+            protocols,
             default_protocol=default_protocol,
             default_route=DEFAULT_ROUTE,
         ),
