@@ -93,6 +93,7 @@ func runInit(env Env, args []string, root *cobra.Command) int {
 	if err != nil {
 		return fail(env, err)
 	}
+	discardStaleUpgradeHint(layout, env.Version)
 	code, err := shell.Init(args[0], layout.CLIDir(), layout.EnvFile(), layout.UpgradeHint())
 	if err != nil {
 		return fail(env, err)
@@ -188,6 +189,13 @@ func runService(env Env, action string) int {
 	manager, err := env.Service(layout.SBC())
 	if err != nil {
 		return fail(env, err)
+	}
+	if action != "stop" {
+		if _, err := os.Stat(layout.ConfigFile()); err == nil {
+			if err := ensureMaintenance(env, layout, false); err != nil {
+				return fail(env, err)
+			}
+		}
 	}
 	switch action {
 	case "start":
@@ -366,7 +374,7 @@ func runLink(env Env, args []string) int {
 		return fail(env, err)
 	}
 	os.Remove(layout.ETag())
-	return runUpdate(env)
+	return runRefresh(env)
 }
 
 func runUpgrade(env Env) int {
@@ -378,7 +386,11 @@ func runUpgrade(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	upgraded, err := env.Installer(layout, env.Stdout).Upgrade(link, env.Version)
+	restart, ready, err := maintenanceHooks(env, layout)
+	if err != nil {
+		return fail(env, err)
+	}
+	upgraded, err := env.Installer(layout, env.Stdout).Upgrade(link, installedSBCVersion(layout, env.Version), restart, ready)
 	if err != nil {
 		return fail(env, err)
 	}
@@ -393,14 +405,12 @@ func runUpgrade(env Env) int {
 	if upgraded.SBC != "" {
 		fmt.Fprintf(env.Stdout, i18n.T("Installed sbc %s.\n"), upgraded.SBC)
 	}
-	// A new sing-box may need a config built for it, and the refresh restarts
-	// the service either way.
-	if manager, err := env.Service(layout.SBC()); err == nil && manager.Active() {
-		manager.Restart()
+	// Upgrade committed the matching config and the installed-version receipt.
+	// Do not re-check with this process's pre-upgrade build version.
+	if err := os.Remove(layout.UpgradeHint()); err != nil && !os.IsNotExist(err) {
+		return fail(env, err)
 	}
-	os.Remove(layout.ETag())
-	os.Remove(layout.UpgradeHint())
-	return runUpdate(env)
+	return 0
 }
 
 // enableEnvironment writes persistent Windows settings or the Unix shell hook file.

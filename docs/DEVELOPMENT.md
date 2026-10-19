@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -103,7 +103,8 @@ cleanup fixtures change a file or replace it with a symlink before the helper
 runs, and check that the elevated recheck refuses deletion. A macOS native fixture uses disposable
 plist paths and the native `plutil` and `PlistBuddy` tools, without sudo or browser preferences.
 The WebRTC lifecycle in `internal/browserprivacy` is shared with Windows.
-The Windows runner also runs `go test ./internal/winsettings ./internal/desktop`.
+The Windows runner also tests `internal/winsettings`, `internal/desktop`,
+`internal/powershell`, `internal/maintenance`, and `internal/paths`.
 Native registry tests use disposable keys, not browser or environment keys. They
 check registry types and rollback, and run the fixed WebRTC payload in a disposable
 namespace to check ownership and cleanup. Edge migration tests check the supported
@@ -118,7 +119,9 @@ failure under `HKCU\Software\Policies`.
 `internal/e2e` installs `sbc` through `install.sh` on Unix and the hosted
 `/install.ps1` on Windows, using a stand-in portal and the real systemd, launchd
 or Task Scheduler. It checks installation, route and protocol switches without a
-restart, a failed refresh with rollback, and uninstall.
+restart, policy defaults, old-task migration, interval changes without a proxy
+restart, failed refresh and upgrade recovery, first-upgrade notification cleanup,
+and uninstall.
 
 Windows runs the full lifecycle under Windows PowerShell 5.1 and PowerShell 7.
 The harness supplies the hidden `Read-Host` answer; the downloaded installer,
@@ -206,6 +209,15 @@ failure and port handoff. It also checks URI validation and the real child-proce
 stdin and output handling. The `sbc` workflow runs it under Windows PowerShell 5.1
 and PowerShell 7 without changing real tasks or registry settings.
 
+Maintenance fixtures use temporary policy files and recorded service commands.
+They check independent switches, intervals, saved opt-outs, schedule failures,
+startup migration, disabled workers, and manual actions. Subprocess tests check
+operation locks and recovery after an updater exits during commit. Signed-release
+fixtures check candidate validation and restoration of binaries, libraries,
+configuration, and version receipts. Windows tests replace and restore an
+executable while both prior versions remain mapped. No local fixture registers a
+real maintenance task. Native scheduling checks run only in the gated lifecycle.
+
 `sbc` passes every message through `internal/i18n`, whose catalog holds the Chinese,
 keyed by the English. Its test reads the source and fails when a message has no
 translation, when a translation formats different values, or when the catalog keeps
@@ -217,7 +229,7 @@ The shell compatibility tests check Bash 3.2 for the shared server scripts and
 Windows PowerShell 5.1 for the hosted Windows installer. The Unix installer uses
 POSIX sh. These checks do not prove native service or networking behavior.
 The `sbc` workflow exercises supported client services on disposable runners.
-Linux TUN is not implemented in `sbc`; its acceptance checks belong to deferred M1b.
+Linux TUN is not implemented in `sbc`; its acceptance checks belong to planned M1b.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real

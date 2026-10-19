@@ -84,7 +84,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	var options installOptions
 	var auth string
 	installer := add("install", i18n.T("Install from a subscription link read from standard input"), "setup", argumentRange(0, 0), func(_ []string) int {
-		return runInstall(env, options)
+		return withRecovery(env, func() int { return runInstall(env, options) })
 	})
 	installer.Flags().StringVar(&options.shell, "shell", "", i18n.T("Shell integration: bash or zsh"))
 	installer.Flags().BoolVar(&options.noRC, "no-rc", false, i18n.T("Do not edit shell rc files"))
@@ -121,11 +121,17 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		return runInit(env, args, root)
 	})
 	init.ValidArgsFunction = fixedChoices("bash", "zsh")
-	link := add("link [set]", i18n.T("Show the masked subscription link, or replace it from standard input"), "setup", choiceArgs(0, "set"), func(args []string) int { return runLink(env, args) })
+	link := add("link [set]", i18n.T("Show the masked subscription link, or replace it from standard input"), "setup", choiceArgs(0, "set"), func(args []string) int {
+		if len(args) == 0 {
+			return runLink(env, args)
+		}
+		return withRecovery(env, func() int { return runLink(env, args) })
+	})
 	link.ValidArgsFunction = fixedChoices("set")
-	add("upgrade", i18n.T("Install newer binaries from the signed release"), "setup", argumentRange(0, 0), func([]string) int { return runUpgrade(env) })
+	upgrade := add("upgrade", i18n.T("Install newer binaries from the signed release"), "setup", argumentRange(0, 0), func([]string) int { return runMaintenance(env, "upgrade", false) })
+	maintenanceCommands(upgrade, env, exit, "upgrade")
 	var yes bool
-	uninstall := add("uninstall", i18n.T("Stop the service and remove sbc's files"), "setup", argumentRange(0, 0), func([]string) int { return runUninstall(env, yes) })
+	uninstall := add("uninstall", i18n.T("Stop the service and remove sbc's files"), "setup", argumentRange(0, 0), func([]string) int { return withOperation(env, func() int { return runUninstall(env, yes) }) })
 	uninstall.Flags().BoolVar(&yes, "yes", false, i18n.T("Proceed without confirmation"))
 
 	add("on", i18n.T("Enable the shell proxy and any opted-in desktop proxy"), "shell", argumentRange(0, 0), func([]string) int { return runOn(env) })
@@ -208,13 +214,28 @@ func newCommand(env Env, exit *int) *cobra.Command {
 			}
 		}
 	}
-	add("port [number]", i18n.T("Show or change the local proxy port"), "proxy", argumentRange(0, 1), func(args []string) int { return runPort(env, args) })
-	add("update", i18n.T("Refresh the subscription config now"), "proxy", argumentRange(0, 0), func([]string) int { return runUpdate(env) })
+	add("port [number]", i18n.T("Show or change the local proxy port"), "proxy", argumentRange(0, 1), func(args []string) int {
+		if len(args) == 0 {
+			return runPort(env, args)
+		}
+		return withRecovery(env, func() int { return runPort(env, args) })
+	})
+	refresh := add("refresh", i18n.T("Refresh the subscription config now"), "proxy", argumentRange(0, 0), func([]string) int { return runMaintenance(env, "refresh", false) })
+	maintenanceCommands(refresh, env, exit, "refresh")
+	legacy := add("update", "", "proxy", argumentRange(0, 0), func([]string) int { return runLegacyUpdate(env) })
+	legacy.Hidden = true
+	worker := add("_maintenance refresh|upgrade", "", "proxy", choiceArgs(1, "refresh", "upgrade"), func(args []string) int { return runMaintenance(env, args[0], true) })
+	worker.Hidden = true
 	for _, action := range []string{"start", "stop", "restart"} {
 		description := map[string]string{
 			"start": i18n.T("Start the sing-box service"), "stop": i18n.T("Stop the sing-box service"), "restart": i18n.T("Restart the sing-box service"),
 		}[action]
-		add(action, description, "proxy", argumentRange(0, 0), func([]string) int { return runService(env, action) })
+		add(action, description, "proxy", argumentRange(0, 0), func([]string) int {
+			if action == "stop" {
+				return withOperation(env, func() int { return runService(env, action) })
+			}
+			return withRecovery(env, func() int { return runService(env, action) })
+		})
 	}
 	add("run", i18n.T("Run sing-box in the foreground without a service manager"), "proxy", argumentRange(0, 0), func([]string) int { return runSingBox(env) })
 	add("version", i18n.T("Print the sbc build version"), "help", argumentRange(0, 0), func([]string) int {

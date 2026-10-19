@@ -76,6 +76,9 @@ func (l Layout) ConfigFile() string { return filepath.Join(l.Config, "config.jso
 // ETag names the subscription config the current one came from.
 func (l Layout) ETag() string { return filepath.Join(l.Config, "etag") }
 
+// SBCVersion records the sbc build after installation or upgrade.
+func (l Layout) SBCVersion() string { return filepath.Join(l.Data, "sbc.version") }
+
 // SingBoxVersion records the sing-box version installed in Bin.
 func (l Layout) SingBoxVersion() string { return filepath.Join(l.Data, "sing-box.version") }
 
@@ -133,9 +136,19 @@ func WriteFile(path string, data []byte, mode os.FileMode) error {
 	if err != nil && runtime.GOOS == "windows" {
 		// Windows refuses to replace a running program, which can still be
 		// renamed, so the old one moves aside until it has exited.
-		os.Remove(path + ".old")
-		if err := os.Rename(path, path+".old"); err == nil {
-			return os.Rename(staged, path)
+		// Unique retired names also allow rollback while an older updater still
+		// has a previous executable mapped. A fixed .old name cannot do that.
+		retired, createErr := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".old-*")
+		if createErr == nil {
+			name := retired.Name()
+			retired.Close()
+			os.Remove(name)
+			if moveErr := os.Rename(path, name); moveErr == nil {
+				if replaceErr := os.Rename(staged, path); replaceErr == nil {
+					return nil
+				}
+				_ = os.Rename(name, path)
+			}
 		}
 	}
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/docker"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
+	"github.com/xiaosq2000/sing-box-manager/internal/maintenance"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
 	"github.com/xiaosq2000/sing-box-manager/internal/routes"
@@ -156,7 +157,7 @@ func runInstall(env Env, options installOptions) int {
 		fmt.Fprintf(env.Stderr, i18n.T("sbc: the service could not be set up (%v).\nRun 'sbc run' to start sing-box in the foreground instead.\n"), err)
 		return 1
 	}
-	fmt.Fprintln(env.Stdout, i18n.T("The sbc service is running, and refreshes the config every 6 hours."))
+	fmt.Fprintln(env.Stdout, i18n.T("The sbc service is running. Background refresh and upgrade follow your saved policies."))
 	if err := checkProxy(env, layout, options); err != nil {
 		return fail(env, err)
 	}
@@ -248,6 +249,9 @@ func installService(env Env, layout paths.Layout) error {
 			return err
 		}
 	}
+	if err := paths.WriteFile(layout.SBCVersion(), []byte(env.Version+"\n"), 0o600); err != nil {
+		return err
+	}
 	manager, err := env.Service(layout.SBC())
 	if err != nil {
 		return err
@@ -257,6 +261,9 @@ func installService(env Env, layout paths.Layout) error {
 	}
 	if tasks, ok := manager.(*service.Tasks); ok && tasks.Interactive {
 		fmt.Fprintln(env.Stderr, i18n.T("sbc: this machine does not let tasks run in the background, so sing-box runs in your session: a console window stays open while it runs, and it stops when you sign out."))
+	}
+	if err := ensureMaintenance(env, layout, true); err != nil {
+		return err
 	}
 	running := manager.Active()
 	if err := manager.Start(); err != nil {
@@ -328,6 +335,12 @@ func runStatus(env Env) int {
 		fmt.Fprintf(env.Stdout, i18n.T("traffic:  %s up, %s down this billing cycle, as of %s\n"),
 			formatBytes(usage.Upload), formatBytes(usage.Download), at.Format("2006-01-02 15:04"))
 	}
+	if settings, err := maintenance.Load(layout); err == nil {
+		printMaintenance(env, settings)
+	} else {
+		fmt.Fprintln(env.Stderr, err)
+	}
+	discardStaleUpgradeHint(layout, env.Version)
 	if hint, err := os.ReadFile(layout.UpgradeHint()); err == nil {
 		fmt.Fprintf(env.Stdout, i18n.T("upgrade:  %s is available; run 'sbc upgrade'\n"), strings.TrimSpace(string(hint)))
 	}
@@ -386,7 +399,7 @@ func runSwitch(env Env, args []string, what string) int {
 	return 0
 }
 
-func runUpdate(env Env) int {
+func runRefresh(env Env) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -430,7 +443,7 @@ func runUpdate(env Env) int {
 		fmt.Fprintln(env.Stdout, i18n.T("The config is up to date."))
 	}
 	// The hint is a courtesy, so a failed check does not fail the refresh.
-	if available, _, err := installer.CheckUpgrade(link, env.Version); err == nil {
+	if available, _, err := installer.CheckUpgrade(link, installedSBCVersion(layout, env.Version)); err == nil {
 		if available.Any() {
 			paths.WriteFile(layout.UpgradeHint(), []byte(available.SBC+" "+available.SingBox+"\n"), 0o600)
 		} else {
@@ -548,13 +561,21 @@ func runSingBox(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
+	if err := initializeMaintenance(env, layout); err != nil {
+		return fail(env, err)
+	}
 	binary := layout.SingBox()
 	args := []string{binary, "run", "-D", layout.Data, "-c", layout.ConfigFile()}
 	output := env.Stdout
 	if env.OS == "windows" {
 		// A program moved aside by an upgrade is free once it has exited.
-		os.Remove(binary + ".old")
-		os.Remove(layout.SBC() + ".old")
+		for _, path := range []string{binary, layout.SBC(), filepath.Join(layout.Bin(), "libcronet.dll")} {
+			_ = os.Remove(path + ".old")
+			retired, _ := filepath.Glob(path + ".old-*")
+			for _, name := range retired {
+				_ = os.Remove(name)
+			}
+		}
 		if !isTerminal(env.Stdout) {
 			// A scheduled task has no console, so the log file keeps the
 			// output.

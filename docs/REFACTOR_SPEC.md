@@ -270,17 +270,17 @@ Replace the sourced bash client with `sbc`, one Go binary that reads a subscript
 and replaces the `proxy` command with `sbc`. M1a ships mixed mode, and M1b moves
 Linux TUN.
 
-| Area         | Bash client                                                                  | `sbc`                                                                                                    |
-| ------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Client code  | `setup.sh` and four libraries, about 8,500 lines, sourced into every shell   | A Go binary with a Cobra command layer, and one `sbc init` line in the rc file                           |
-| Install      | `bash <(curl …/install/linux.sh)` or `macos.sh` downloads a per-user archive | `curl -fsSL …/install.sh \| sh` downloads `sbc`, which asks for the subscription URL                     |
-| Auth         | Portal password, then a machine token                                        | A subscription token                                                                                     |
-| Config       | The archive holds a config for each protocol and route                       | The server renders one config per user, and `sbc` fetches it                                             |
-| Switching    | Swaps the config and restarts sing-box                                       | Sets a Clash mode or a selector through sing-box's local API, without a restart                          |
-| Updates      | `proxy upgrade` reinstalls the archive; a daily check prints a hint          | A timer refreshes the config every 6 hours; `sbc upgrade` installs binaries that match a signed manifest |
-| Local proxy  | Loopback without auth                                                        | Loopback, with auth on shared hosts. LAN and Docker bridge sharing require auth                          |
-| Integrations | Shell, git, desktop, Docker daemon and containers                            | Shell, desktop, Docker daemon and containers                                                             |
-| Diagnostics  | 13 `proxy check` subcommands                                                 | `sbc status`, which shows traffic, `sbc ip` and `sbc speed`; `sbc doctor` follows M1a                    |
+| Area         | Bash client                                                                  | `sbc`                                                                                 |
+| ------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Client code  | `setup.sh` and four libraries, about 8,500 lines, sourced into every shell   | A Go binary with a Cobra command layer, and one `sbc init` line in the rc file        |
+| Install      | `bash <(curl …/install/linux.sh)` or `macos.sh` downloads a per-user archive | `curl -fsSL …/install.sh \| sh` downloads `sbc`, which asks for the subscription URL  |
+| Auth         | Portal password, then a machine token                                        | A subscription token                                                                  |
+| Config       | The archive holds a config for each protocol and route                       | The server renders one config per user, and `sbc` fetches it                          |
+| Switching    | Swaps the config and restarts sing-box                                       | Sets a Clash mode or a selector through sing-box's local API, without a restart       |
+| Updates      | `proxy upgrade` reinstalls the archive; a daily check prints a hint          | Independent refresh and signed-upgrade jobs default to on, every 6 hours              |
+| Local proxy  | Loopback without auth                                                        | Loopback, with auth on shared hosts. LAN and Docker bridge sharing require auth       |
+| Integrations | Shell, git, desktop, Docker daemon and containers                            | Shell, desktop, Docker daemon and containers                                          |
+| Diagnostics  | 13 `proxy check` subcommands                                                 | `sbc status`, which shows traffic, `sbc ip` and `sbc speed`; `sbc doctor` follows M1a |
 
 #### M1a: Mixed mode
 
@@ -336,9 +336,20 @@ Client:
   port and secret, and `sbc route` and `sbc protocol` call it. sing-box clears its DNS cache when
   the mode changes, and its cache file keeps the mode and the selector choice across
   restarts. This was checked in the sing-box 1.14.2 source.
-- A timer refreshes the config every 6 hours after a random delay and sends the
-  ETag. A changed config must pass `sing-box check`. `sbc` keeps the last good
-  config and restores it if sing-box fails to restart.
+- `sbc refresh` refreshes configuration. `sbc upgrade` installs signed binaries
+  and any required configuration adaptation. Each action has independent
+  `auto [on|off]` and `interval [duration]` controls. Both default to on, every 6h.
+  Saved policies survive reinstall and upgrades. Policy changes do not immediately
+  upgrade or restart the proxy. Manual actions ignore automatic switches.
+- Refresh sends the ETag. A changed config must pass `sing-box check` and retain
+  a working service. Upgrades validate candidates before replacing live files.
+  Failed upgrades restore binaries and configuration. An operation lock prevents
+  conflicting maintenance writes. A recovery record protects interrupted commits.
+- The installed build receipt prevents a successful upgrade from recreating its
+  own notification. The old `update` task entry only migrates schedules. Remove
+  that entry at the device-enrollment clean break. See
+  [automatic maintenance](README_SBC.md#automatic-maintenance) for migration and
+  recovery details.
 - `sbc` installs a downloaded binary only when it matches the signed manifest. It
   carries a list of public keys, so a new key can ship before the old one retires.
   The first download, by `install.sh`, relies on TLS.
@@ -350,7 +361,7 @@ Client:
   reinstall keeps the earlier choice. If port 1080 is taken for TCP or UDP,
   `sbc install` picks a free port.
 - Cobra and pflag define commands, flags, validation, help and completion.
-  Existing valid syntax stays supported, including `sbc speed --download [MB]`.
+  Existing flags stay supported, including `sbc speed --download [MB]`.
   `sbc <command> --help` and `sbc help <command>` show localized help without
   performing the command's action. Unknown flags and extra arguments fail.
   `sbc completion bash|zsh|powershell` prints completion code. Bash and Zsh
@@ -366,11 +377,11 @@ Client:
   `LC_ALL`, `LC_MESSAGES` and `LANG` that is set starts with `zh_CN` or `zh_SG`,
   and in English otherwise. `SBC_LANG=zh` or `SBC_LANG=en` overrides the locale.
 - Commands: `install`, `init`, `link`, `upgrade`, `uninstall`, `on`, `off`, `env`,
-  `status`, `ip`, `speed`, `route`, `protocol`, `port`, `update`, `start`, `stop`,
+  `status`, `ip`, `speed`, `route`, `protocol`, `port`, `refresh`, `start`, `stop`,
   `restart`, `run`, `desktop on|off`, `docker on|off` and `version`. `on` and `off`
   point shells, and the desktop after `desktop on`, at the proxy or away from it,
   and leave sing-box running, so an agent that runs `sbc off` keeps its own
-  connection. `start` and `stop` control the service. `update` refreshes the config
+  connection. `start` and `stop` control the service. `refresh` refreshes the config
   now, and `link set` replaces the subscription URL.
 - `sbc ip` asks ipinfo.io and cip.cc through the active route. `--ai` adds
   unauthenticated Gemini, ChatGPT and Claude checks through the proxy-only
@@ -475,10 +486,10 @@ user's hive, not the administrator's `HKCU`.
 | Piece         | Linux and macOS                          | Windows                                                                                                                                                                                                                                                                                                      |
 | ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Files         | `~/.config/sbc`, `~/.local/share/sbc`    | One folder, `%LOCALAPPDATA%\sbc`, whose permissions already exclude other users. A scheduled task may lack the profile variables, so an `sbc` under `cli\` finds the folder from its own path                                                                                                                |
-| Service       | systemd user unit, LaunchAgent           | Scheduled tasks `sbc-proxy` and `sbc-refresh`, written as XML and registered with `schtasks.exe`. They run whether the user is logged on or not (S4U), so there is no console window and sign-out keeps them                                                                                                 |
+| Service       | systemd user unit, LaunchAgent           | Scheduled tasks `sbc-proxy`, `sbc-config-refresh`, and `sbc-upgrade`, written as XML and registered with `schtasks.exe`. They run whether the user is logged on or not (S4U), so there is no console window and sign-out keeps them                                                                          |
 | `sbc run`     | execs sing-box                           | Runs sing-box as a child in a job object, so ending the task ends sing-box, and records its process id, which stopping the task waits on: Task Scheduler gives an ended task's process a few seconds before it terminates it. Without a console, output goes to `sing-box.log`, which starts over past 10 MB |
 | Service state | `systemctl is-active`, `launchctl print` | PowerShell's `Get-ScheduledTask`, whose states are the same in every display language, where `schtasks` prints them in the display language                                                                                                                                                                  |
-| Programs      | replaced in place                        | A running program cannot be replaced, so `WriteFile` moves it to `.old`, which the next `sbc run` deletes. Uninstall removes the folder sbc runs from after sbc exits                                                                                                                                        |
+| Programs      | replaced in place                        | `WriteFile` moves a running program to a unique retired path. This permits rollback while an older updater still runs. A later `sbc run` removes unused retired files. Uninstall removes the folder sbc runs from after sbc exits                                                                            |
 | Desktop proxy | gsettings, networksetup                  | `ProxyEnable`, `ProxyServer` and `ProxyOverride` under `HKCU\...\Internet Settings`, plus a WinINet refresh so open browsers notice                                                                                                                                                                          |
 | Shells        | rc file runs `sbc init`, prompt hook     | User environment variables `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, which new terminals, VS Code, git, pip and curl read; `sbc install` adds `cli\` to the user PATH                                                                                                                                      |
 | Installer     | `install.sh`                             | `install.ps1` for Windows PowerShell 5.1: ask for the link, download `sbc.exe`, run `sbc install`. A native program needs no execution policy                                                                                                                                                                |

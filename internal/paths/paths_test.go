@@ -62,14 +62,14 @@ func TestLinuxAndMacOSKeepTheirDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if linux.Config != "/xdg/sbc" || linux.Data != "/home/me/.local/share/sbc" || linux.Exe != "" {
+	if linux.Config != filepath.Join("/xdg", "sbc") || linux.Data != filepath.Join("/home/me", ".local", "share", "sbc") || linux.Exe != "" {
 		t.Errorf("linux %+v", linux)
 	}
 	mac, err := defaults("darwin", xdg, home, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mac.Config != "/home/me/Library/Application Support/sbc" || mac.Data != mac.Config {
+	if mac.Config != filepath.Join("/home/me", "Library", "Application Support", "sbc") || mac.Data != mac.Config {
 		t.Errorf("darwin %+v", mac)
 	}
 }

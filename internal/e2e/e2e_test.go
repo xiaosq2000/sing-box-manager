@@ -105,6 +105,7 @@ func testLifecycle(t *testing.T, engine string) {
 	}
 	expect(t, run(t, nil, sbc, "version"), "sbc e2e")
 	expect(t, run(t, nil, sbc, "status"), "service:  running", "route:    china-direct", "protocol: socks", "traffic:")
+	checkMaintenance(t, layout)
 	proxy := proxyURL(t, run(t, nil, sbc, "env"))
 	expectPage(t, proxy, site.URL)
 	if runtime.GOOS == "windows" {
@@ -128,7 +129,7 @@ func testLifecycle(t *testing.T, engine string) {
 	// and the cache file keeps the route and protocol across the restarts.
 	blocked := holdPort(t)
 	portal.setConfig(clientConfig(upstream, blocked))
-	output, code := runCode(t, nil, sbc, "update")
+	output, code := runCode(t, nil, sbc, "refresh")
 	if code == 0 {
 		t.Fatalf("a config that cannot start was applied:\n%s", output)
 	}
@@ -142,7 +143,30 @@ func testLifecycle(t *testing.T, engine string) {
 	}
 	expectPage(t, proxy, site.URL)
 	expect(t, run(t, nil, sbc, "status"), "service:  running", "route:    gfw-proxy", "protocol: http")
+	// Force a signed self-upgrade while the same invalid config remains. This
+	// exercises executable replacement and rollback on native Windows too.
+	if err := paths.WriteFile(layout.SBCVersion(), []byte("earlier-e2e\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, code = runCode(t, nil, sbc, "upgrade")
+	if code == 0 {
+		t.Fatalf("an upgrade with an unusable config succeeded: %s", output)
+	}
+	expect(t, output, "The previous binaries and configuration were restored")
+	expectPage(t, proxy, site.URL)
 	portal.setConfig(clientConfig(upstream, 0))
+	if err := paths.WriteFile(layout.UpgradeHint(), []byte("e2e \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, nil, sbc, "upgrade")
+	if _, err := os.Stat(layout.UpgradeHint()); !os.IsNotExist(err) {
+		t.Fatal("the first successful upgrade left a notification")
+	}
+	run(t, nil, sbc, "refresh")
+	if _, err := os.Stat(layout.UpgradeHint()); !os.IsNotExist(err) {
+		t.Fatal("refresh recreated the completed upgrade notification")
+	}
+	expect(t, run(t, nil, sbc, "status"), "refresh: auto off, interval 30m", "upgrade: auto off, interval 24h", "protocol: http")
 
 	// Uninstall removes the service, the process and every file. On Windows
 	// the directory sbc runs from goes a moment after sbc has exited.

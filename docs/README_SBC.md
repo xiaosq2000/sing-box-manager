@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -41,7 +41,7 @@ failure recovery and settings ownership.
 ## Linux TUN
 
 `sbc` does not support Linux TUN. [M1b](REFACTOR_SPEC.md#m1b-linux-tun) is the next
-feature priority after control-plane reliability and portal consolidation.
+feature priority after automatic client maintenance and official mobile-app import.
 Android and iOS apps manage their own tunnels and are not affected.
 
 The hosted installer refuses when a legacy TUN unit, transaction marker, or
@@ -64,7 +64,8 @@ and the locale, in English or Simplified Chinese. Command and flag names stay
 in English.
 
 The CLI rejects unknown flags and extra arguments before performing an action.
-Existing valid commands retain their syntax and meaning.
+Use `refresh` for configuration and `upgrade` for binaries. The public `update`
+command is removed. Other commands retain their syntax and meaning.
 
 | Command                                   | Purpose                                                         |
 | ----------------------------------------- | --------------------------------------------------------------- |
@@ -82,7 +83,7 @@ Existing valid commands retain their syntax and meaning.
 | `sbc status`, `sbc ip`, `sbc speed`       | Show status, exit location, or latency                          |
 | `sbc start`, `sbc stop`, `sbc restart`    | Control the service                                             |
 | `sbc run`                                 | Run sing-box in the foreground                                  |
-| `sbc update`, `sbc upgrade`               | Refresh the config, or install signed binary updates            |
+| `sbc refresh`, `sbc upgrade`              | Refresh configuration, or install signed binary updates         |
 | `sbc uninstall [--yes]`                   | Clean browser settings, stop the service, and remove the client |
 | `sbc completion bash\|zsh\|powershell`    | Print a completion script                                       |
 | `sbc version`, `sbc --version`            | Print the build version                                         |
@@ -93,6 +94,82 @@ Docker changes require confirmation or `--yes` because they restart Docker.
 
 Subscription links are credentials. Pass them through the installer prompt or
 stdin, not command arguments. `sbc link set` also reads from stdin.
+
+## Automatic maintenance
+
+Configuration refresh and binary upgrades have separate policies. Both default
+to **on**, with a **6h** interval. New installations use these defaults. Existing
+installations adopt them when the new executable sets up its schedules.
+Saved policies, including `off`, survive reinstall and subsequent upgrades.
+
+```sh
+sbc refresh                  # Refresh configuration now
+sbc refresh auto             # Show on or off
+sbc refresh auto off          # Disable periodic configuration refresh
+sbc refresh interval         # Show the interval
+sbc refresh interval 1h       # Set the interval
+
+sbc upgrade                  # Upgrade sbc and sing-box now
+sbc upgrade auto              # Show on or off
+sbc upgrade auto off          # Disable automatic binary upgrades
+sbc upgrade interval          # Show the interval
+sbc upgrade interval 24h      # Set the interval
+sbc status                   # Show both policies and recent action results
+```
+
+Intervals use duration syntax, such as `30m`, `6h`, or `24h`. They must represent
+whole seconds from `1m` through `720h`. Queries change no settings or services.
+Changing a policy only changes background scheduling. It does not immediately
+refresh configuration, install binaries, or restart the proxy.
+
+Manual actions ignore the automatic switches. An upgrade can adapt configuration
+even when automatic refresh is off. Upgrades use the operator's signed release,
+not an upstream "latest" release.
+
+`sbc` verifies downloads and validates candidate configuration before replacing
+live files. The staged client must report the signed build version. Restart or
+readiness failures trigger restoration of the previous binaries and configuration. Upgrading only `sbc` does
+not restart the Unix proxy when its configuration stays unchanged.
+
+An operation lock serializes maintenance and configuration writes. A conflicting
+manual command reports that the client is busy. A background task waits for up
+to 10 minutes. Changing a policy does not cancel an upgrade already in progress.
+
+The private `maintenance.json` file stores policies and recent action results.
+Invalid settings stop maintenance rather than enable defaults. `sbc status` shows
+an incomplete attempt as "running or interrupted". An interrupted upgrade keeps
+its recovery record and backups. The next maintenance action or proxy start
+restores the previous files before proceeding. A failed recovery retains those
+files for repair. Policy queries and changes do not perform this recovery.
+
+| Platform | Background jobs                                 | Runtime requirement                                          |
+| -------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| Linux    | `sbc-config-refresh.timer`, `sbc-upgrade.timer` | systemd user manager, with linger for operation after logout |
+| macOS    | `io.sbc.config.refresh`, `io.sbc.upgrade`       | Logged-in user session                                       |
+| Windows  | `sbc-config-refresh`, `sbc-upgrade`             | Task Scheduler, with interactive fallback if S4U is refused  |
+
+Intervals are approximate. Linux and Windows spread scheduled starts to reduce
+simultaneous downloads. The proxy remains stopped if it was stopped before a
+maintenance action. The zero-byte operation lock sits next to the config directory
+and remains after uninstall so concurrent commands cannot acquire different locks.
+It contains no credentials.
+
+### Migration from the fixed refresh task
+
+The new proxy wrapper replaces the old schedules when it starts. A stopped
+installation can instead migrate when its old task next invokes the new
+executable. Run `sbc refresh` after the first upgrade to install the schedules
+without waiting for that task. This does not start a stopped proxy.
+
+A hidden, one-use `update` entry exists only to migrate old task definitions. It
+does not act as a configuration-refresh alias. Remove this entry and the old-task
+retirement code at the planned device-enrollment clean break, when old client
+contracts end. Do not remove them while legacy tasks can still be installed.
+
+The updater records the installed build rather than reusing its running process's
+old version. A successful upgrade clears its notification on the first invocation.
+Shell initialization and status also discard stale hints written by an older
+updater process.
 
 ## Route strategies
 
@@ -149,7 +226,7 @@ These requests use the existing proxy-only diagnostic inlet, not the active
 route's destination rules or direct exceptions. They test the remote proxy, not
 whether community rules classify every provider host correctly. The CLI labels
 this distinction. `direct` skips them unless `--allow-direct-ai` is supplied.
-Missing or unrecognized proxy-only inlets also cause skips. Run `sbc update` to
+Missing or unrecognized proxy-only inlets also cause skips. Run `sbc refresh` to
 add the inlet to an older managed config. Skips do not count as failures.
 
 `--allow-direct-ai` requires `--ai` and uses the ordinary local proxy inlet.

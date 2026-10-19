@@ -378,6 +378,9 @@ func (i *Installer) installRules(link Link, manifest *trust.Manifest) error {
 		if !strings.HasPrefix(file.Path, "rules/") {
 			continue
 		}
+		if path.Clean(file.Path) != file.Path || strings.Contains(file.Path, "\\") {
+			return i18n.New("invalid rule snapshot path")
+		}
 		data, err := i.download(link, manifest, file.Path)
 		if err != nil {
 			return err
@@ -549,36 +552,4 @@ func (i *Installer) CheckUpgrade(link Link, sbcVersion string) (Available, *trus
 		available.SingBox = manifest.SingBox
 	}
 	return available, manifest, nil
-}
-
-// Upgrade installs the release's sbc and sing-box where they differ from what
-// runs here, each checked against the signed manifest, and reports what it
-// installed.
-func (i *Installer) Upgrade(link Link, sbcVersion string) (Available, error) {
-	available, manifest, err := i.CheckUpgrade(link, sbcVersion)
-	if err != nil || !available.Any() {
-		return available, err
-	}
-	if available.SingBox != "" {
-		if err := i.installSingBox(link, manifest, i.OS+"-"+i.Arch); err != nil {
-			return Available{}, err
-		}
-		if err := i.installRules(link, manifest); err != nil {
-			return Available{}, err
-		}
-		if err := paths.WriteFile(i.Layout.SingBoxVersion(), []byte(manifest.SingBox+"\n"), 0o644); err != nil {
-			return Available{}, err
-		}
-	}
-	if available.SBC != "" {
-		fmt.Fprintf(i.Log, i18n.T("Downloading sbc %s...\n"), manifest.SBC)
-		data, err := i.download(link, manifest, "sbc/"+i.OS+"-"+i.Arch+"/sbc")
-		if err != nil {
-			return Available{}, err
-		}
-		if err := paths.WriteFile(i.Layout.SBC(), data, 0o755); err != nil {
-			return Available{}, err
-		}
-	}
-	return available, nil
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
 	"github.com/xiaosq2000/sing-box-manager/internal/docker"
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
+	"github.com/xiaosq2000/sing-box-manager/internal/maintenance"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
@@ -121,16 +122,24 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type fakeService struct {
-	active bool
-	calls  []string
+	active      bool
+	calls       []string
+	plan        maintenance.Settings
+	scheduleErr error
 }
 
-func (f *fakeService) Install() error { f.calls = append(f.calls, "install"); return nil }
-func (f *fakeService) Start() error   { f.calls = append(f.calls, "start"); f.active = true; return nil }
-func (f *fakeService) Stop() error    { f.active = false; return nil }
-func (f *fakeService) Restart() error { f.calls = append(f.calls, "restart"); return nil }
-func (f *fakeService) Active() bool   { return f.active }
-func (f *fakeService) Remove() error  { f.calls = append(f.calls, "remove"); return nil }
+func (f *fakeService) Schedule(plan maintenance.Settings) error {
+	f.plan = plan
+	f.calls = append(f.calls, "schedule")
+	return f.scheduleErr
+}
+func (f *fakeService) RetireRefresh() error { f.calls = append(f.calls, "retire-refresh"); return nil }
+func (f *fakeService) Install() error       { f.calls = append(f.calls, "install"); return nil }
+func (f *fakeService) Start() error         { f.calls = append(f.calls, "start"); f.active = true; return nil }
+func (f *fakeService) Stop() error          { f.active = false; return nil }
+func (f *fakeService) Restart() error       { f.calls = append(f.calls, "restart"); return nil }
+func (f *fakeService) Active() bool         { return f.active }
+func (f *fakeService) Remove() error        { f.calls = append(f.calls, "remove"); return nil }
 
 type harness struct {
 	env    Env
@@ -289,7 +298,9 @@ func TestStatusShowsServiceRouteProtocolAndPort(t *testing.T) {
 
 	Run(h.env, []string{"status"})
 
-	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\nroute:    china-direct\nprotocol: trojan\n"
+	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\n" +
+		"refresh: auto on, interval 6h, last attempt not run yet\nupgrade: auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\n" +
+		"route:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out.String())
 	}
@@ -331,7 +342,7 @@ func TestInstallServiceCopiesSbcAndStartsIt(t *testing.T) {
 	if err != nil || string(copied) != "sbc binary" {
 		t.Fatalf("copy: %q, %v", copied, err)
 	}
-	if strings.Join(h.svc.calls, ",") != "install,start,restart" {
+	if strings.Join(h.svc.calls, ",") != "install,schedule,retire-refresh,start,restart" {
 		t.Errorf("a reinstall over a running service: calls %v", h.svc.calls)
 	}
 
@@ -339,7 +350,7 @@ func TestInstallServiceCopiesSbcAndStartsIt(t *testing.T) {
 	if err := installService(h.env, h.layout); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(h.svc.calls, ",") != "install,start" {
+	if strings.Join(h.svc.calls, ",") != "install,schedule,retire-refresh,start" {
 		t.Errorf("a first install: calls %v", h.svc.calls)
 	}
 }
@@ -348,7 +359,7 @@ func TestCommandsBeforeInstallSayToInstall(t *testing.T) {
 	h := newHarness(t)
 	os.Remove(h.layout.ConfigFile())
 
-	for _, command := range []string{"status", "route", "protocol", "update"} {
+	for _, command := range []string{"status", "route", "protocol", "refresh"} {
 		h.errOut.Reset()
 		if code := Run(h.env, []string{command}); code != 1 || !strings.Contains(h.errOut.String(), "run 'sbc install'") {
 			t.Errorf("%s: code %d, %q", command, code, h.errOut.String())
@@ -407,7 +418,7 @@ func TestStartStopAndRestartControlTheService(t *testing.T) {
 			t.Fatalf("%s: %s", action, h.errOut)
 		}
 	}
-	if strings.Join(h.svc.calls, ",") != "start,restart" || !h.svc.active {
+	if strings.Join(h.svc.calls, ",") != "schedule,retire-refresh,start,restart" || !h.svc.active {
 		t.Errorf("calls %v, active %v", h.svc.calls, h.svc.active)
 	}
 }

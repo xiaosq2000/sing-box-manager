@@ -46,30 +46,17 @@ const (
 
 // Definitions returns the task definitions by file name, for the logon type.
 func (t *Tasks) Definitions(logon string) map[string]string {
-	now := time.Now
-	if t.Now != nil {
-		now = t.Now
-	}
 	return map[string]string{
 		proxyTask + ".xml": t.definition(logon, "sing-box proxy (sbc)",
 			"<LogonTrigger>\n      <Enabled>true</Enabled>\n      <UserId>"+escapeXML(t.User)+"</UserId>\n    </LogonTrigger>",
 			// PT0S lifts the default limit of three days.
 			"<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\n    <Priority>4</Priority>\n"+
 				"    <RestartOnFailure>\n      <Interval>PT1M</Interval>\n      <Count>3</Count>\n    </RestartOnFailure>",
-			"run"),
-		refreshTask + ".xml": t.definition(logon, "Refresh the sing-box config every 6 hours (sbc)",
-			// Starts soon after the install, whether or not anyone logs on
-			// again, and spreads every client's refresh across half an hour.
-			// The elements keep the order Task Scheduler's own exports use.
-			"<TimeTrigger>\n      <Repetition>\n        <Interval>PT6H</Interval>\n        <StopAtDurationEnd>false</StopAtDurationEnd>\n      </Repetition>\n"+
-				"      <StartBoundary>"+now().Add(10*time.Minute).Format("2006-01-02T15:04:05")+"</StartBoundary>\n"+
-				"      <Enabled>true</Enabled>\n      <RandomDelay>PT30M</RandomDelay>\n    </TimeTrigger>",
-			"<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>\n    <Priority>7</Priority>",
-			"update"),
+			"run", true),
 	}
 }
 
-func (t *Tasks) definition(logon, description, trigger, settings, argument string) string {
+func (t *Tasks) definition(logon, description, trigger, settings, argument string, enabled bool) string {
 	return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -92,7 +79,7 @@ func (t *Tasks) definition(logon, description, trigger, settings, argument strin
     <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <AllowStartOnDemand>true</AllowStartOnDemand>
-    <Enabled>true</Enabled>
+    <Enabled>` + strconv.FormatBool(enabled) + `</Enabled>
     <Hidden>false</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
@@ -127,7 +114,10 @@ func encodeUTF16(text string) []byte {
 
 // register writes the definitions for a logon type and registers them.
 func (t *Tasks) register(logon string) error {
-	definitions := t.Definitions(logon)
+	return t.registerDefinitions(t.Definitions(logon))
+}
+
+func (t *Tasks) registerDefinitions(definitions map[string]string) error {
 	if err := os.MkdirAll(t.Dir, 0o755); err != nil {
 		return err
 	}
@@ -224,7 +214,7 @@ func (t *Tasks) Active() bool {
 }
 
 func (t *Tasks) Remove() error {
-	for _, task := range []string{proxyTask, refreshTask} {
+	for _, task := range []string{proxyTask, refreshTask, "sbc-config-refresh", "sbc-upgrade"} {
 		_ = t.schtasks("/End", "/TN", task)
 		if task == proxyTask {
 			// sing-box must be gone before uninstall deletes its program.
