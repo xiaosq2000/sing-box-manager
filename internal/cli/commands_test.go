@@ -126,6 +126,8 @@ type fakeService struct {
 	calls       []string
 	plan        maintenance.Settings
 	scheduleErr error
+	layout      paths.Layout
+	engine      *maintenance.Lease
 }
 
 func (f *fakeService) Schedule(plan maintenance.Settings) error {
@@ -135,11 +137,19 @@ func (f *fakeService) Schedule(plan maintenance.Settings) error {
 }
 func (f *fakeService) RetireRefresh() error { f.calls = append(f.calls, "retire-refresh"); return nil }
 func (f *fakeService) Install() error       { f.calls = append(f.calls, "install"); return nil }
-func (f *fakeService) Start() error         { f.calls = append(f.calls, "start"); f.active = true; return nil }
-func (f *fakeService) Stop() error          { f.active = false; return nil }
-func (f *fakeService) Restart() error       { f.calls = append(f.calls, "restart"); return nil }
-func (f *fakeService) Active() bool         { return f.active }
-func (f *fakeService) Remove() error        { f.calls = append(f.calls, "remove"); return nil }
+func (f *fakeService) Start() error {
+	f.calls = append(f.calls, "start")
+	var err error
+	f.engine, err = maintenance.LockEngine(f.layout)
+	if err == nil {
+		f.active = true
+	}
+	return err
+}
+func (f *fakeService) Stop() error    { f.engine.Close(); f.active = false; return nil }
+func (f *fakeService) Restart() error { f.calls = append(f.calls, "restart"); return nil }
+func (f *fakeService) Active() bool   { return f.active }
+func (f *fakeService) Remove() error  { f.calls = append(f.calls, "remove"); return f.Stop() }
 
 type harness struct {
 	env    Env
@@ -160,6 +170,8 @@ func newHarness(t *testing.T) *harness {
 		svc:    &fakeService{active: true},
 		layout: paths.Layout{Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data")},
 	}
+	h.svc.layout = h.layout
+	t.Cleanup(func() { h.svc.engine.Close() })
 	server := httptest.NewServer(h.api)
 	t.Cleanup(server.Close)
 	address, _ := url.Parse(server.URL)
@@ -173,6 +185,8 @@ func newHarness(t *testing.T) *harness {
 	paths.WriteFile(h.layout.SingBox(), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	h.env = DefaultEnv("1.2.3", strings.NewReader(""), h.out, h.errOut)
 	h.env.Layout = func() (paths.Layout, error) { return h.layout, nil }
+	// The API fixture is already listening; fakeService models engine lifetime.
+	h.env.CheckVacant = func(paths.Layout) error { return nil }
 	h.env.Service = func(string) (service.Manager, error) { return h.svc, nil }
 	home := filepath.Join(root, "home")
 	os.MkdirAll(home, 0o755)
@@ -342,11 +356,12 @@ func TestInstallServiceCopiesSbcAndStartsIt(t *testing.T) {
 	if err != nil || string(copied) != "sbc binary" {
 		t.Fatalf("copy: %q, %v", copied, err)
 	}
-	if strings.Join(h.svc.calls, ",") != "install,schedule,retire-refresh,start,restart" {
+	if strings.Join(h.svc.calls, ",") != "install,schedule,retire-refresh,start" {
 		t.Errorf("a reinstall over a running service: calls %v", h.svc.calls)
 	}
 
-	h.svc.active, h.svc.calls = false, nil
+	h.svc.Stop()
+	h.svc.calls = nil
 	if err := installService(h.env, h.layout); err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +433,7 @@ func TestStartStopAndRestartControlTheService(t *testing.T) {
 			t.Fatalf("%s: %s", action, h.errOut)
 		}
 	}
-	if strings.Join(h.svc.calls, ",") != "schedule,retire-refresh,start,restart" || !h.svc.active {
+	if strings.Join(h.svc.calls, ",") != "schedule,retire-refresh,start,start" || !h.svc.active {
 		t.Errorf("calls %v, active %v", h.svc.calls, h.svc.active)
 	}
 }
@@ -772,6 +787,12 @@ func TestInstallServiceSaysWhenWindowsTasksRunInTheSession(t *testing.T) {
 		// The S4U registration is refused, so the definitions are rewritten
 		// for the session and registered again.
 		Run: func(name string, args ...string) error {
+			if args[0] == "/Run" {
+				return h.svc.Start()
+			}
+			if args[0] == "/End" {
+				return h.svc.Stop()
+			}
 			if args[0] == "/Create" && s4u {
 				s4u = false
 				return errors.New("access denied")

@@ -211,10 +211,22 @@ and PowerShell 7 without changing real tasks or registry settings.
 
 Maintenance fixtures use temporary policy files and recorded service commands.
 They check independent switches, intervals, saved opt-outs, schedule failures,
-startup migration, disabled workers, and manual actions. Subprocess tests check
-operation locks and recovery after an updater exits during commit. Signed-release
-fixtures check candidate validation and restoration of binaries, libraries,
-configuration, and version receipts. Windows tests replace and restore an
+startup migration, disabled workers, and manual actions. They verify that native
+scheduling failures do not block manual refresh, upgrade, start, or restart.
+Invalid settings and recovery records still block these actions. Subprocess tests
+check operation locks and recovery after an updater exits during commit.
+Startup fixtures check shared probes, old grants during descriptor cleanup,
+asynchronous service starts, duplicate engines, occupied controller ports, and
+stalled wrappers. Rollback fixtures refuse writes until a failed startup stops.
+Unix subprocess tests retain the engine lease across real `exec` and check normal
+exit and forced termination. Windows subprocess fixtures check job-based child
+cleanup after wrapper termination. Native lifecycle tests check engine leases,
+locked startup refusal, duplicate refusal, stop, and start on disposable runners.
+
+Signed-release fixtures check candidate validation and restoration of binaries,
+libraries, configuration, and version receipts. Client-only upgrades check staged
+configuration and rules with the installed engine, without copying its directory
+or retired binaries. Windows tests replace and restore an
 executable while both prior versions remain mapped. No local fixture registers a
 real maintenance task. Native scheduling checks run only in the gated lifecycle.
 

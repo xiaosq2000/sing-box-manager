@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 )
 
-func withOperation(env Env, run func() int) int {
+func withOperation(env Env, run func(Env) int) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -24,11 +25,27 @@ func withOperation(env Env, run func() int) int {
 		return fail(env, err)
 	}
 	defer unlock()
-	return run()
+	guard, err := newStartupGuard(env, layout)
+	if err != nil {
+		return fail(env, err)
+	}
+	defer guard.close()
+	return run(guard.scope(env))
 }
 
-func withRecovery(env Env, run func() int) int {
-	return withOperation(env, func() int {
+func (g *startupGuard) scope(env Env) Env {
+	env.startup = g
+	factory := env.Installer
+	env.Installer = func(layout paths.Layout, log io.Writer) *install.Installer {
+		installer := *factory(layout, log)
+		installer.BeforeRestore = g.beforeRestore
+		return &installer
+	}
+	return env
+}
+
+func withRecovery(env Env, run func(Env) int) int {
+	return withOperation(env, func(env Env) int {
 		layout, err := env.Layout()
 		if err != nil {
 			return fail(env, err)
@@ -36,8 +53,25 @@ func withRecovery(env Env, run func() int) int {
 		if err = recoverMaintenance(env, layout); err != nil {
 			return fail(env, err)
 		}
-		return run()
+		if err = env.startup.settle(); err != nil {
+			return fail(env, err)
+		}
+		return run(env)
 	})
+}
+
+// schedulingError separates native scheduler failures from invalid settings and
+// failed state writes. Manual maintenance can proceed only for the former.
+type schedulingError struct{ error }
+
+func tryMaintenanceSchedule(env Env, layout paths.Layout) error {
+	err := ensureMaintenance(env, layout, false)
+	var unavailable schedulingError
+	if errors.As(err, &unavailable) {
+		fmt.Fprintln(env.Stderr, i18n.Errorf("Background scheduling failed: %w", err))
+		return nil
+	}
+	return err
 }
 
 func ensureMaintenance(env Env, layout paths.Layout, force bool) error {
@@ -53,14 +87,17 @@ func ensureMaintenance(env Env, layout paths.Layout, force bool) error {
 		return err
 	}
 	if err = manager.Schedule(settings); err != nil {
-		return err
+		return schedulingError{err}
 	}
 	settings.Scheduled = true
 	if err = settings.Save(layout); err != nil {
 		return err
 	}
 	// Retirement is last: an old launchd refresh may terminate itself here.
-	return manager.RetireRefresh()
+	if err = manager.RetireRefresh(); err != nil {
+		return schedulingError{err}
+	}
+	return nil
 }
 
 func maintenanceCommands(parent *cobra.Command, env Env, exit *int, action string) {
@@ -108,7 +145,7 @@ func runMaintenanceSetting(env Env, action, field string, args []string) int {
 			return fail(env, err)
 		}
 	}
-	return withOperation(env, func() int {
+	return withOperation(env, func(env Env) int {
 		if _, err := os.Stat(layout.ConfigFile()); err != nil {
 			return fail(env, i18n.New("sbc is not installed; run 'sbc install'"))
 		}
@@ -163,14 +200,23 @@ func runMaintenance(env Env, action string, background bool) int {
 	if background && !p.Enabled {
 		return 0
 	}
+	guard, err := newStartupGuard(env, layout)
+	if err != nil {
+		return fail(env, err)
+	}
+	defer guard.close()
+	env = guard.scope(env)
 	if err := recoverMaintenance(env, layout); err != nil {
+		return fail(env, err)
+	}
+	if err = guard.settle(); err != nil {
 		return fail(env, err)
 	}
 	if _, err = os.Stat(layout.ConfigFile()); err != nil {
 		return fail(env, i18n.New("sbc is not installed; run 'sbc install'"))
 	}
 	if !background {
-		if err = ensureMaintenance(env, layout, false); err != nil {
+		if err = tryMaintenanceSchedule(env, layout); err != nil {
 			return fail(env, err)
 		}
 		settings, err = maintenance.Load(layout)
@@ -225,37 +271,25 @@ func printMaintenance(env Env, settings maintenance.Settings) {
 	}
 }
 
-// initializeMaintenance runs when an upgraded proxy wrapper starts. Older sbc
-// versions replace the executable and restart this wrapper, but do not know how
-// to install the new schedules. Never block a restart performed under our lock.
+// initializeMaintenance runs only with operation, shared permission, and engine
+// leases held by prepareStartup. An authorized restart skips this setup.
 func initializeMaintenance(env Env, layout paths.Layout) error {
 	if _, err := os.Stat(layout.ConfigFile()); err != nil {
 		if _, pending := os.Stat(install.RecoveryFile(layout)); os.IsNotExist(pending) {
 			return nil
 		}
 	}
-	unlock, err := maintenance.Lock(layout)
-	if errors.Is(err, maintenance.ErrBusy) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer unlock()
 	if _, err := os.Stat(install.RecoveryFile(layout)); !os.IsNotExist(err) {
 		if _, err := env.Installer(layout, env.Stdout).Recover(nil, nil); err != nil {
 			return err
 		}
 	}
 	if _, err := os.Stat(layout.SBCVersion()); os.IsNotExist(err) {
-		if err = paths.WriteFile(layout.SBCVersion(), []byte(env.Version+"\n"), 0o600); err != nil {
+		if err := paths.WriteFile(layout.SBCVersion(), []byte(env.Version+"\n"), 0o600); err != nil {
 			return err
 		}
 	}
-	if err = ensureMaintenance(env, layout, false); err != nil {
-		fmt.Fprintln(env.Stderr, i18n.Errorf("Background scheduling failed: %w", err))
-	}
-	return nil
+	return tryMaintenanceSchedule(env, layout)
 }
 
 // Old scheduled tasks may be the first new executable invocation on a stopped
@@ -270,7 +304,7 @@ func runLegacyUpdate(env Env) int {
 		return fail(env, err)
 	}
 	if !settings.Scheduled {
-		return withOperation(env, func() int {
+		return withOperation(env, func(env Env) int {
 			if _, err := os.Stat(layout.ConfigFile()); err != nil {
 				return fail(env, i18n.New("sbc is not installed; run 'sbc install'"))
 			}
@@ -281,7 +315,7 @@ func runLegacyUpdate(env Env) int {
 			return 0
 		})
 	}
-	return withOperation(env, func() int {
+	return withOperation(env, func(env Env) int {
 		manager, err := env.Service(layout.SBC())
 		if err != nil {
 			return fail(env, err)
@@ -331,18 +365,10 @@ func maintenanceHooks(env Env, layout paths.Layout) (func() error, func() error,
 		if !active {
 			return nil
 		}
-		return manager.Restart()
+		return startManaged(env, layout, manager, true)
 	}
-	ready := func() error {
-		if !active {
-			return nil
-		}
-		client, _, err := localAPI(layout)
-		if err != nil {
-			return err
-		}
-		return client.WaitReady(10 * time.Second)
-	}
+	// startManaged retains its permission grant until readiness completes.
+	ready := func() error { return nil }
 	return restart, ready, nil
 }
 
@@ -356,7 +382,13 @@ func recoverMaintenance(env Env, layout paths.Layout) error {
 	if err != nil {
 		return err
 	}
-	_, err = env.Installer(layout, env.Stdout).Recover(restart, ready)
+	installer := env.Installer(layout, env.Stdout)
+	manager, err := env.Service(layout.SBC())
+	if err != nil {
+		return err
+	}
+	installer.BeforeRestore = func() error { return env.startup.stop(manager) }
+	_, err = installer.Recover(restart, ready)
 	if err == nil {
 		fmt.Fprintln(env.Stdout, i18n.T("Recovered the previous binaries and configuration after an interrupted upgrade."))
 	}

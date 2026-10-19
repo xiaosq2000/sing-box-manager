@@ -138,6 +138,16 @@ restart the proxy. Manual actions ignore the automatic switches. See
 [automatic maintenance](README_SBC.md#automatic-maintenance) for intervals, recovery,
 and migration from `sbc-refresh`.
 
+Background task registration or retirement failures do not block manual refresh,
+upgrade, start, or restart. These commands report a warning and still attempt their
+action. Invalid maintenance settings, failed settings writes, and failed recovery
+remain errors.
+
+The wrapper holds an engine lock until sing-box exits. A controlled startup window
+allows maintenance to restart it without admitting unrelated starts during file
+replacement. Failed startup must stop before rollback. If Windows refuses process
+cleanup setup, the wrapper does not start the engine.
+
 Windows permits renaming a running executable but can prevent its removal.
 Upgrades use separate retired filenames so rollback can restore a binary while
 the updater still runs. A later proxy start removes retired executables and

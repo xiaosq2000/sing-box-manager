@@ -126,14 +126,32 @@ Manual actions ignore the automatic switches. An upgrade can adapt configuration
 even when automatic refresh is off. Upgrades use the operator's signed release,
 not an upstream "latest" release.
 
+Failures to register background tasks or retire legacy tasks produce a warning
+during manual `refresh`, `upgrade`, `start`, `restart`, and `run`. These commands
+still attempt their requested action. Invalid maintenance settings, failed settings
+writes, and failed upgrade recovery remain errors. Policy-setting commands still
+fail if scheduling fails, but retain the saved policy. After repairing the scheduler,
+repeat the same policy-setting command to retry.
+
 `sbc` verifies downloads and validates candidate configuration before replacing
 live files. The staged client must report the signed build version. Restart or
 readiness failures trigger restoration of the previous binaries and configuration. Upgrading only `sbc` does
 not restart the Unix proxy when its configuration stays unchanged.
 
-An operation lock serializes maintenance and configuration writes. A conflicting
-manual command reports that the client is busy. A background task waits for up
-to 10 minutes. Changing a policy does not cancel an upgrade already in progress.
+An operation lock serializes maintenance, configuration writes, and commands that
+start the proxy. A conflicting manual command reports that the client is busy.
+A background task waits for up to 10 minutes. Changing a policy does not cancel
+an upgrade already in progress.
+
+An engine lock prevents duplicate managed and foreground instances. Unix keeps
+this lock across `exec`; Windows retains it in its existing wrapper. Stop a
+foreground instance before starting the managed service.
+
+A separate permission lock allows an updater's restart only after its files are
+complete. The updater retains the operation lock until readiness finishes.
+Every runtime writer passes the permission barrier before checking engine startup.
+A startup timeout blocks writes. Failed startup must stop before rollback can
+replace files. If shutdown fails, recovery files remain for repair.
 
 The private `maintenance.json` file stores policies and recent action results.
 Invalid settings stop maintenance rather than enable defaults. `sbc status` shows
@@ -150,9 +168,10 @@ files for repair. Policy queries and changes do not perform this recovery.
 
 Intervals are approximate. Linux and Windows spread scheduled starts to reduce
 simultaneous downloads. The proxy remains stopped if it was stopped before a
-maintenance action. The zero-byte operation lock sits next to the config directory
-and remains after uninstall so concurrent commands cannot acquire different locks.
-It contains no credentials.
+maintenance action. Three zero-byte lock files sit next to the config directory:
+`.operation.lock`, `.engine.lock`, and `.startup.lock`, each prefixed with the
+config directory's name. They remain after uninstall to prevent lock-file races.
+They contain no credentials. File existence never grants startup permission.
 
 ### Migration from the fixed refresh task
 

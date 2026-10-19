@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -89,6 +90,35 @@ func checkMaintenance(t *testing.T, l paths.Layout) {
 		t.Fatalf("policy change restarted the proxy: %s -> %s", pid, now)
 	}
 	expect(t, run(t, nil, sbc, "status"), "refresh: auto off, interval 30m", "upgrade: auto off, interval 24h")
+	if busy, err := maintenance.EngineBusy(l); err != nil || !busy {
+		t.Fatalf("native engine did not retain its lifetime lease: %t %v", busy, err)
+	}
+	unlock, err := maintenance.Lock(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"on"}, {"desktop", "on"}, {"docker", "on", "--yes"}, {"run"}} {
+		if output, code := runCode(t, nil, sbc, args...); code != 1 || !strings.Contains(output, "another sbc") {
+			unlock()
+			t.Fatalf("start bypassed native transaction: %v %d %s", args, code, output)
+		}
+	}
+	unlock()
+	if lease, err := maintenance.LockEngine(l); !errors.Is(err, maintenance.ErrBusy) {
+		lease.Close()
+		t.Fatalf("native engine lost its lease: %v", err)
+	}
+	if _, code := runCode(t, nil, sbc, "run"); code != 1 {
+		t.Fatal("duplicate native engine accepted")
+	}
+	run(t, nil, sbc, "stop")
+	if busy, err := maintenance.EngineBusy(l); err != nil || busy {
+		t.Fatalf("stop retained engine lease: %t %v", busy, err)
+	}
+	run(t, nil, sbc, "start")
+	if busy, err := maintenance.EngineBusy(l); err != nil || !busy {
+		t.Fatalf("restart lost engine lease: %t %v", busy, err)
+	}
 }
 
 func seedLegacyRefresh(t *testing.T, l paths.Layout) {

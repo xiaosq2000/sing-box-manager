@@ -341,9 +341,14 @@ Client:
   `auto [on|off]` and `interval [duration]` controls. Both default to on, every 6h.
   Saved policies survive reinstall and upgrades. Policy changes do not immediately
   upgrade or restart the proxy. Manual actions ignore automatic switches.
+  A background task registration failure warns but does not block manual refresh
+  or upgrade. Invalid settings and failed recovery still block these actions.
 - Refresh sends the ETag. A changed config must pass `sing-box check` and retain
   a working service. Upgrades validate candidates before replacing live files.
-  Failed upgrades restore binaries and configuration. An operation lock prevents
+  Failed upgrades stop the candidate before restoring binaries and configuration.
+  An engine lifetime lock spans Unix exec or the Windows wrapper's child lifetime.
+  Shared/exclusive startup permission separates file writes from controlled restarts.
+  An operation lock prevents
   conflicting maintenance writes. A recovery record protects interrupted commits.
 - The installed build receipt prevents a successful upgrade from recreating its
   own notification. The old `update` task entry only migrates schedules. Remove

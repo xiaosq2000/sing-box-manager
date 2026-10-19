@@ -464,7 +464,12 @@ func TestRefreshRestoresThePreviousConfigWhenSingBoxDoesNotComeUp(t *testing.T) 
 
 	changed, err := i.Refresh(link(t, p),
 		func() error { restarts++; return nil },
-		func() error { return errors.New("no answer") },
+		func() error {
+			if restarts == 1 {
+				return errors.New("no answer")
+			}
+			return nil
+		},
 	)
 
 	if err == nil || changed || !strings.Contains(err.Error(), "the previous one is back") {

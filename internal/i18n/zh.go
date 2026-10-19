@@ -4,6 +4,8 @@ package i18n
 // keeps the English message's values in the same order, so the same arguments
 // fill it. Names of programs and commands stay as they are.
 var zh = map[string]string{
+	"Cannot start sing-box without process cleanup: %w":                               "无法确保退出时清理子进程，不能启动 sing-box：%w",
+	"The local API port is occupied. Stop the other proxy before starting sing-box.":  "本地 API 端口已被占用。请先停止其他代理，再启动 sing-box。",
 	"the downloaded sbc failed its version check":                                     "下载的 sbc 未通过版本检查",
 	"invalid upgrade recovery record":                                                 "升级恢复记录无效",
 	"An interrupted upgrade needs recovery before another upgrade.":                   "必须先恢复已中断的升级，才能再次升级。",

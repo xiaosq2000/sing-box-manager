@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
@@ -14,6 +13,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
+	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
@@ -192,18 +192,18 @@ func runService(env Env, action string) int {
 	}
 	if action != "stop" {
 		if _, err := os.Stat(layout.ConfigFile()); err == nil {
-			if err := ensureMaintenance(env, layout, false); err != nil {
+			if err := tryMaintenanceSchedule(env, layout); err != nil {
 				return fail(env, err)
 			}
 		}
 	}
 	switch action {
 	case "start":
-		err = manager.Start()
+		err = startManaged(env, layout, manager, false)
 	case "stop":
-		err = manager.Stop()
+		err = env.startup.stop(manager)
 	default:
-		err = manager.Restart()
+		err = startManaged(env, layout, manager, true)
 	}
 	if err != nil {
 		return fail(env, err)
@@ -271,13 +271,13 @@ func runPort(env Env, args []string) int {
 		return fail(env, deskErr)
 	}
 	local.ListenPort = port
-	if err := applyLocal(layout, manager, local); err != nil {
+	if err := applyLocal(env, layout, manager, local); err != nil {
 		return fail(env, err)
 	}
 	if env.OS == "windows" {
 		if err := env.Windows.Move(previous, port, local.Username, local.Password); err != nil {
 			local.ListenPort = previous
-			if rollback := applyLocal(layout, manager, local); rollback != nil {
+			if rollback := applyLocal(env, layout, manager, local); rollback != nil {
 				return fail(env, fmt.Errorf("%w; %v", err, rollback))
 			}
 			return fail(env, err)
@@ -293,7 +293,7 @@ func runPort(env Env, args []string) int {
 			if env.OS == "windows" {
 				rollbackEnv := env.Windows.Move(port, previous, local.Username, local.Password)
 				local.ListenPort = previous
-				rollbackConfig := applyLocal(layout, manager, local)
+				rollbackConfig := applyLocal(env, layout, manager, local)
 				return fail(env, errors.Join(err, rollbackEnv, rollbackConfig))
 			}
 			return fail(env, err)
@@ -311,10 +311,7 @@ func runPort(env Env, args []string) int {
 
 // applyLocal rewrites the config with new local settings, checks it, and
 // restarts a running sing-box, restoring the old config if that fails.
-func applyLocal(layout paths.Layout, manager interface {
-	Active() bool
-	Restart() error
-}, local singbox.Local) error {
+func applyLocal(env Env, layout paths.Layout, manager service.Manager, local singbox.Local) error {
 	current, err := os.ReadFile(layout.ConfigFile())
 	if err != nil {
 		return err
@@ -331,20 +328,27 @@ func applyLocal(layout paths.Layout, manager interface {
 		os.Remove(staged)
 		return err
 	}
+	if err := paths.WriteFile(layout.ConfigFile()+".prev", current, 0o600); err != nil {
+		return err
+	}
 	if err := os.Rename(staged, layout.ConfigFile()); err != nil {
 		return err
 	}
 	if !manager.Active() {
 		return nil
 	}
-	if err := manager.Restart(); err == nil {
-		client, _, err := localAPI(layout)
-		if err == nil && client.WaitReady(10*time.Second) == nil {
-			return nil
-		}
+	if err := startManaged(env, layout, manager, true); err == nil {
+		return nil
 	}
-	paths.WriteFile(layout.ConfigFile(), current, 0o600)
-	manager.Restart()
+	if err := env.startup.beforeRestore(); err != nil {
+		return err
+	}
+	if err := paths.WriteFile(layout.ConfigFile(), current, 0o600); err != nil {
+		return err
+	}
+	if err := startManaged(env, layout, manager, true); err != nil {
+		return err
+	}
 	return i18n.New("sing-box did not start with the change, so the previous config is back")
 }
 

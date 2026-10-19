@@ -34,11 +34,14 @@ type Env struct {
 	Windows *winsettings.Environment
 	Version string
 	// OS is the platform sbc runs on, as runtime.GOOS names it.
-	OS     string
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
-	Layout func() (paths.Layout, error)
+	OS             string
+	Stdin          io.Reader
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Layout         func() (paths.Layout, error)
+	CheckVacant    func(paths.Layout) error
+	startup        *startupGuard
+	startupTimeout time.Duration
 	// Exec replaces the process with another program. On Windows it runs the
 	// program as a child instead, writing its output to the writer and its
 	// process id to pidFile.
@@ -67,14 +70,15 @@ type Env struct {
 // DefaultEnv runs commands against this machine.
 func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 	return Env{
-		Windows: &winsettings.Environment{Registry: winsettings.PowerShell{}},
-		Version: version,
-		OS:      runtime.GOOS,
-		Stdin:   stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
-		Layout:  paths.Default,
-		Exec:    execProcess,
+		Windows:     &winsettings.Environment{Registry: winsettings.PowerShell{}},
+		Version:     version,
+		OS:          runtime.GOOS,
+		Stdin:       stdin,
+		Stdout:      stdout,
+		Stderr:      stderr,
+		Layout:      paths.Default,
+		CheckVacant: controllerVacant,
+		Exec:        execProcess,
 		Installer: func(layout paths.Layout, log io.Writer) *install.Installer {
 			return &install.Installer{
 				Client: install.NewClient(),
@@ -265,16 +269,8 @@ func installService(env Env, layout paths.Layout) error {
 	if err := ensureMaintenance(env, layout, true); err != nil {
 		return err
 	}
-	running := manager.Active()
-	if err := manager.Start(); err != nil {
-		return err
-	}
-	// A reinstall wrote a new config, which a running sing-box reads only when
-	// it restarts.
-	if running {
-		return manager.Restart()
-	}
-	return nil
+	// Reinstall must restart an active service to load its new configuration.
+	return startManaged(env, layout, manager, manager.Active())
 }
 
 func localAPI(layout paths.Layout) (*api.Client, singbox.Local, error) {
@@ -408,29 +404,9 @@ func runRefresh(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	manager, err := env.Service(layout.SBC())
+	restart, ready, err := maintenanceHooks(env, layout)
 	if err != nil {
 		return fail(env, err)
-	}
-	// A foreground `sbc run` picks the config up at its next start. A service
-	// that runs now restarts, and again after a rollback, when a config that
-	// could not start may have left it stopped.
-	managed := manager.Active()
-	restart := func() error {
-		if !managed {
-			return nil
-		}
-		return manager.Restart()
-	}
-	ready := func() error {
-		if !managed {
-			return nil
-		}
-		client, _, err := localAPI(layout)
-		if err != nil {
-			return err
-		}
-		return client.WaitReady(10 * time.Second)
 	}
 	installer := env.Installer(layout, env.Stdout)
 	changed, err := installer.Refresh(link, restart, ready)
@@ -527,6 +503,11 @@ func runUninstall(env Env, yes bool) int {
 			}
 		}
 	}
+	if env.startup != nil {
+		if err := env.startup.waitEngine(false); err != nil {
+			return fail(env, err)
+		}
+	}
 	dirs := []string{layout.Config}
 	if layout.Data != layout.Config {
 		dirs = append(dirs, layout.Data)
@@ -561,7 +542,12 @@ func runSingBox(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if err := initializeMaintenance(env, layout); err != nil {
+	engine, err := prepareStartup(env, layout)
+	if err != nil {
+		return fail(env, err)
+	}
+	defer engine.Close()
+	if err := env.CheckVacant(layout); err != nil {
 		return fail(env, err)
 	}
 	binary := layout.SingBox()
@@ -586,6 +572,9 @@ func runSingBox(env Env) int {
 			defer log.Close()
 			output = log
 		}
+	}
+	if err := engine.KeepAcrossExec(); err != nil {
+		return fail(env, err)
 	}
 	if err := env.Exec(binary, args, output, layout.PIDFile()); err != nil {
 		return fail(env, i18n.Errorf("start sing-box: %w; run 'sbc install' first", err))

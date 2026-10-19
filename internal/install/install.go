@@ -91,6 +91,9 @@ type Installer struct {
 	Arch   string
 	Log    io.Writer
 	Auth   Auth
+	// BeforeRestore revokes startup permission and stops a failed candidate.
+	// An error must preserve recovery files without overwriting live files.
+	BeforeRestore func() error
 	// Shared reports whether other people use this machine. Nil means
 	// SharedHost.
 	Shared func() bool
@@ -521,10 +524,20 @@ func (i *Installer) Refresh(link Link, restart func() error, ready func() error)
 			return true, paths.WriteFile(i.Layout.ETag(), []byte(etag+"\n"), 0o600)
 		}
 	}
+	if i.BeforeRestore != nil {
+		if err := i.BeforeRestore(); err != nil {
+			return false, err
+		}
+	}
 	if err := os.Rename(previous, i.Layout.ConfigFile()); err != nil {
 		return false, err
 	}
-	restart()
+	if err := restart(); err != nil {
+		return false, err
+	}
+	if err := ready(); err != nil {
+		return false, err
+	}
 	return false, i18n.New("sing-box did not start with the new config, so the previous one is back")
 }
 

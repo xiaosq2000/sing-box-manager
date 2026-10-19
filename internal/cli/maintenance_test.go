@@ -103,23 +103,34 @@ func TestMaintenanceMigratesOnceAndReinstallPreservesPolicies(t *testing.T) {
 	}
 }
 
-func TestMaintenanceStartupDoesNotBlockAnUpgradeOrForgetSavedSettings(t *testing.T) {
+func TestMaintenanceStartupRequiresPermissionAndPreservesSavedSettings(t *testing.T) {
 	h := newHarness(t)
 	unlock, err := maintenance.Lock(h.layout)
 	if err != nil {
 		t.Fatal(err)
 	}
-	initializeMaintenance(h.env, h.layout)
+	if engine, err := prepareStartup(h.env, h.layout); err == nil {
+		engine.Close()
+		t.Fatal("startup bypassed the operation lock")
+	}
 	if len(h.svc.calls) != 0 {
 		t.Fatal("proxy startup changed schedules during an upgrade")
 	}
 	unlock()
-	initializeMaintenance(h.env, h.layout)
+	engine, err := prepareStartup(h.env, h.layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.Close()
 	if !h.svc.plan.Refresh.Enabled || !h.svc.plan.Upgrade.Enabled {
 		t.Fatal("startup did not migrate")
 	}
 	calls := len(h.svc.calls)
-	initializeMaintenance(h.env, h.layout)
+	engine, err = prepareStartup(h.env, h.layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.Close()
 	if len(h.svc.calls) != calls {
 		t.Fatal("startup reinstalled schedules")
 	}
@@ -191,6 +202,84 @@ func TestFirstUpgradeClearsTheHintAndRefreshUsesTheInstalledBuild(t *testing.T) 
 	settings, err = maintenance.Load(h.layout)
 	if err != nil || settings.Upgrade.Result != "ok" || settings.Upgrade.LastSuccess.IsZero() || settings.Refresh.Result != "ok" || settings.Refresh.Enabled || settings.Upgrade.Enabled {
 		t.Fatalf("execution state: %+v %v", settings, err)
+	}
+}
+
+func TestManualMaintenanceContinuesWhenSchedulingFails(t *testing.T) {
+	for _, action := range []string{"refresh", "upgrade"} {
+		t.Run(action, func(t *testing.T) {
+			h := newHarness(t)
+			h.svc.active = false
+			h.svc.scheduleErr = errors.New("fixture scheduler unavailable")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if action == "refresh" {
+					w.WriteHeader(http.StatusNotModified)
+				} else {
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}
+			}))
+			defer server.Close()
+			paths.WriteFile(h.layout.Link(), []byte(server.URL+"/sub/abcdefghijklmnopqrstuv\n"), 0o600)
+			paths.WriteFile(h.layout.ETag(), []byte("fixture-etag"), 0o600)
+			paths.WriteFile(h.layout.SingBoxVersion(), []byte("1.14.2\n"), 0o600)
+			reached := false
+			h.env.Installer = func(l paths.Layout, log io.Writer) *install.Installer {
+				reached = true
+				return &install.Installer{Layout: l, Client: server.Client(), Log: log}
+			}
+			code := Run(h.env, []string{action})
+			if !reached || !strings.Contains(h.errOut.String(), "Background scheduling failed") {
+				t.Fatalf("manual action blocked: %d, installer=%t, %s", code, reached, h.errOut)
+			}
+			settings, err := maintenance.Load(h.layout)
+			if err != nil || settings.Scheduled || settings.Policy(action).LastAttempt.IsZero() {
+				t.Fatalf("lost retry/action state: %+v %v", settings, err)
+			}
+			if action == "refresh" && (code != 0 || settings.Refresh.Result != "ok") {
+				t.Fatalf("successful refresh: %d %+v %s", code, settings, h.errOut)
+			}
+			if action == "upgrade" && (code != 1 || settings.Upgrade.Result != "failed") {
+				t.Fatalf("failed download was hidden: %d %+v", code, settings)
+			}
+			if h.svc.active {
+				t.Fatal("manual maintenance started a stopped proxy")
+			}
+		})
+	}
+}
+
+func TestManualMaintenanceStillRejectsInvalidState(t *testing.T) {
+	for _, action := range []string{"refresh", "upgrade", "start", "restart"} {
+		for _, state := range []string{"settings", "recovery"} {
+			t.Run(action+"/"+state, func(t *testing.T) {
+				h := newHarness(t)
+				h.svc.scheduleErr = errors.New("fixture scheduler unavailable")
+				file := maintenance.File(h.layout)
+				if state == "recovery" {
+					file = install.RecoveryFile(h.layout)
+				}
+				paths.WriteFile(file, []byte("invalid fixture"), 0o600)
+				if code := Run(h.env, []string{action}); code != 1 || len(h.svc.calls) != 0 {
+					t.Fatalf("unsafe continuation: %d %v %s", code, h.svc.calls, h.errOut)
+				}
+			})
+		}
+	}
+}
+
+func TestServiceStartsContinueWhenSchedulingFails(t *testing.T) {
+	for _, action := range []string{"start", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			h := newHarness(t)
+			h.svc.active = false
+			h.svc.scheduleErr = errors.New("fixture scheduler unavailable")
+			if code := Run(h.env, []string{action}); code != 0 || !strings.Contains(h.errOut.String(), "Background scheduling failed") {
+				t.Fatalf("%s: %d %s", action, code, h.errOut)
+			}
+			if h.svc.calls[len(h.svc.calls)-1] != "start" {
+				t.Fatalf("service action missing: %v", h.svc.calls)
+			}
+		})
 	}
 }
 

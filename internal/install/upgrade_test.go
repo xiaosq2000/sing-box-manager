@@ -169,6 +169,26 @@ func TestFailedFileRecoveryDoesNotRestartWithMixedFiles(t *testing.T) {
 	}
 }
 
+func TestClientOnlyUpgradeChecksStagedConfigWithInstalledEngine(t *testing.T) {
+	p, i, l := installed(t)
+	// A mapped or unreadable retired binary must not be copied into staging.
+	retired := filepath.Join(l.Bin(), "sing-box.old-fixture")
+	if err := os.Mkdir(retired, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(retired, 0o700) })
+	checker := "#!/bin/sh\n[ \"$0\" = '" + l.SingBox() + "' ] && [ \"$1\" = check ] && [ -f \"$5\" ] && [ -d \"$3/rules\" ] && [ ! -e \"$3/bin\" ]\n"
+	if err := paths.WriteFile(l.SingBox(), []byte(checker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := i.Upgrade(link(t, p), "previous", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(l.SingBox()); string(data) != checker {
+		t.Fatal("replaced the unchanged engine")
+	}
+}
+
 func TestUpgradeRecordsInstalledBuildAndDoesNotRestartForSbcOnly(t *testing.T) {
 	p, i, l := installed(t)
 	os.WriteFile(l.SBCVersion(), []byte("previous\n"), 0o600)

@@ -59,6 +59,11 @@ func (i *Installer) Recover(restart, ready func() error) (bool, error) {
 	if err = recovery.validate(i.Layout); err != nil {
 		return false, err
 	}
+	if i.BeforeRestore != nil {
+		if err = i.BeforeRestore(); err != nil {
+			return false, err
+		}
+	}
 	if err = recovery.restore(); err != nil {
 		return false, err
 	}

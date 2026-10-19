@@ -54,12 +54,12 @@ func (i *Installer) Upgrade(link Link, sbcVersion string, restart, ready func() 
 	if err != nil {
 		return Available{}, err
 	}
+	checkBinary := i.Layout.SingBox()
 	if available.SingBox != "" {
 		if err = candidate.installSingBox(link, manifest, i.OS+"-"+i.Arch); err != nil {
 			return Available{}, err
 		}
-	} else if err = copyDirectory(i.Layout.Bin(), candidate.Layout.Bin()); err != nil {
-		return Available{}, err
+		checkBinary = candidate.Layout.SingBox()
 	}
 	if err = candidate.installRules(link, manifest); err != nil {
 		return Available{}, err
@@ -91,7 +91,7 @@ func (i *Installer) Upgrade(link Link, sbcVersion string, restart, ready func() 
 	if err = paths.WriteFile(candidate.Layout.ConfigFile(), patched, 0o600); err != nil {
 		return Available{}, err
 	}
-	if err = singbox.Check(candidate.Layout.SingBox(), candidate.Layout.Data, candidate.Layout.ConfigFile()); err != nil {
+	if err = singbox.Check(checkBinary, candidate.Layout.Data, candidate.Layout.ConfigFile()); err != nil {
 		return Available{}, err
 	}
 
@@ -174,7 +174,13 @@ func (i *Installer) Upgrade(link Link, sbcVersion string, restart, ready func() 
 	}
 	restartNeeded := available.SingBox != "" || !bytes.Equal(current, patched) || (i.OS == "windows" && available.SBC != "")
 	recoverFiles := func(cause error) (Available, error) {
-		recovery := snapshot.restore()
+		var recovery error
+		if i.BeforeRestore != nil {
+			recovery = i.BeforeRestore()
+		}
+		if recovery == nil {
+			recovery = snapshot.restore()
+		}
 		if recovery == nil && restartNeeded && restart != nil {
 			recovery = errors.Join(recovery, restart())
 			if ready != nil {
@@ -236,21 +242,6 @@ func copyFile(source, destination string) error {
 	}
 	_, err = io.Copy(out, in)
 	return errors.Join(err, out.Close())
-}
-func copyDirectory(source, destination string) error {
-	return filepath.WalkDir(source, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		return copyFile(path, filepath.Join(destination, rel))
-	})
 }
 func replaceFile(source, destination string) error {
 	data, err := os.ReadFile(source)
