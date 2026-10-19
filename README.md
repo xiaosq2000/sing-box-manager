@@ -37,7 +37,7 @@ untrusted public pull requests to a persistent self-hosted runner.
 The build and deploy environment targets Linux x86-64. Install Pixi and run commands
 from the repository root.
 
-The code-built configurations target sing-box **1.14.2**. Pixi provides Python 3.12
+The code-built configurations target sing-box **1.14.3**. Pixi provides Python 3.12
 and Go 1.25.5 or later in the 1.25 series for custom server builds and the `sbc`
 client.
 

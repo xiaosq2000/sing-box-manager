@@ -49,7 +49,7 @@ via `--config` or `SBM_CONFIG` for the environment you want `sbm` to use.
 The unified config file contains both app settings and inventory data:
 
 ```yaml
-sing_box_version: 1.14.2
+sing_box_version: 1.14.3
 
 deployment:
   host: vpn.example.com
@@ -110,10 +110,10 @@ Important distinctions:
 - `trojan.users[].password` is only for Trojan config rendering
 - `hysteria2.users[].password` is only for Hysteria2 config rendering
 - `naive.users[].password` is only for Naive config rendering
-- an empty or entirely disabled `naive.users` roster omits the Naive server inbound; sing-box 1.14.2 requires at least one user for it
+- an empty or entirely disabled `naive.users` roster omits the Naive server inbound; sing-box requires at least one user for it
 - `hysteria2.obfs_password` is the shared Hysteria2 salamander secret
 
-The configuration builders target sing-box 1.14.2. Hysteria2 keeps its default Chrome QUIC
+The configuration builders target sing-box 1.14.3. Hysteria2 keeps its default Chrome QUIC
 parroting, salamander obfuscation, and any configured bandwidth or port hopping.
 Chrome parroting requires an RSA or ECDSA server certificate; Ed25519 certificates
 are incompatible. Check the certificate used by the target server before its

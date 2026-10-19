@@ -255,7 +255,7 @@ def build_server_config(
     for protocol in SUPPORTED_PROTOCOLS:
         section = getattr(inventory, protocol)
         users = [user for user in section.users if user.enabled]
-        # Naive requires a non-empty roster in sing-box 1.14.2. Unlike the
+        # Naive requires a non-empty roster in sing-box. Unlike the
         # other protocols, its unused listener cannot be checked or started.
         if protocol == "naive" and not users:
             continue

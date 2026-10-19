@@ -1,4 +1,4 @@
-sing_box_version: 1.14.2
+sing_box_version: 1.14.3
 # Signs the manifest of sbc downloads. It stays on the build machine; see
 # docs/SECRET_HANDLING.md for how to generate one.
 # client_signing_key: base64-of-32-random-bytes
