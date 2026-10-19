@@ -139,6 +139,17 @@ for protocol, uri, image in zip(('trojan', 'hysteria2', 'naive'), imports, image
 inputs = [attrs for tag, attrs in parser.elements if tag == 'input']
 assert len(inputs) == 4 and all('readonly' in attrs for attrs in inputs)
 assert all(attrs['value'].startswith('https://testserver/sub/') for attrs in inputs)
+buttons = [attrs for tag, attrs in parser.elements if tag == 'button']
+statuses = {attrs['id']: attrs for tag, attrs in parser.elements if attrs.get('role') == 'status'}
+assert len(buttons) == len(statuses) == 4
+assert len({button['data-copy-status'] for button in buttons}) == 4
+for button in buttons:
+    assert button['data-copy-target'] in {attrs['id'] for attrs in inputs}
+    assert statuses[button['data-copy-status']]['aria-live'] == 'polite'
+    button_index = next(index for index, (_, attrs) in enumerate(parser.elements) if attrs == button)
+    status_index = next(index for index, (_, attrs) in enumerate(parser.elements) if attrs.get('id') == button['data-copy-status'])
+    assert 0 < status_index - button_index <= 2
+assert 'Protocols:' not in page.content.decode()
 assert len([attrs for tag, attrs in parser.elements if tag == 'a' and attrs.get('download')]) == 3
 assert all(attrs['src'].startswith('/static/') for tag, attrs in parser.elements if tag == 'script')
 alice.subscription_counter += 1

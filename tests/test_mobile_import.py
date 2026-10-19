@@ -71,14 +71,15 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const fixture = JSON.parse(fs.readFileSync(0, 'utf8'));
 let handler, copied, focused = false, selected = false;
-const button = {hidden: true, dataset: {copyTarget: 'fixture-link'}, addEventListener: (name, callback) => {assert.equal(name, 'click'); handler = callback;}};
+const button = {hidden: true, dataset: {copyTarget: 'fixture-link', copyStatus: 'fixture-status'}, addEventListener: (name, callback) => {assert.equal(name, 'click'); handler = callback;}};
 const input = {value: 'https://vpn.example.com/sub/synthetic-token?format=mobile&protocol=trojan', focus: () => {focused = true;}, select: () => {selected = true;}};
 const status = {textContent: ''};
+const otherStatus = {textContent: 'unchanged'};
 const navigator = fixture.clipboard === 'missing' ? {} : {clipboard: {writeText: async value => {
   if (fixture.clipboard === 'denied') throw new Error('fixture denial');
   copied = value;
 }}};
-const document = {querySelectorAll: () => [button], getElementById: id => id === 'copy-status' ? status : input};
+const document = {querySelectorAll: () => [button], getElementById: id => ({'fixture-status': status, 'fixture-link': input, 'other-status': otherStatus})[id]};
 vm.runInNewContext(fixture.source, {document, navigator});
 assert.equal(button.hidden, false);
 (async () => {
@@ -94,6 +95,7 @@ assert.equal(button.hidden, false);
     assert.match(status.textContent, /手动复制/);
   }
   assert.ok(!status.textContent.includes('synthetic-token'));
+  assert.equal(otherStatus.textContent, 'unchanged');
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """
     result = subprocess.run([node, "-e", script], input=json.dumps({"clipboard": clipboard, "source": source}), text=True, capture_output=True, timeout=20)

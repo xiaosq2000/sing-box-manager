@@ -23,13 +23,58 @@ iOS or Android app. Older app versions are not a compatibility target.
 
 Steps 4–6 are alternative import methods. The browser's copy button needs clipboard
 permission. If copying fails, the page selects the URL for manual copying.
-The URL remains visible when JavaScript is unavailable.
+Each copy button displays feedback beside its own URL. The URL remains visible
+when JavaScript is unavailable.
 
 **下载 JSON** saves the current configuration as a local file. This file does not
 receive subscription updates. Remote profiles are preferred.
 
 Mobile refresh settings belong to the mobile app. They are independent of the
 `sbc` scheduler on Linux, macOS, and Windows.
+
+## iPhone acceptance procedure
+
+Use an authorized private subscription. Install the latest stable app through the
+[official Apple client page](https://sing-box.sagernet.org/clients/apple/).
+Do not use a TestFlight build for stable-app acceptance.
+
+Before testing, record the iPhone model, iOS version, app version, and embedded core
+version. App and core versions are different values. Record an unavailable value
+as unknown, not as the repository's core version.
+
+1. Disable another VPN temporarily. Keep its profile for recovery.
+2. Open the test subscription page in Safari.
+3. Start with Trojan if the account provides it.
+4. Select **在 sing-box 中打开**. Confirm import and check the remote URL and protocol.
+5. Start the profile. Allow the iOS VPN configuration prompt.
+6. Open a known reachable HTTPS page. Check the app's connection status and traffic.
+7. Open an IP-check page through a proxy route. Confirm the expected proxy exit.
+8. Stop the profile. Refresh it in the app. Record the refresh result or timestamp.
+9. Start it again and repeat the connection check.
+10. Test a second import using the iPhone Camera and the QR on another screen.
+11. Test a third import by copying the protocol URL into a new remote profile.
+12. Repeat refresh and connection checks for each import method.
+
+Use separate names for the three test profiles. Only one profile needs to run at
+any time. Test other enabled protocols separately. Record protocol-specific
+failures rather than attributing every connection failure to import.
+
+For the manual method, use `/sub/<token>?format=mobile&protocol=trojan`.
+Do not use the browser page `/sub/<token>/` or a downloaded static JSON file.
+Check that the copy result appears beside the selected URL on the phone.
+An IP result proves the selected test route, not that every app uses the tunnel.
+
+The test page must contain the code under review. If the server does not have
+these changes, manual remote-URL tests can check the existing configuration
+endpoint, but cannot accept the new import button, QR, or clipboard behavior.
+Use an authorized private preview or request separate deployment approval.
+Do not expose credentials through a public preview or third-party tunnel.
+
+Record each result as pass, fail, or not tested. Include the tested commit, date,
+network type, protocol, import method, and a redacted error for failures.
+Do not include tokens, QR images, full profiles, or private screenshots in the
+public result. An unavailable Android device leaves Android acceptance pending.
+iOS results alone do not complete the two-platform acceptance gate.
 
 ## Credentials and revocation
 

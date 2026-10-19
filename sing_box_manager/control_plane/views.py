@@ -242,7 +242,6 @@ def subscription_page(request, token: str):
             "account": account,
             "subscription_url": subscription_url,
             "origin": origin,
-            "protocols": ", ".join(held),
             "mobile_profiles": mobile_imports(
                 subscription_url, str(account.username), held
             ),

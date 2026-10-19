@@ -16,8 +16,8 @@
         <p>链接就是凭据，不要分享。请保存此页面。丢失链接时，请联系管理员。</p>
         <label for="subscription-url">通用订阅链接</label>
         <input id="subscription-url" class="subscription-url" type="url" value="{{ subscription_url }}" readonly spellcheck="false" autocomplete="off" />
-        <button type="button" data-copy-target="subscription-url" hidden>复制订阅链接</button>
-        <p>Protocols: {{ protocols }}</p>
+        <button type="button" data-copy-target="subscription-url" data-copy-status="subscription-copy-status" hidden>复制订阅链接</button>
+        <p id="subscription-copy-status" role="status" aria-live="polite"></p>
         <h3>Linux / macOS install</h3>
         <pre>curl -fsSL "{{ origin }}/install.sh" | sh</pre>
         <h3>Windows PowerShell install</h3>
@@ -36,14 +36,14 @@
             <label for="mobile-url-{{ profile.protocol }}">{{ profile.label }} 远程配置链接</label>
             <input id="mobile-url-{{ profile.protocol }}" class="subscription-url" type="url" value="{{ profile.url }}" readonly spellcheck="false" autocomplete="off" />
             <p class="mobile-actions">
-              <button type="button" data-copy-target="mobile-url-{{ profile.protocol }}" hidden>复制链接</button>
+              <button type="button" data-copy-target="mobile-url-{{ profile.protocol }}" data-copy-status="mobile-copy-status-{{ profile.protocol }}" hidden>复制链接</button>
               <a href="{{ profile.url }}" download="{{ profile.protocol }}-client.json">下载 JSON</a>
             </p>
+            <p id="mobile-copy-status-{{ profile.protocol }}" role="status" aria-live="polite"></p>
           </section>
           {% endfor %}
         </div>
         <p>下载的 JSON 是当前配置的副本，不会自动更新。优先使用远程配置；自动更新设置由移动应用管理。</p>
-        <p id="copy-status" role="status" aria-live="polite"></p>
       </section>
       {% timezone traffic_timezone %} {% include 'control_plane/usage.html' %}
       {% include 'control_plane/domains.html' %} {% endtimezone %}

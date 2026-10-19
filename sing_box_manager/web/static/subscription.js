@@ -4,7 +4,7 @@ for (const button of document.querySelectorAll("[data-copy-target]")) {
   button.hidden = false;
   button.addEventListener("click", async () => {
     const input = document.getElementById(button.dataset.copyTarget);
-    const status = document.getElementById("copy-status");
+    const status = document.getElementById(button.dataset.copyStatus);
     if (!input || !status) return;
     try {
       await navigator.clipboard.writeText(input.value);
