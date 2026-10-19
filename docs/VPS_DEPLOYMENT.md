@@ -262,7 +262,7 @@ The packaged installer writes `/usr/local/etc/sing-box/config.json` as root-only
 and installs `/etc/systemd/system/sing-box.service`. Repeat `-p PROTOCOL` to select
 an exact subset of packaged inbounds; omitting it installs all available ones.
 The release omits Naive when `naive.users` is empty or every entry is disabled,
-because sing-box 1.14.2 rejects a Naive inbound without users. Explicitly selecting
+because sing-box rejects a Naive inbound without users. Explicitly selecting
 an omitted inbound fails before services are changed.
 
 Do not run an old packaged installer directly on a database-managed node. Use

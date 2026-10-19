@@ -107,10 +107,10 @@ archives for end users, but it swaps the server package over to a custom-built L
 `sing-box` binary so the single node config can use `experimental.v2ray_api`.
 It contains Trojan and Hysteria2 inbounds, plus Naive only when at least one
 `naive.users` entry is enabled. An empty or entirely disabled Naive roster omits
-that inbound: sing-box 1.14.2 rejects a Naive listener without users.
+that inbound: sing-box rejects a Naive listener without users.
 
-The config builders target [sing-box 1.14.2](https://github.com/SagerNet/sing-box/releases/tag/v1.14.2).
-Set `sing_box_version: 1.14.2` in the selected inventory and run `pixi install`
+The config builders target [sing-box 1.14.3](https://github.com/SagerNet/sing-box/releases/tag/v1.14.3).
+Set `sing_box_version: 1.14.3` in the selected inventory and run `pixi install`
 before building. The custom server build requires Go 1.25.5 or later in the 1.25
 series, as declared in `pixi.toml`.
 
@@ -614,7 +614,7 @@ Responses carry an `ETag`, and a matching `If-None-Match` gets `304`.
 `subscription-userinfo` reports this billing cycle's upload and download bytes when
 traffic stats are enabled, and `sbc status` shows the count from its last refresh. A
 client older than the pinned minor release, 1.14.0 for
-1.14.2, gets `409` with `sing_box_minimum`. An unknown token, or a user without a
+1.14.3, gets `409` with `sing_box_minimum`. An unknown token, or a user without a
 protocol, gets `404`. Without `format`, the endpoint serves a mobile profile.
 Unsupported formats or invalid `sbc` platform/version parameters get `400`.
 

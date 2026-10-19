@@ -538,7 +538,7 @@ class Settings(StrictModel):
     when missing; file loaders require the complete inventory whenever present.
     """
 
-    sing_box_version: str = "1.14.2"
+    sing_box_version: str = "1.14.3"
     default_protocol: str = "trojan"
     web: WebSettings = Field(default_factory=WebSettings)
     control_plane: ControlPlaneSettings = Field(default_factory=ControlPlaneSettings)
