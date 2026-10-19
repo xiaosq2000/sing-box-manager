@@ -46,6 +46,9 @@ func TestSystemdInstallsEnablesAndStartsTheUnits(t *testing.T) {
 	if !strings.Contains(string(proxy), `ExecStart="/home/me/.local/share/sbc/bin/sbc" run`) {
 		t.Errorf("sbc.service:\n%s", proxy)
 	}
+	if !strings.Contains(string(proxy), "ConditionPathExists=!/run/sbc-tun/active") {
+		t.Errorf("sbc.service lacks the Linux TUN guard:\n%s", proxy)
+	}
 	want := []string{
 		"systemctl --user daemon-reload",
 		"systemctl --user enable sbc.service",

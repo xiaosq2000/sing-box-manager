@@ -11,6 +11,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
+	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
 // errPasswordOnDesktop explains why a proxy with a password stays off the
@@ -55,6 +56,9 @@ func runDesktop(env Env, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintf(env.Stdout, "%s (%s)\n", state, desk.Name())
 		return 0
+	}
+	if args[0] == "on" && tun.Active() {
+		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before using the desktop proxy"))
 	}
 	if args[0] == "off" {
 		switch state {
@@ -184,6 +188,9 @@ func runDocker(env Env, action string, yes bool) int {
 	if action == "" {
 		fmt.Fprintln(env.Stdout, state)
 		return 0
+	}
+	if action == "on" && tun.Active() {
+		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before using the Docker proxy"))
 	}
 	if state == docker.Other {
 		return fail(env, i18n.Errorf("%s holds settings sbc did not write, so sbc leaves the Docker daemon alone", daemon.Path))

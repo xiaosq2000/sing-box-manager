@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 	"github.com/xiaosq2000/sing-box-manager/internal/trust"
+	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
@@ -65,11 +67,15 @@ type Env struct {
 	// TimeDownload fetches a page through a client and reports how many bytes
 	// arrived in how long.
 	TimeDownload func(client *http.Client, page string, limit time.Duration) (int64, time.Duration, error)
+	// TunHost reads the Linux TUN environment checks.
+	TunHost func() tun.Host
+	// Sudo runs this sbc as root and may prompt on the terminal.
+	Sudo func(self string, args []string) error
 }
 
 // DefaultEnv runs commands against this machine.
 func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
-	return Env{
+	env := Env{
 		Windows:     &winsettings.Environment{Registry: winsettings.PowerShell{}},
 		Version:     version,
 		OS:          runtime.GOOS,
@@ -103,7 +109,14 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 		},
 		Sites:        probe.DefaultSites,
 		TimeDownload: probe.Download,
+		TunHost:      tun.SystemHost,
 	}
+	env.Sudo = func(self string, args []string) error {
+		command := exec.Command("sudo", append([]string{"--", self}, args...)...)
+		command.Stdin, command.Stdout, command.Stderr = env.Stdin, env.Stdout, env.Stderr
+		return command.Run()
+	}
+	return env
 }
 
 func fail(env Env, err error) int {
@@ -123,6 +136,9 @@ func runInstall(env Env, options installOptions) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
+	}
+	if tun.Active() {
+		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before reinstalling the mixed proxy"))
 	}
 	// The link is a credential, so it comes from standard input rather than an
 	// argument, which would reach shell history and the process list.
@@ -290,6 +306,24 @@ func runStatus(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
+	if tun.Active() {
+		fmt.Fprintf(env.Stdout, i18n.T("tun:      active (%s)\n"), tun.InterfaceName)
+		state, stateErr := tun.ReadState(layout)
+		if stateErr != nil {
+			fmt.Fprintln(env.Stdout, i18n.T("api:      state unavailable; run 'sbc tun on' again"))
+			return 1
+		}
+		client := api.New(state.APIPort, state.APISecret)
+		route, _, routeErr := client.Modes()
+		protocol, _, protocolErr := client.Selected(api.ProxySelector)
+		if routeErr != nil || protocolErr != nil {
+			fmt.Fprintln(env.Stdout, i18n.T("api:      TUN API is not reachable; run 'sbc tun off' and 'sbc tun on' again"))
+			return 1
+		}
+		fmt.Fprintf(env.Stdout, i18n.T("route:    %s\nprotocol: %s\n"), route, protocol)
+		fmt.Fprintln(env.Stdout, i18n.T("capture:  TUN; run 'sbc tun off' to stop it"))
+		return 0
+	}
 	client, local, err := localAPI(layout)
 	if err != nil {
 		return fail(env, err)
@@ -433,6 +467,9 @@ func runUninstall(env Env, yes bool) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
+	}
+	if tun.Active() {
+		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before uninstalling"))
 	}
 	local, localErr := readLocal(layout)
 	// Taking the daemon off the proxy restarts Docker, which is worth its own

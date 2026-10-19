@@ -233,6 +233,8 @@ The Linux TUN config (`config_tun`) is the exception: it never uses the
 systemd-resolved stub, because captured upstream queries would loop back into
 it. It resolves direct and `ai-only` names through Aliyun, sets
 `dns.strategy: prefer_ipv4`, keeps NTP direct, and rejects other non-private UDP.
+The TUN service reads the staged rule snapshots and does not download rule
+updates; `sbc tun on` stages the installed snapshots again.
 
 The rule sets ship as binary snapshots under `sing-box/rules/`, with a
 `files.txt` inventory containing one filename per line.

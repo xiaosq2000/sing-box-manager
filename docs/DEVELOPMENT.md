@@ -241,7 +241,9 @@ The shell compatibility tests check Bash 3.2 for the shared server scripts and
 Windows PowerShell 5.1 for the hosted Windows installer. The Unix installer uses
 POSIX sh. These checks do not prove native service or networking behavior.
 The `sbc` workflow exercises supported client services on disposable runners.
-Linux TUN is not implemented in `sbc`; its acceptance checks belong to planned M1b.
+Linux TUN is implemented for native Linux; its unit tests cover the environment
+gate, config patch, staged files, capability probe, rollback and mixed-mode
+guard. The nested-VM acceptance checks remain in M1b.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
@@ -417,7 +419,7 @@ that database-managed users survive repeated installs, and exercises the shared 
 lock. It does not install or stop anything on the host. The runtime tests need permission to bind loopback
 sockets. They do not establish native Windows Task Scheduler, macOS launchd, or
 Linux TUN kernel compatibility. Native `sbc` lifecycle checks run on disposable
-CI runners. Future Linux TUN checks require a disposable Linux VM.
+CI runners. Linux TUN end-to-end checks require a disposable Linux VM.
 
 ## Generated protobuf stubs
 

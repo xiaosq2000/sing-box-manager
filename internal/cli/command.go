@@ -173,6 +173,39 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	docker.Flags().BoolVar(&dockerYes, "yes", false, i18n.T("Proceed without confirmation"))
 	docker.ValidArgsFunction = fixedChoices("on", "off")
 
+	tunCmd := add("tun on|off", i18n.T("Enable or disable the root-owned Linux TUN service"), "proxy", choiceArgs(1, "on", "off"), func(args []string) int {
+		if args[0] == "on" {
+			return withOperation(env, func(env Env) int { return runTunOn(env) })
+		}
+		return withOperation(env, func(env Env) int { return runTunOff(env) })
+	})
+	tunCmd.ValidArgsFunction = fixedChoices("on", "off")
+
+	var tunConfig, tunBinDir, tunRules, tunOwnerUser string
+	var tunOwnerUID int
+	tunApply := add("_tun-apply", "", "proxy", argumentRange(0, 0), func([]string) int {
+		return runTunApply(env, tunConfig, tunBinDir, tunRules, tunOwnerUID, tunOwnerUser)
+	})
+	tunApply.Hidden = true
+	tunApply.Flags().StringVar(&tunConfig, "config", "", "")
+	tunApply.Flags().StringVar(&tunBinDir, "bin-dir", "", "")
+	tunApply.Flags().StringVar(&tunRules, "rules", "", "")
+	tunApply.Flags().IntVar(&tunOwnerUID, "owner-uid", 0, "")
+	tunApply.Flags().StringVar(&tunOwnerUser, "owner-user", "", "")
+	tunApply.Args = func(cmd *cobra.Command, args []string) error {
+		if err := argumentRange(0, 0)(cmd, args); err != nil {
+			return err
+		}
+		if tunConfig == "" || tunBinDir == "" || tunRules == "" || tunOwnerUID <= 0 || tunOwnerUser == "" {
+			return i18n.New("_tun-apply: missing staging arguments")
+		}
+		return nil
+	}
+	tunOffRoot := add("_tun-off", "", "proxy", argumentRange(0, 0), func([]string) int {
+		return runTunOffRoot(env)
+	})
+	tunOffRoot.Hidden = true
+
 	add("status", i18n.T("Show service, proxy, route, protocol, shells, and traffic"), "proxy", argumentRange(0, 0), func([]string) int { return runStatus(env) })
 	var ip ipOptions
 	ipCmd := add("ip", i18n.T("Show exit IPs, with optional unauthenticated AI provider checks"), "proxy", argumentRange(0, 0), func([]string) int { return runIP(env, ip) })
