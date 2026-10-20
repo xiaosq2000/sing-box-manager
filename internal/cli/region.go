@@ -16,7 +16,10 @@ func regionFor(env Env, layout paths.Layout) *region.Manager {
 	if env.Region != nil {
 		return env.Region(layout)
 	}
-	return region.New(layout, os.Getenv)
+	manager := region.New(layout, os.Getenv)
+	// Follow Env.OS so fixtures can exercise the Linux path on other hosts.
+	manager.Supported = env.OS == "linux"
+	return manager
 }
 
 func runPrivacyRegion(env Env, args []string, timezone, language bool) int {

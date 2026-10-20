@@ -212,3 +212,17 @@ func TestLinkRefreshDisablesRegionWhenThePortalOmitsIt(t *testing.T) {
 		t.Fatal("cached profile remains")
 	}
 }
+
+func TestRegionForFollowsTheEnvPlatform(t *testing.T) {
+	layout := regionLayout(t)
+	env := DefaultEnv("1.2.3", strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	env.OS = "linux"
+	env.Region = nil
+	if manager := regionFor(env, layout); !manager.Supported {
+		t.Fatal("forced Linux environment produced an unsupported region manager")
+	}
+	env.OS = "darwin"
+	if manager := regionFor(env, layout); manager.Supported {
+		t.Fatal("darwin environment produced a supported region manager")
+	}
+}
