@@ -64,6 +64,11 @@ done
 curl -fsS "http://127.0.0.1:18080/sub/$TOKEN" | grep -q '"config_tun"'
 
 step "activate"
+echo "HOME=$HOME XDG_CONFIG_HOME=$XDG_CONFIG_HOME XDG_DATA_HOME=$XDG_DATA_HOME"
+ls -la "$XDG_CONFIG_HOME/sbc" "$XDG_DATA_HOME/sbc"
+cat "$XDG_CONFIG_HOME/sbc/subscription"
+cat "$XDG_DATA_HOME/sbc/sing-box.version"
+sbc link
 sbc tun on
 sbc status | grep -q 'tun:      active (sbc-tun0)'
 ip link show sbc-tun0 >/dev/null
