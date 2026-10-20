@@ -16,6 +16,9 @@ IMAGE_SUMS=https://cloud-images.ubuntu.com/noble/current/SHA256SUMS
 IMAGE="$CACHE/noble-server-cloudimg-amd64.img"
 
 cleanup() {
+	if [ -n "${upstream_pid:-}" ]; then
+		kill "$upstream_pid" 2>/dev/null || true
+	fi
 	rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -116,7 +119,7 @@ cat >"$ASSETS/tun.json" <<JSON
   ],
   "outbounds": [
     {"type": "selector", "tag": "proxy", "outbounds": ["socks"], "default": "socks"},
-    {"type": "socks", "tag": "socks", "server": "127.0.0.1", "server_port": $UPSTREAM_PORT},
+    {"type": "socks", "tag": "socks", "server": "10.0.2.2", "server_port": $UPSTREAM_PORT},
     {"type": "direct", "tag": "direct", "domain_resolver": {"server": "local"}}
   ],
   "route": {
@@ -128,7 +131,6 @@ cat >"$ASSETS/tun.json" <<JSON
       {"ip_is_private": true, "outbound": "direct"},
       {"network": "udp", "port": 123, "outbound": "direct"},
       {"network": "udp", "action": "reject"},
-      {"process_name": "sing-box", "outbound": "direct"},
       {"clash_mode": "direct", "outbound": "direct"},
       {"clash_mode": "ai-only", "outbound": "direct"},
       {"clash_mode": "china-direct", "outbound": "proxy"},
@@ -142,18 +144,25 @@ cat >"$ASSETS/tun.json" <<JSON
   }
 }
 JSON
-python3 - "$ASSETS/tun.json" "$ASSETS/portal/sub/$TOKEN" <<'PY'
+python3 - "$ASSETS/tun.json" "$ASSETS/portal/sub/$TOKEN" "$ASSETS/tun-failed.json" <<'PY'
 import json, sys
 config = json.load(open(sys.argv[1]))
 json.dump({"version": 1, "config": {}, "config_tun": config}, open(sys.argv[2], "w"))
+failed = json.loads(json.dumps(config))
+for outbound in failed["outbounds"]:
+    if outbound.get("tag") == "socks":
+        outbound["server_port"] = 9
+json.dump({"version": 1, "config": {}, "config_tun": failed}, open(sys.argv[3], "w"))
 PY
 printf 'http://127.0.0.1:%d/sub/%s\n' "$PORTAL_PORT" "$TOKEN" >"$ASSETS/subscription"
 
-cat >"$ASSETS/upstream.json" <<JSON
+cat >"$WORK/host-upstream.json" <<JSON
 {"log": {"level": "warn"},
- "inbounds": [{"type": "socks", "tag": "in", "listen": "127.0.0.1", "listen_port": $UPSTREAM_PORT}],
+ "inbounds": [{"type": "socks", "tag": "in", "listen": "0.0.0.0", "listen_port": $UPSTREAM_PORT}],
  "outbounds": [{"type": "direct", "tag": "direct"}]}
 JSON
+"$ASSETS/sing-box" run -c "$WORK/host-upstream.json" >"$WORK/host-upstream.log" 2>&1 &
+upstream_pid=$!
 printf '<!doctype html><title>tun-e2e</title>tun-e2e\n' >"$ASSETS/site/index.html"
 install -m 755 "$ROOT/scripts/dev/tun-vm/test.sh" "$ASSETS/test.sh"
 install -m 644 "$ROOT/scripts/dev/tun-vm/dns.py" "$ASSETS/dns.py"

@@ -47,9 +47,6 @@ install -m 600 "$ASSETS/subscription" "$XDG_CONFIG_HOME/sbc/subscription"
 step "start local fixtures"
 python3 "$ASSETS/dns.py" 5353 >"$HOME/dns.log" 2>&1 &
 background+=("$!")
-"$XDG_DATA_HOME/sbc/bin/sing-box" run -c "$ASSETS/upstream.json" >"$HOME/upstream.log" 2>&1 &
-upstream=$!
-background+=("$upstream")
 python3 -m http.server 18080 --bind 127.0.0.1 --directory "$ASSETS/portal" >"$HOME/portal.log" 2>&1 &
 background+=("$!")
 python3 -m http.server 8080 --bind 127.0.0.1 --directory "$ASSETS/site" >"$HOME/site.log" 2>&1 &
@@ -107,8 +104,7 @@ absent test -e /run/sbc-tun/active
 absent test -e "$XDG_CONFIG_HOME/sbc/tun.json"
 
 step "failed activation rolls back"
-kill "$upstream"
-wait "$upstream" 2>/dev/null || true
+cp "$ASSETS/tun-failed.json" "$ASSETS/portal/sub/$TOKEN"
 if sbc tun on; then
 	echo "activation with a dead proxy succeeded"
 	false
@@ -118,9 +114,6 @@ sudo journalctl -u sbc-tun.service --no-pager -n 80 || true
 absent systemctl is-active --quiet sbc-tun.service
 absent ip link show sbc-tun0
 absent test -e /run/sbc-tun/active
-"$XDG_DATA_HOME/sbc/bin/sing-box" run -c "$ASSETS/upstream.json" >"$HOME/upstream.log" 2>&1 &
-upstream=$!
-background+=("$upstream")
 sleep 1
 sbc tun on
 sbc tun off
