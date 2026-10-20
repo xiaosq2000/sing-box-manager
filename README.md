@@ -74,6 +74,11 @@ config shape. Select infrastructure settings and legacy inventory with `--config
 or `SBM_CONFIG`. In authoritative mode, PostgreSQL owns proxy accounts and credentials.
 Manage them in Django Admin, not in the inventory.
 
+`deployment.client_region` optionally sets the time zone and language clients
+present for the node; see
+[the client guide](docs/README_SBC.md#region-matching). It affects only clients
+that opt in with `sbc privacy region on`.
+
 `sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
 It requires `control_plane.enabled` and `control_plane.secret_key`.
 Retain `web.session_secret` for installed legacy clients' machine tokens.

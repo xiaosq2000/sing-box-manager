@@ -21,6 +21,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/maintenance"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
+	"github.com/xiaosq2000/sing-box-manager/internal/region"
 	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
@@ -60,6 +61,8 @@ type Env struct {
 	Desktop func() (desktop.Desktop, error)
 	// Privacy manages browser settings without a desktop session.
 	Privacy func() (desktop.BrowserPrivacy, error)
+	// Region manages the user-scoped time zone and language choice.
+	Region func(layout paths.Layout) *region.Manager
 	// Docker returns the Docker daemon's proxy drop-in.
 	Docker func() (*docker.Daemon, error)
 	// Sites are the pages 'sbc ip' asks and 'sbc speed --download' fetches.
@@ -104,6 +107,9 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 			return desktop.New(runtime.GOOS, os.Getenv, desktop.Exec)
 		},
 		Privacy: func() (desktop.BrowserPrivacy, error) { return desktop.NewBrowserPrivacy(runtime.GOOS, desktop.Exec) },
+		Region: func(layout paths.Layout) *region.Manager {
+			return region.New(layout, os.Getenv)
+		},
 		Docker: func() (*docker.Daemon, error) {
 			return docker.New(runtime.GOOS, docker.Exec)
 		},
@@ -164,6 +170,7 @@ func runInstall(env Env, options installOptions) int {
 		return fail(env, err)
 	}
 	fmt.Fprintf(env.Stdout, i18n.T("Installed sing-box %s. The proxy listens on 127.0.0.1:%d.\n"), result.SingBox, result.ListenPort)
+	storeInstallRegion(env, layout, result.Envelope)
 	if result.Auth {
 		fmt.Fprintln(env.Stdout, i18n.T("The proxy asks for a password, so other accounts here cannot use it. Shells get it from sbc, and 'sbc env' prints it for scripts."))
 	}
@@ -361,6 +368,7 @@ func runStatus(env Env) int {
 			fmt.Fprintf(env.Stdout, i18n.T("docker:   %s\n"), state)
 		}
 	}
+	printRegionSummary(env, layout)
 	if usage, at, ok := install.ReadUsage(layout); ok {
 		fmt.Fprintf(env.Stdout, i18n.T("traffic:  %s up, %s down this billing cycle, as of %s\n"),
 			formatBytes(usage.Upload), formatBytes(usage.Download), at.Format("2006-01-02 15:04"))
@@ -430,6 +438,10 @@ func runSwitch(env Env, args []string, what string) int {
 }
 
 func runRefresh(env Env) int {
+	return refresh(env, false)
+}
+
+func refresh(env Env, dropRegionWhenMissing bool) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -443,15 +455,16 @@ func runRefresh(env Env) int {
 		return fail(env, err)
 	}
 	installer := env.Installer(layout, env.Stdout)
-	changed, err := installer.Refresh(link, restart, ready)
+	result, err := installer.Refresh(link, restart, ready)
 	if err != nil {
 		return fail(env, err)
 	}
-	if changed {
+	if result.ConfigChanged {
 		fmt.Fprintln(env.Stdout, i18n.T("The config changed and sing-box restarted with it."))
 	} else {
 		fmt.Fprintln(env.Stdout, i18n.T("The config is up to date."))
 	}
+	refreshRegion(env, layout, result.Envelope, dropRegionWhenMissing)
 	// The hint is a courtesy, so a failed check does not fail the refresh.
 	if available, _, err := installer.CheckUpgrade(link, installedSBCVersion(layout, env.Version)); err == nil {
 		if available.Any() {
@@ -512,6 +525,15 @@ func runUninstall(env Env, yes bool) int {
 	}
 	if err := reportRemainingWebRTC(env, privacy); err != nil {
 		return fail(env, err)
+	}
+	if env.OS == "linux" {
+		result, err := regionFor(env, layout).Remove()
+		if err != nil {
+			return fail(env, i18n.Errorf("region cleanup failed; sbc is still installed. Retry 'sbc privacy region off' or uninstall: %w", err))
+		}
+		if result.ManagerWarning != nil {
+			fmt.Fprintf(env.Stderr, "sbc: %v\n", result.ManagerWarning)
+		}
 	}
 	if disableDesktop {
 		if err := desk.Off(); err != nil {

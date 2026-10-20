@@ -79,6 +79,9 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc uninstall`                   | Remove scheduled tasks, files, PATH entry, and owned proxy settings             |
 | `sbc version`                     | Display `sbc` version and commit information                                    |
 
+Region matching (`sbc privacy region`) is Linux-only. On Windows the command
+reports that it is unavailable.
+
 ### Current session environment
 
 Persistent environment changes apply to newly launched applications and terminals.

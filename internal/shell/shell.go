@@ -59,10 +59,11 @@ func EnvOff() string {
 
 // Init returns the shell code `sbc init` prints for bash, including 3.2, or
 // zsh. It puts sbc on PATH and adds a prompt hook that applies `sbc on` and
-// `sbc off` to every open shell at its next prompt. A program cannot change the
-// shell that started it, so this hook is the whole shell integration.
+// `sbc off` to every open shell at its next prompt. The same hook loads the
+// region choice, which is independent of the proxy. A program cannot change
+// the shell that started it, so this hook is the whole shell integration.
 // `export SBC_PROXY=off` keeps one shell off.
-func Init(shellName, cliDir, envFile, hintFile string) (string, error) {
+func Init(shellName, cliDir, envFile, regionFile, hintFile string) (string, error) {
 	var hook string
 	switch shellName {
 	case "bash":
@@ -76,7 +77,7 @@ esac
 	default:
 		return "", i18n.Errorf("unsupported shell %q; use bash or zsh", shellName)
 	}
-	cli, env, hint := Quote(cliDir), Quote(envFile), Quote(hintFile)
+	cli, env, region, hint := Quote(cliDir), Quote(envFile), Quote(regionFile), Quote(hintFile)
 	notice := Quote(i18n.T("sbc: a newer version is available; run 'sbc upgrade'"))
 	return `# sbc shell integration, printed by 'sbc init ` + shellName + `'.
 case ":$PATH:" in
@@ -90,6 +91,20 @@ _sbc_apply() {
     elif [ -n "${_sbc_applied-}" ]; then
         ` + strings.TrimSuffix(EnvOff(), "\n") + `
         unset _sbc_applied
+    fi
+    if [ -f ` + region + ` ]; then
+        . ` + region + `
+        case "${_sbc_region_prev-}" in
+        *tz*) case "${_sbc_region_tz-}" in 1) ;; *) unset TZ ;; esac ;;
+        esac
+        case "${_sbc_region_prev-}" in
+        *lang*) case "${_sbc_region_lang-}" in 1) ;; *) unset LANG LANGUAGE LC_MESSAGES ;; esac ;;
+        esac
+        _sbc_region_prev="${_sbc_region_tz:+tz}${_sbc_region_lang:+lang}"
+    elif [ -n "${_sbc_region_prev-}" ]; then
+        case "$_sbc_region_prev" in *tz*) unset TZ ;; esac
+        case "$_sbc_region_prev" in *lang*) unset LANG LANGUAGE LC_MESSAGES ;; esac
+        unset _sbc_region_prev _sbc_region_tz _sbc_region_lang
     fi
 }
 ` + hook + `_sbc_apply

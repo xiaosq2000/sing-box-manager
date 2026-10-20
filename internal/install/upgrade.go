@@ -80,11 +80,11 @@ func (i *Installer) Upgrade(link Link, sbcVersion string, restart, ready func() 
 			return Available{}, i18n.New("the downloaded sbc failed its version check")
 		}
 	}
-	config, usage, err := i.fetchConfig(link, manifest.SingBox)
+	envelope, usage, err := i.fetchConfig(link, manifest.SingBox)
 	if err != nil {
 		return Available{}, err
 	}
-	patched, err := singbox.Patch(config, local)
+	patched, err := singbox.Patch(envelope.Config, local)
 	if err != nil {
 		return Available{}, err
 	}

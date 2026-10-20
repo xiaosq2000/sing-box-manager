@@ -86,26 +86,27 @@ The CLI rejects unknown flags and extra arguments before performing an action.
 Use `refresh` for configuration and `upgrade` for binaries. The public `update`
 command is removed. Other commands retain their syntax and meaning.
 
-| Command                                   | Purpose                                                         |
-| ----------------------------------------- | --------------------------------------------------------------- |
-| `sbc install`                             | Read a subscription link from stdin and install the client      |
-| `sbc init bash`, `sbc init zsh`           | Print shell integration code                                    |
-| `sbc link`, `sbc link set`                | Show the masked link, or replace it from stdin                  |
-| `sbc on`, `sbc off`                       | Switch shell and opted-in desktop proxies                       |
-| `sbc env`, `sbc env off`                  | Print proxy variables for scripts or the current shell          |
-| `sbc desktop [on\|off]`                   | Show or switch desktop proxy settings                           |
-| `sbc webrtc on`, `sbc webrtc off`         | Manage persistent [browser protection](WEBRTC.md)               |
-| `sbc docker [on\|off] [--yes]`            | Show or switch the Linux Docker daemon's proxy                  |
-| `sbc route [name]`, `sbc protocol [name]` | Show or switch a choice without restarting sing-box             |
-| `sbc route --list`                        | List installed route strategies and their meanings              |
-| `sbc port [number]`                       | Show or change the local proxy port                             |
-| `sbc status`, `sbc ip`, `sbc speed`       | Show status, exit location, or latency                          |
-| `sbc start`, `sbc stop`, `sbc restart`    | Control the service                                             |
-| `sbc run`                                 | Run sing-box in the foreground                                  |
-| `sbc refresh`, `sbc upgrade`              | Refresh configuration, or install signed binary updates         |
-| `sbc uninstall [--yes]`                   | Clean browser settings, stop the service, and remove the client |
-| `sbc completion bash\|zsh\|powershell`    | Print a completion script                                       |
-| `sbc version`, `sbc --version`            | Print the build version                                         |
+| Command                                       | Purpose                                                         |
+| --------------------------------------------- | --------------------------------------------------------------- |
+| `sbc install`                                 | Read a subscription link from stdin and install the client      |
+| `sbc init bash`, `sbc init zsh`               | Print shell integration code                                    |
+| `sbc link`, `sbc link set`                    | Show the masked link, or replace it from stdin                  |
+| `sbc on`, `sbc off`                           | Switch shell and opted-in desktop proxies                       |
+| `sbc env`, `sbc env off`                      | Print proxy variables for scripts or the current shell          |
+| `sbc desktop [on\|off]`                       | Show or switch desktop proxy settings                           |
+| `sbc privacy`, `sbc privacy region [on\|off]` | Show or match the node's client time zone and language (Linux)  |
+| `sbc webrtc on`, `sbc webrtc off`             | Manage persistent [browser protection](WEBRTC.md)               |
+| `sbc docker [on\|off] [--yes]`                | Show or switch the Linux Docker daemon's proxy                  |
+| `sbc route [name]`, `sbc protocol [name]`     | Show or switch a choice without restarting sing-box             |
+| `sbc route --list`                            | List installed route strategies and their meanings              |
+| `sbc port [number]`                           | Show or change the local proxy port                             |
+| `sbc status`, `sbc ip`, `sbc speed`           | Show status, exit location, or latency                          |
+| `sbc start`, `sbc stop`, `sbc restart`        | Control the service                                             |
+| `sbc run`                                     | Run sing-box in the foreground                                  |
+| `sbc refresh`, `sbc upgrade`                  | Refresh configuration, or install signed binary updates         |
+| `sbc uninstall [--yes]`                       | Clean browser settings, stop the service, and remove the client |
+| `sbc completion bash\|zsh\|powershell`        | Print a completion script                                       |
+| `sbc version`, `sbc --version`                | Print the build version                                         |
 
 `on` and `off` differ from `start` and `stop`. `off` leaves sing-box running.
 Desktop settings follow proxy toggles only after `sbc desktop on`.
@@ -113,6 +114,67 @@ Docker changes require confirmation or `--yes` because they restart Docker.
 
 Subscription links are credentials. Pass them through the installer prompt or
 stdin, not command arguments. `sbc link set` also reads from stdin.
+
+## Region matching
+
+`sbc privacy region on` makes this Linux account present the time zone and
+language the portal assigns to its node. It changes `TZ`, `LANG`, `LANGUAGE`
+and `LC_MESSAGES` for the account, not for other accounts or the system. It is
+off until enabled. The operator sets the target in the node's
+`deployment.client_region`: `timezone` is an IANA name and `language` is BCP 47
+with a region, such as `zh-CN`. The subscription carries it per node. A portal
+without that block reports the target as unavailable; `sbc` does not guess.
+
+```sh
+sbc privacy region              # Show the saved choice and availability
+sbc privacy region on           # Time zone and language
+sbc privacy region on --timezone
+sbc privacy region off --language
+```
+
+The command writes `~/.config/sbc/region.sh` for the `sbc init` prompt hook,
+`~/.config/environment.d/90-sbc-region.conf` for the next login, and updates the
+systemd user environment for newly started user services. An open shell picks
+up `region.sh` at its next prompt. A desktop session needs a new login; open
+browsers and applications need a restart. `off` removes the files and clears the
+variables sbc set; it keeps the last profile so `on` does not need a download.
+`sbc refresh` updates the profile and reapplies it when the node's region
+changes. `sbc on` uses the cache and does not fetch. Replacing the subscription
+with one that has no region turns matching off; a refresh that temporarily lacks
+the field keeps the last profile.
+
+The language is applied only when its locale is generated. If it is missing,
+`on` still applies the time zone, reports the missing locale, and exits 1:
+
+```sh
+# Debian and Ubuntu
+sudo locale-gen de_DE.UTF-8
+# Arch: add `de_DE.UTF-8 UTF-8` to /etc/locale.gen, then
+sudo locale-gen
+# Fedora: install the language pack, for example
+sudo dnf install glibc-langpack-de
+```
+
+Then run `sbc privacy region on --language`.
+
+Limits:
+
+- The target is the operator's client-facing choice, not the node's own
+  `/etc/localtime` or locale. A node that runs in UTC can tell clients to use
+  `Europe/Berlin`.
+- A user-set `LC_ALL` overrides `LANG` and `LC_MESSAGES`. `sbc privacy region`
+  warns when it sees one.
+- Snap and Flatpak browsers can ignore the session environment. Firefox can
+  keep an Accept-Language or UI language chosen earlier.
+- Turning the proxy off or using `sbc route direct` leaves the region in place,
+  so the exit IP and the region disagree. `sbc status` warns.
+- Region matching does not change the keyboard layout, input method, fonts, or
+  DNS, and it is not a complete anti-fingerprinting measure.
+- It is Linux-only and user-scoped. System-wide `/etc/localtime` and locale
+  changes are not part of this feature. The login setting uses the systemd user
+  manager; a session without one gets only the shell hook.
+- `sbc uninstall` removes the files and restores the system defaults at the next
+  login.
 
 ## Automatic maintenance
 

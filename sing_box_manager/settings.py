@@ -173,10 +173,57 @@ class TlsConfig(StrictModel):
         return self
 
 
+CLIENT_TIMEZONE_PATTERN = re.compile(r"^[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$")
+CLIENT_LANGUAGE_PATTERN = re.compile(r"^[A-Za-z]{2,3}-(?:[A-Za-z]{2}|[0-9]{3})$")
+
+
+class ClientRegionConfig(StrictModel):
+    """The time zone and language clients should present for one node."""
+
+    timezone: str
+    language: str
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        value = value.strip()
+        if (
+            not value
+            or value in {"Local", "localtime"}
+            or value.startswith(("/", ".", "posix/", "right/"))
+            or "\\" in value
+            or any(part in {"", ".", ".."} for part in value.split("/"))
+            or CLIENT_TIMEZONE_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "deployment.client_region.timezone must be a valid IANA timezone"
+            )
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(
+                "deployment.client_region.timezone must be a valid IANA timezone"
+            ) from exc
+        return value
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value: str) -> str:
+        value = value.strip()
+        if CLIENT_LANGUAGE_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "deployment.client_region.language must look like zh-CN, with a region"
+            )
+        language, region = value.split("-", 1)
+        return f"{language.lower()}-{region.upper()}"
+
+
 class DeploymentConfig(StrictModel):
     host: str
     direct_domain_suffixes: list[str] = Field(default_factory=list)
     ip: str
+    # Optional. Clients that opt in present this region while using the node.
+    client_region: ClientRegionConfig | None = None
     trojan_port: int = Field(ge=1, le=65535)
     hysteria2_port: int = Field(ge=1, le=65535)
     hysteria2_port_range: str | None = None

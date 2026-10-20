@@ -72,6 +72,12 @@ deployment:
   direct_domain_suffixes: []
   host: vpn.example.com
   ip: 8.8.8.8
+  # Optional. The time zone and language clients present while they use this
+  # node. This is a client-facing choice, not the node's own system settings.
+  # timezone is an IANA name; language is BCP 47 with a region.
+  client_region:
+    timezone: Asia/Shanghai
+    language: zh-CN
   trojan_port: 8443
   hysteria2_port: 58080
   # Optional: enable Hysteria2 port hopping (sing-box >= 1.11). The client

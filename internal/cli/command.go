@@ -66,6 +66,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	root.AddGroup(
 		&cobra.Group{ID: "setup", Title: i18n.T("Setup:")},
 		&cobra.Group{ID: "shell", Title: i18n.T("Shells and programs:")},
+		&cobra.Group{ID: "privacy", Title: i18n.T("Privacy:")},
 		&cobra.Group{ID: "proxy", Title: i18n.T("Proxy:")},
 		&cobra.Group{ID: "help", Title: i18n.T("Help:")},
 	)
@@ -137,15 +138,15 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	add("on", i18n.T("Enable the shell proxy and any opted-in desktop proxy"), "shell", argumentRange(0, 0), func([]string) int { return withRecovery(env, func(env Env) int { return runOn(env) }) })
 	add("off", i18n.T("Disable the shell and opted-in desktop proxies. Keep sing-box running"), "shell", argumentRange(0, 0), func([]string) int { return withOperation(env, func(env Env) int { return runOff(env) }) })
 	for _, entry := range []struct {
-		use, description string
-		minimum          int
-		run              func(Env, []string) int
+		use, description, group string
+		minimum                 int
+		run                     func(Env, []string) int
 	}{
-		{"env [on|off]", i18n.T("Print shell proxy variables. Print PowerShell commands on Windows"), 0, runEnv},
-		{"desktop [on|off]", i18n.T("Show or switch the desktop proxy (GNOME, macOS, Windows)"), 0, runDesktop},
-		{"webrtc on|off", i18n.T("Enable or remove persistent WebRTC protection. May request approval"), 1, runWebRTC},
+		{"env [on|off]", i18n.T("Print shell proxy variables. Print PowerShell commands on Windows"), "shell", 0, runEnv},
+		{"desktop [on|off]", i18n.T("Show or switch the desktop proxy (GNOME, macOS, Windows)"), "shell", 0, runDesktop},
+		{"webrtc on|off", i18n.T("Enable or remove persistent WebRTC protection. May request approval"), "privacy", 1, runWebRTC},
 	} {
-		cmd := add(entry.use, entry.description, "shell", choiceArgs(entry.minimum, "on", "off"), func(args []string) int {
+		cmd := add(entry.use, entry.description, entry.group, choiceArgs(entry.minimum, "on", "off"), func(args []string) int {
 			if entry.use == "desktop [on|off]" && len(args) != 0 {
 				if args[0] == "on" {
 					return withRecovery(env, func(env Env) int { return entry.run(env, args) })
@@ -156,6 +157,33 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		})
 		cmd.ValidArgsFunction = fixedChoices("on", "off")
 	}
+	privacy := add("privacy", i18n.T("Show or change region matching"), "privacy", argumentRange(0, 0), func([]string) int {
+		return runPrivacy(env)
+	})
+	var regionTimezone, regionLanguage bool
+	region := &cobra.Command{
+		Use:   "region [on|off|status]",
+		Short: i18n.T("Match the desktop time zone and language to the node (Linux)"),
+		Args:  choiceArgs(0, "on", "off", "status"),
+		Run: func(_ *cobra.Command, args []string) {
+			action := ""
+			if len(args) != 0 {
+				action = args[0]
+			}
+			if action == "on" || action == "off" {
+				*exit = withOperation(env, func(env Env) int {
+					return runPrivacyRegion(env, args, regionTimezone, regionLanguage)
+				})
+				return
+			}
+			*exit = runPrivacyRegion(env, args, regionTimezone, regionLanguage)
+		},
+	}
+	region.Flags().BoolVar(&regionTimezone, "timezone", false, i18n.T("Change only the time zone"))
+	region.Flags().BoolVar(&regionLanguage, "language", false, i18n.T("Change only the language"))
+	region.Flags().BoolP("help", "h", false, i18n.T("Show help for this command"))
+	region.ValidArgsFunction = fixedChoices("on", "off", "status")
+	privacy.AddCommand(region)
 	var dockerYes bool
 	docker := add("docker [on|off]", i18n.T("Show or switch the Docker daemon's proxy (Linux). Restarts Docker"), "shell", choiceArgs(0, "on", "off"), func(args []string) int {
 		action := ""
@@ -441,6 +469,20 @@ func printHelp(cmd *cobra.Command) {
 		fmt.Fprintf(out, "\n%s\n", group.Title)
 		for _, child := range cmd.Commands() {
 			if child.GroupID == group.ID && !child.Hidden {
+				fmt.Fprintf(out, "  %-*s  %s\n", width, child.Use, child.Short)
+			}
+		}
+	}
+	ungrouped := false
+	for _, child := range cmd.Commands() {
+		if child.GroupID == "" && !child.Hidden {
+			ungrouped = true
+		}
+	}
+	if ungrouped {
+		fmt.Fprintf(out, "\n%s\n", i18n.T("Commands:"))
+		for _, child := range cmd.Commands() {
+			if child.GroupID == "" && !child.Hidden {
 				fmt.Fprintf(out, "  %-*s  %s\n", width, child.Use, child.Short)
 			}
 		}

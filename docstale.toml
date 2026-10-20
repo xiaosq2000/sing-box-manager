@@ -39,6 +39,7 @@ sbc = [
   "internal/api/",
   "internal/probe/",
   "internal/singbox/",
+  "internal/region/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 unix-installer = [

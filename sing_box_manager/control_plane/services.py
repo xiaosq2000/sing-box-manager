@@ -360,11 +360,18 @@ def build_account_envelope(
     default_protocol = (
         runtime.default_protocol if runtime.default_protocol in held else held[0]
     )
+    node: dict[str, object] = {
+        "name": runtime.deployment.host,
+        "protocols": held,
+    }
+    if runtime.deployment.client_region is not None:
+        node["region"] = runtime.deployment.client_region.model_dump()
     return {
         "version": ENVELOPE_VERSION,
+        "default_node": runtime.deployment.host,
         "default_route": DEFAULT_ROUTE,
         "default_protocol": default_protocol,
-        "nodes": [{"name": runtime.deployment.host, "protocols": held}],
+        "nodes": [node],
         "latest": {
             "sing_box": runtime.sing_box_version,
             **({} if sbc_version is None else {"sbc": sbc_version}),

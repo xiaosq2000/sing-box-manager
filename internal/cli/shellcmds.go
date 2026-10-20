@@ -95,7 +95,7 @@ func runInit(env Env, args []string, root *cobra.Command) int {
 		return fail(env, err)
 	}
 	discardStaleUpgradeHint(layout, env.Version)
-	code, err := shell.Init(args[0], layout.CLIDir(), layout.EnvFile(), layout.UpgradeHint())
+	code, err := shell.Init(args[0], layout.CLIDir(), layout.EnvFile(), layout.RegionEnv(), layout.UpgradeHint())
 	if err != nil {
 		return fail(env, err)
 	}
@@ -385,7 +385,25 @@ func runLink(env Env, args []string) int {
 		return fail(env, err)
 	}
 	os.Remove(layout.ETag())
-	return runRefresh(env)
+	// The old region belongs to the old node. Turn it off before the new
+	// subscription is checked; the refresh reapplies it when the new portal
+	// provides one.
+	if env.OS == "linux" {
+		manager := regionFor(env, layout)
+		_, mode, _ := manager.Load()
+		result, err := manager.Remove()
+		if err != nil {
+			fmt.Fprintf(env.Stderr, "sbc: %v\n", err)
+		} else {
+			if mode.Any() {
+				fmt.Fprintln(env.Stdout, i18n.T("Region matching is off until the new subscription provides a client region."))
+			}
+			if result.ManagerWarning != nil {
+				fmt.Fprintf(env.Stderr, "sbc: %v\n", result.ManagerWarning)
+			}
+		}
+	}
+	return refresh(env, true)
 }
 
 func runUpgrade(env Env) int {

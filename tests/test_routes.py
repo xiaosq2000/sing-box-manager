@@ -81,6 +81,11 @@ assert first.status_code == 200
 assert 'synthetic-db_alice-trojan' in first.content.decode()
 assert 'synthetic-db_bob' not in first.content.decode()
 assert first.json()['nodes'][0]['protocols'] == ['trojan', 'hysteria2', 'naive']
+assert first.json()['default_node'] == 'vpn.example.com'
+assert first.json()['nodes'][0]['region'] == {
+    'timezone': 'Asia/Shanghai',
+    'language': 'zh-CN',
+}
 page = client.get(url + '/')
 assert page.status_code == 200, page.content
 text = page.content.decode()
