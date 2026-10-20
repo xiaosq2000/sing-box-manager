@@ -78,7 +78,9 @@ Manage them in Django Admin, not in the inventory.
 present for the node; see
 [the client guide](docs/README_SBC.md#region-matching). Clients opt in with
 `sbc privacy region on` for one account or `sbc privacy region on --system` for
-the whole machine.
+the whole machine. `sbc privacy browser language on` separately matches Linux
+Chrome's language preferences without changing the system locale. See
+[Chrome language matching](docs/README_SBC.md#chrome-language-matching).
 
 `sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
 It requires `control_plane.enabled` and `control_plane.secret_key`.
@@ -145,7 +147,7 @@ or check out config state with git.
 - [`docs/VPS_DEPLOYMENT.md`](docs/VPS_DEPLOYMENT.md): primary end-to-end VPS deployment guide
 - [`docs/RELEASE_AND_PORTAL.md`](docs/RELEASE_AND_PORTAL.md): build releases, run the portal, and download client packages
 - [`docs/README_SBC.md`](docs/README_SBC.md): client installation, legacy migration, commands, help, and shell completion
-- [`docs/WEBRTC.md`](docs/WEBRTC.md): Linux Chrome WebRTC protection and cleanup
+- [`docs/WEBRTC.md`](docs/WEBRTC.md): Linux Chrome WebRTC protection, language matching and recovery
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
 - [`docs/README_MOBILE.md`](docs/README_MOBILE.md): official iOS/Android import links, local QR codes, and device acceptance
 - [`docs/REMOTE_DEPLOYMENT.md`](docs/REMOTE_DEPLOYMENT.md): sync the active release artifacts to a remote host and install them

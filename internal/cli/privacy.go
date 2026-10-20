@@ -18,6 +18,7 @@ func runPrivacy(env Env) int {
 	}
 	if env.OS == "linux" {
 		printBrowserSummary(env)
+		_ = printBrowserLanguageStatus(env, layout)
 		printRegionChoice(env, layout)
 	} else {
 		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: unavailable on this platform; Linux Chrome only"))
@@ -88,8 +89,21 @@ func printOrphanedSystemChoice(env Env) {
 	}
 }
 
-// runPrivacyBrowser changes the Chrome WebRTC policy choice.
+// runPrivacyBrowser attempts both components, even if one fails.
 func runPrivacyBrowser(env Env, args []string) int {
+	if env.OS != "linux" {
+		return fail(env, i18n.New("Chrome WebRTC protection is available on Linux only"))
+	}
+	webrtc := runPrivacyWebRTC(env, args)
+	language := runPrivacyBrowserLanguage(env, args)
+	if webrtc != 0 || language != 0 {
+		return 1
+	}
+	return 0
+}
+
+// runPrivacyWebRTC changes only the Chrome WebRTC policy choice.
+func runPrivacyWebRTC(env Env, args []string) int {
 	if env.OS != "linux" {
 		return fail(env, i18n.New("Chrome WebRTC protection is available on Linux only"))
 	}
@@ -114,7 +128,7 @@ func runPrivacyBrowser(env Env, args []string) int {
 	if err := reportRemainingWebRTC(env, privacy); err != nil {
 		return fail(env, err)
 	}
-	fmt.Fprintln(env.Stdout, i18n.T("No owned Chrome policy remains. Automatic setup is off. Use 'sbc privacy browser on' to enable it again. Restart Chrome to apply the change."))
+	fmt.Fprintln(env.Stdout, i18n.T("No owned Chrome policy remains. Automatic setup is off. Use 'sbc privacy browser webrtc on' to enable it again. Restart Chrome to apply the change."))
 	return 0
 }
 
@@ -125,10 +139,10 @@ func printBrowserStatus(env Env, privacy desktop.BrowserPrivacy) int {
 	}
 	if optedOut {
 		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: off (opted out)"))
-		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy browser on' to enable it."))
+		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy browser webrtc on' to enable it."))
 	} else {
 		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: on (automatic repair)"))
-		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy browser off' to remove the managed Chrome policy."))
+		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy browser webrtc off' to remove the managed Chrome policy."))
 	}
 	fmt.Fprintln(env.Stdout, i18n.T("Only Google Chrome on Linux is managed."))
 	return 0

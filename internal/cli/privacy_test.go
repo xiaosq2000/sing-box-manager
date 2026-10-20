@@ -9,7 +9,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
 )
 
-func TestPrivacyBrowserCommandsNeedNoDesktopOrConfig(t *testing.T) {
+func TestPrivacyWebRTCCommandsNeedNoDesktopOrConfig(t *testing.T) {
 	h := newHarness(t)
 	h.env.OS = "linux"
 	privacy := h.useDesktop()
@@ -19,7 +19,7 @@ func TestPrivacyBrowserCommandsNeedNoDesktopOrConfig(t *testing.T) {
 	}
 	os.Remove(h.layout.ConfigFile())
 	for _, action := range []string{"on", "off"} {
-		if code := Run(h.env, []string{"privacy", "browser", action}); code != 0 {
+		if code := Run(h.env, []string{"privacy", "browser", "webrtc", action}); code != 0 {
 			t.Fatal(h.errOut)
 		}
 	}
@@ -39,7 +39,7 @@ func TestPrivacyBrowserOffReportsOnlyPreservedForeignSettings(t *testing.T) {
 		if foreign {
 			privacy.remainingPolicies = []string{"/etc/opt/chrome/policies/managed/manual.json"}
 		}
-		if code := Run(h.env, []string{"privacy", "browser", "off"}); code != 0 {
+		if code := Run(h.env, []string{"privacy", "browser", "webrtc", "off"}); code != 0 {
 			t.Fatal(h.errOut)
 		}
 		output := h.out.String()
@@ -57,7 +57,7 @@ func TestPrivacyBrowserOffFailureDoesNotClaimCleanupSuccess(t *testing.T) {
 	h.env.OS = "linux"
 	privacy := h.useDesktop()
 	privacy.privacyErr = errors.New("close Chrome and retry")
-	if code := Run(h.env, []string{"privacy", "browser", "off"}); code == 0 {
+	if code := Run(h.env, []string{"privacy", "browser", "webrtc", "off"}); code == 0 {
 		t.Fatal("cleanup failure reported success")
 	}
 	if strings.Contains(h.out.String(), "policy was removed") || !strings.Contains(h.errOut.String(), "close Chrome and retry") {

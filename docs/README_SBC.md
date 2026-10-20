@@ -95,7 +95,9 @@ command is removed. Other commands retain their syntax and meaning.
 | `sbc env`, `sbc env off`                  | Print proxy variables for scripts or the current shell          |
 | `sbc desktop [on\|off]`                   | Show or switch desktop proxy settings                           |
 | `sbc privacy`                             | Show browser and region privacy choices                         |
-| `sbc privacy browser [on\|off]`           | Show or change Chrome WebRTC protection (Linux)                 |
+| `sbc privacy browser [on\|off]`           | Show or change both Chrome privacy components (Linux)           |
+| `sbc privacy browser webrtc [on\|off]`    | Show or change Chrome WebRTC protection (Linux)                 |
+| `sbc privacy browser language [on\|off]`  | Show or match Chrome language preferences to the node (Linux)   |
 | `sbc privacy region [on\|off]`            | Show or match the node's client time zone and language (Linux)  |
 | `sbc lang [en\|zh\|auto]`                 | Show or set the language of sbc messages                        |
 | `sbc docker [on\|off] [--yes]`            | Show or switch the Linux Docker daemon's proxy                  |
@@ -146,13 +148,41 @@ node.
 
 ## Chrome WebRTC protection
 
-`sbc privacy browser on|off` manages the mandatory
+`sbc privacy browser webrtc on|off` manages the mandatory
 `WebRtcIPHandling=disable_non_proxied_udp` policy for Google Chrome on Linux.
-It is off until enabled and works without a subscription or a running proxy.
-Only Chrome is managed; Chromium, Edge, Brave, Firefox, macOS and Windows are
+It works without a subscription or a running proxy. Desktop proxy setup also
+ensures the policy unless you opted out. Only Chrome is managed; Chromium, Edge, Brave, Firefox, macOS and Windows are
 not. `sbc privacy` summarizes this choice. See
 [WebRTC protection](WEBRTC.md) for ownership, cleanup, limits and manual
 cleanup after the scope change.
+
+## Chrome language matching
+
+`sbc privacy browser language on` replaces the language list in this account's
+standard Chrome personal profiles with the node language and its base language,
+such as `en-US,en`. It updates `intl.selected_languages` and
+`intl.accept_languages` at the top level and in existing `account_values` fields.
+It creates no account store or missing account language field. Exit Chrome
+completely before applying or restoring languages. Do not start Chrome while
+the command runs.
+
+The node's subscription region supplies the target. Language matching does not
+require a generated system locale or enable system region matching. It changes
+neither the browser UI language nor translation and spell-check settings.
+`sbc privacy browser language off` restores fields that still match sbc's values.
+It preserves external changes. Failed restoration blocks uninstall and keeps
+recovery records for retry.
+
+`sbc privacy browser on|off` attempts both WebRTC and language changes. It reports
+each result and exits nonzero if either fails. Successful components stay applied.
+Use the explicit `webrtc` subcommand for WebRTC-only operations, including scripts
+that need no subscription. An existing WebRTC choice does not enable languages.
+
+Refresh only updates the target and reports pending application. Proxy toggles,
+refreshes and upgrades never apply browser language changes automatically.
+Chrome settings sync can propagate or overwrite the list. sbc warns but does not
+change sync settings. See [Chrome privacy](WEBRTC.md#chrome-language-matching)
+for profile discovery, policy conflicts, recovery and effective-language checks.
 
 ## Region matching
 

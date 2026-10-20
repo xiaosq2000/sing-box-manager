@@ -765,6 +765,7 @@ func storeInstallRegion(env Env, layout paths.Layout, envelope *install.Envelope
 	if env.OS != "linux" || envelope == nil {
 		return
 	}
+	noteBrowserLanguageTarget(env, layout, envelope, true)
 	manager := regionFor(env, layout)
 	state, mode, loadErr := manager.Load()
 	if loadErr != nil {
@@ -832,6 +833,7 @@ func refreshRegion(env Env, layout paths.Layout, envelope *install.Envelope, dro
 	if env.OS != "linux" || envelope == nil {
 		return
 	}
+	noteBrowserLanguageTarget(env, layout, envelope, dropWhenMissing)
 	manager := regionFor(env, layout)
 	state, mode, loadErr := manager.Load()
 	if loadErr != nil {
