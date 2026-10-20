@@ -98,6 +98,21 @@ func (l Layout) UpgradeHint() string { return filepath.Join(l.Config, "upgrade-a
 // Usage holds the traffic count the portal sent with the last refresh.
 func (l Layout) Usage() string { return filepath.Join(l.Config, "usage") }
 
+// RegionState is the client region the portal last sent for the active node.
+func (l Layout) RegionState() string { return filepath.Join(l.Config, "region.json") }
+
+// RegionMode records which region components the user enabled.
+func (l Layout) RegionMode() string { return filepath.Join(l.Config, "region-mode") }
+
+// RegionEnv holds the region variables new shells load.
+func (l Layout) RegionEnv() string { return filepath.Join(l.Config, "region.sh") }
+
+// RegionEnvironmentD is the systemd user environment file that applies the
+// region at login. It sits beside the sbc config directory, under XDG_CONFIG_HOME.
+func (l Layout) RegionEnvironmentD() string {
+	return filepath.Join(filepath.Dir(l.Config), "environment.d", "90-sbc-region.conf")
+}
+
 // Log is where sing-box's output goes when no service manager keeps it: on
 // macOS and Windows.
 func (l Layout) Log() string { return filepath.Join(l.Data, "sing-box.log") }

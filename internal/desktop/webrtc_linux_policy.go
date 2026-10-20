@@ -4,14 +4,12 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
-	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
 //go:embed webrtc_linux_policy.sh
@@ -20,15 +18,13 @@ var linuxPolicyScript string
 // Exact bytes written by sbc before per-user policy ownership was introduced.
 const legacyLinuxPolicyData = "{\"WebRtcIPHandling\": \"disable_non_proxied_udp\"}\n"
 
-func (p *unixPrivacy) removeLegacyLinuxPolicies() error {
-	var result error
-	for _, policy := range p.policies {
-		result = errors.Join(result, p.removeLegacyLinuxPolicy(policy))
-	}
-	return result
+const chromePolicyValue = "disable_non_proxied_udp"
+
+func (p *chromePrivacy) removeLegacyChromePolicy() error {
+	return p.removeLegacyLinuxPolicy(p.policy)
 }
 
-func (p *unixPrivacy) removeLegacyLinuxPolicy(policy unixPolicy) error {
+func (p *chromePrivacy) removeLegacyLinuxPolicy(policy unixPolicy) error {
 	file := filepath.Join(policy.location, "webrtc.json")
 	data, err := privateFile(file)
 	if os.IsNotExist(err) {
@@ -69,6 +65,7 @@ func linuxPolicyFiles(dir string) ([]string, error) {
 	}
 	return result, nil
 }
+
 func readLinuxPolicy(path string) (map[string]json.RawMessage, error) {
 	data, err := privateFile(path)
 	if err != nil {
@@ -80,6 +77,7 @@ func readLinuxPolicy(path string) (map[string]json.RawMessage, error) {
 	}
 	return values, nil
 }
+
 func linuxBrowserInstalled(policy unixPolicy) bool {
 	if _, err := os.Stat(policy.location); err == nil {
 		return true
@@ -91,14 +89,17 @@ func linuxBrowserInstalled(policy unixPolicy) bool {
 	}
 	return false
 }
+
 func linuxPolicyData(policy unixPolicy) []byte {
-	data, _ := json.Marshal(map[string]string{policy.name: winsettings.WebRtcDisableNonProxiedUDP})
+	data, _ := json.Marshal(map[string]string{policy.name: chromePolicyValue})
 	return append(data, '\n')
 }
-func (p *unixPrivacy) linuxFiles(policy unixPolicy) (string, string) {
+
+func (p *chromePrivacy) linuxFiles(policy unixPolicy) (string, string) {
 	return filepath.Join(policy.location, "sbc-webrtc-"+p.uid+".json"), filepath.Join(policy.location, ".sbc-webrtc-"+p.uid+".owner")
 }
-func (p *unixPrivacy) linuxOwned(policy unixPolicy) (bool, error) {
+
+func (p *chromePrivacy) linuxOwned(policy unixPolicy) (bool, error) {
 	_, marker := p.linuxFiles(policy)
 	data, err := privateFile(marker)
 	if os.IsNotExist(err) {
@@ -112,7 +113,8 @@ func (p *unixPrivacy) linuxOwned(policy unixPolicy) (bool, error) {
 	}
 	return true, nil
 }
-func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
+
+func (p *chromePrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 	file, _ := p.linuxFiles(policy)
 	owned, err := p.linuxOwned(policy)
 	if err != nil {
@@ -122,6 +124,11 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 	if enabled {
 		if !linuxBrowserInstalled(policy) && !owned {
 			return nil
+		}
+		if _, err := os.Lstat(file); err == nil && !owned {
+			return i18n.Errorf("WebRTC settings already exist without ownership: %s", file)
+		} else if err != nil && !os.IsNotExist(err) {
+			return err
 		}
 		files, err := linuxPolicyFiles(policy.location)
 		if err != nil {
@@ -135,7 +142,7 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 			}
 			if value, ok := values[policy.name]; ok {
 				var text string
-				if json.Unmarshal(value, &text) != nil || text != winsettings.WebRtcDisableNonProxiedUDP {
+				if json.Unmarshal(value, &text) != nil || text != chromePolicyValue {
 					return i18n.Errorf("an existing WebRTC policy at %s conflicts with proxy-only UDP; review your browser policies", path)
 				}
 				exists = true
@@ -144,12 +151,6 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 		if exists {
 			return nil
 		}
-		// A reserved filename without its ownership record is also foreign.
-		if _, err := os.Lstat(file); err == nil {
-			return i18n.Errorf("WebRTC settings already exist without ownership: %s", file)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
 	} else if !owned {
 		return nil
 	}
@@ -157,8 +158,8 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 	if enabled {
 		action = "on"
 	}
-	// Only fixed browser locations, this account's UID and constant policy data
-	// reach the elevated helper. It rechecks ownership before each mutation.
+	// Only the fixed Chrome location, this account's UID and constant policy
+	// data reach the elevated helper. It rechecks ownership before each mutation.
 	if _, err := p.run("sudo", "/bin/sh", "-c", linuxPolicyScript, "sbc-webrtc", action, policy.location, p.uid, string(want)); err != nil {
 		return err
 	}
@@ -189,24 +190,39 @@ func (p *unixPrivacy) setLinuxPolicy(policy unixPolicy, enabled bool) error {
 	return nil
 }
 
-func (p *unixPrivacy) remainingLinuxPolicies() ([]string, error) {
+func (p *chromePrivacy) remainingChromePolicies() ([]string, error) {
+	files, err := linuxPolicyFiles(p.policy.location)
+	if err != nil {
+		return nil, err
+	}
 	var locations []string
-	for _, policy := range p.policies {
-		files, err := linuxPolicyFiles(policy.location)
+	for _, file := range files {
+		values, err := readLinuxPolicy(file)
 		if err != nil {
 			return nil, err
 		}
-		for _, file := range files {
-			values, err := readLinuxPolicy(file)
-			if err != nil {
-				return nil, err
-			}
-			_, supported := values[policy.name]
-			_, legacy := values[winsettings.WebRtcPolicyName]
-			if supported || legacy {
-				locations = append(locations, file)
-			}
+		if _, ok := values[p.policy.name]; ok {
+			locations = append(locations, file)
 		}
 	}
 	return locations, nil
+}
+
+// regularFileInfo checks the path itself, without following symbolic links.
+func regularFileInfo(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, i18n.Errorf("WebRTC settings path is not a regular file: %s", path)
+	}
+	return info, nil
+}
+
+func privateFile(path string) ([]byte, error) {
+	if _, err := regularFileInfo(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filepath.Clean(path))
 }

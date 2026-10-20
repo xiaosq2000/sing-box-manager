@@ -14,27 +14,9 @@ import (
 )
 
 const (
-	InternetKey      = `Software\Microsoft\Windows\CurrentVersion\Internet Settings`
-	EnvironmentKey   = `Environment`
-	ChromePolicyKey  = `Software\Policies\Google\Chrome`
-	EdgePolicyKey    = `Software\Policies\Microsoft\Edge`
-	BravePolicyKey   = `Software\Policies\BraveSoftware\Brave`
-	FirefoxPolicyKey = `Software\Policies\Mozilla\Firefox\Preferences`
+	InternetKey    = `Software\Microsoft\Windows\CurrentVersion\Internet Settings`
+	EnvironmentKey = `Environment`
 )
-
-const (
-	WebRtcPolicyName           = "WebRtcIPHandling"
-	EdgeWebRtcPolicyName       = "WebRtcLocalhostIpHandling"
-	WebRtcDisableNonProxiedUDP = "disable_non_proxied_udp"
-	FirefoxProxyOnlyName       = "media.peerconnection.ice.proxy_only"
-)
-
-var FirefoxWebRtcPrefs = []string{
-	"media.peerconnection.ice.no_host",
-	"media.peerconnection.ice.default_address_only",
-	"media.peerconnection.ice.proxy_only",
-	"media.peerconnection.ice.proxy_only_if_behind_proxy",
-}
 
 // Value preserves the registry type and unexpanded text. An empty Kind deletes
 // a value; it is distinct from a present, empty string.

@@ -123,3 +123,25 @@ func TestRunOnWindowsKeepsSingBoxOutputInTheLogAndDropsRetiredPrograms(t *testin
 		}
 	}
 }
+
+func TestPrivacyHelpListsTheRegionCommandAndItsFlags(t *testing.T) {
+	code, stdout, stderr := run("privacy", "--help")
+	if code != 0 || stderr != "" {
+		t.Fatalf("code %d, stderr %q", code, stderr)
+	}
+	for _, want := range []string{"Commands:", "region [on|off|status]", "time zone and language"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("privacy help %q does not contain %q", stdout, want)
+		}
+	}
+
+	code, stdout, stderr = run("privacy", "region", "--help")
+	if code != 0 || stderr != "" {
+		t.Fatalf("code %d, stderr %q", code, stderr)
+	}
+	for _, want := range []string{"--timezone", "--language", "region [on|off|status]"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("region help %q does not contain %q", stdout, want)
+		}
+	}
+}

@@ -616,8 +616,14 @@ The JSON response holds:
 | `config`                            | The mixed sing-box config, with every route as a Clash mode and every protocol behind the `proxy` selector    |
 | `config_tun`                        | The Linux TUN variant of `config`. Additive; clients without TUN support ignore it                            |
 | `default_route`, `default_protocol` | Where a new install starts. The protocol falls back to the user's first one when they lack `default_protocol` |
-| `nodes`                             | Each server and the protocols the user holds on it, one entry for now                                         |
+| `default_node`                      | The node the current config uses                                                                              |
+| `nodes`                             | Each server, the protocols the user holds on it, and its optional `region`                                    |
 | `latest.sing_box`                   | The sing-box version the inventory pins                                                                       |
+
+`nodes[].region` carries `deployment.client_region` when it is set.
+`timezone` is an IANA name and `language` is BCP 47 with a region, such as
+`zh-CN`. `sbc privacy region` applies it on Linux. Clients that predate the
+field ignore it, and a node without it reports the target as unavailable.
 
 Responses carry an `ETag`, and a matching `If-None-Match` gets `304`.
 `subscription-userinfo` reports this billing cycle's upload and download bytes when

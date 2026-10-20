@@ -41,7 +41,9 @@ type portal struct {
 	tamper    string
 	config    string
 	configTun string
-	requests  []string
+	// region is the JSON object the envelope reports for its node, when set.
+	region   string
+	requests []string
 	// usage is the traffic count the subscription sends, when set.
 	usage       string
 	notModified int
@@ -118,12 +120,15 @@ func (p *portal) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		io.WriteString(w, `{"version":1,"config":`+p.config+func() string {
-			if p.configTun == "" {
-				return "}"
-			}
-			return `,"config_tun":` + p.configTun + "}"
-		}())
+		response := `{"version":1,"config":` + p.config
+		if p.region != "" {
+			response += `,"default_node":"node.example","nodes":[{"name":"node.example","protocols":["trojan"],"region":` + p.region + `}]`
+		}
+		if p.configTun != "" {
+			response += `,"config_tun":` + p.configTun
+		}
+		response += "}"
+		io.WriteString(w, response)
 	case r.URL.Path == prefix+"/files/manifest.json":
 		w.Write(p.manifest())
 	case r.URL.Path == prefix+"/files/manifest.json.sig":
@@ -432,15 +437,15 @@ func TestRefreshAppliesANewConfigAndKeepsTheLocalSettings(t *testing.T) {
 	restart := func() error { restarts++; return nil }
 	ready := func() error { return nil }
 
-	changed, err := i.Refresh(link(t, p), restart, ready)
-	if err != nil || changed || restarts != 0 {
-		t.Fatalf("unchanged config: changed %v, restarts %d, err %v", changed, restarts, err)
+	result, err := i.Refresh(link(t, p), restart, ready)
+	if err != nil || result.ConfigChanged || restarts != 0 {
+		t.Fatalf("unchanged config: changed %v, restarts %d, err %v", result.ConfigChanged, restarts, err)
 	}
 
 	p.config = strings.Replace(p.config, `"china"`, `"gfw"`, 1)
-	changed, err = i.Refresh(link(t, p), restart, ready)
-	if err != nil || !changed || restarts != 1 {
-		t.Fatalf("new config: changed %v, restarts %d, err %v", changed, restarts, err)
+	result, err = i.Refresh(link(t, p), restart, ready)
+	if err != nil || !result.ConfigChanged || restarts != 1 {
+		t.Fatalf("new config: changed %v, restarts %d, err %v", result.ConfigChanged, restarts, err)
 	}
 	after, _ := os.ReadFile(layout.ConfigFile())
 	if !strings.Contains(string(after), `"gfw"`) {
@@ -453,9 +458,9 @@ func TestRefreshAppliesANewConfigAndKeepsTheLocalSettings(t *testing.T) {
 	}
 
 	requests := len(p.requests)
-	changed, err = i.Refresh(link(t, p), restart, ready)
-	if err != nil || changed {
-		t.Fatalf("repeat: changed %v, err %v", changed, err)
+	result, err = i.Refresh(link(t, p), restart, ready)
+	if err != nil || result.ConfigChanged {
+		t.Fatalf("repeat: changed %v, err %v", result.ConfigChanged, err)
 	}
 	if last := p.requests[requests]; !strings.HasPrefix(last, "/sub/"+token+"?") {
 		t.Errorf("repeat asked for %s", last)
@@ -468,7 +473,7 @@ func TestRefreshRestoresThePreviousConfigWhenSingBoxDoesNotComeUp(t *testing.T) 
 	p.config = strings.Replace(p.config, `"china"`, `"gfw"`, 1)
 	restarts := 0
 
-	changed, err := i.Refresh(link(t, p),
+	result, err := i.Refresh(link(t, p),
 		func() error { restarts++; return nil },
 		func() error {
 			if restarts == 1 {
@@ -478,8 +483,8 @@ func TestRefreshRestoresThePreviousConfigWhenSingBoxDoesNotComeUp(t *testing.T) 
 		},
 	)
 
-	if err == nil || changed || !strings.Contains(err.Error(), "the previous one is back") {
-		t.Fatalf("changed %v, err %v", changed, err)
+	if err == nil || result.ConfigChanged || !strings.Contains(err.Error(), "the previous one is back") {
+		t.Fatalf("changed %v, err %v", result.ConfigChanged, err)
 	}
 	after, _ := os.ReadFile(layout.ConfigFile())
 	if !bytes.Equal(before, after) || restarts != 2 {
@@ -619,10 +624,10 @@ func TestRefreshAddsTheSpeedTestToAConfigFromBefore(t *testing.T) {
 	}
 	paths.WriteFile(layout.ConfigFile(), older, 0o600)
 
-	changed, err := i.Refresh(link(t, p), func() error { return nil }, func() error { return nil })
+	result, err := i.Refresh(link(t, p), func() error { return nil }, func() error { return nil })
 
-	if err != nil || !changed || p.notModified != 0 {
-		t.Fatalf("changed %v, %d unchanged answers, err %v", changed, p.notModified, err)
+	if err != nil || !result.ConfigChanged || p.notModified != 0 {
+		t.Fatalf("changed %v, %d unchanged answers, err %v", result.ConfigChanged, p.notModified, err)
 	}
 	if after := readLocal(t, layout); after.SpeedPort == 0 || after.ListenPort != installed.ListenPort {
 		t.Errorf("after the refresh: %+v", after)
@@ -692,5 +697,49 @@ func TestFetchTunReadsTheAdditiveField(t *testing.T) {
 	p.configTun = ""
 	if _, err := i.FetchTun(link(t, p), "1.14.2"); err == nil {
 		t.Fatal("expected an error when the portal has no TUN config")
+	}
+}
+
+func TestInstallAndRefreshReturnTheNodeRegion(t *testing.T) {
+	p := newPortal(t)
+	p.region = `{"timezone":"UTC","language":"en-US"}`
+	i, _ := installer(t, p)
+
+	result, err := i.Install(link(t, p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, node, err := result.Envelope.ClientRegion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node != "node.example" || profile == nil || profile.Timezone != "UTC" || profile.Language != "en-US" {
+		t.Fatalf("install region: %#v %q", profile, node)
+	}
+
+	refreshed, err := i.Refresh(link(t, p), func() error { return nil }, func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.ConfigChanged || refreshed.Envelope == nil {
+		t.Fatalf("refresh result: %#v", refreshed)
+	}
+	profile, node, err = refreshed.Envelope.ClientRegion()
+	if err != nil || node != "node.example" || profile == nil || profile.Timezone != "UTC" {
+		t.Fatalf("refresh region: %#v %q %v", profile, node, err)
+	}
+}
+
+func TestFetchRegionReadsTheDefaultNodeWithoutAnInstall(t *testing.T) {
+	p := newPortal(t)
+	p.region = `{"timezone":"Europe/Berlin","language":"de-DE"}`
+	i, _ := installer(t, p)
+
+	profile, node, err := i.FetchRegion(link(t, p), "1.14.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node != "node.example" || profile == nil || profile.Timezone != "Europe/Berlin" || profile.Language != "de-DE" {
+		t.Fatalf("unexpected region: %#v %q", profile, node)
 	}
 }

@@ -1,13 +1,13 @@
-//go:build !linux && !darwin
+//go:build !linux
 
 package desktop
 
 import "sync"
 
-// Unix backends run only with fixture runners on other platforms.
-var unixPrivacyMu sync.Mutex
+// The Chrome backend runs only on Linux; this lock keeps the package buildable elsewhere.
+var chromePrivacyMu sync.Mutex
 
 func lockUnixPrivacy(_ string) (func(), error) {
-	unixPrivacyMu.Lock()
-	return unixPrivacyMu.Unlock, nil
+	chromePrivacyMu.Lock()
+	return chromePrivacyMu.Unlock, nil
 }

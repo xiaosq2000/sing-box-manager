@@ -6,9 +6,74 @@ import pytest
 
 from sing_box_manager.settings import (
     DEFAULT_TRAFFIC_STATS_DATABASE_PATH,
+    ClientRegionConfig,
+    DeploymentConfig,
     Settings,
+    TlsConfig,
     WebSettings,
 )
+
+
+def test_client_region_normalizes_and_accepts_iana_timezones() -> None:
+    region = ClientRegionConfig(
+        timezone=" Asia/Shanghai ",
+        language=" zh-cn ",
+    )
+
+    assert region.timezone == "Asia/Shanghai"
+    assert region.language == "zh-CN"
+
+
+def test_client_region_accepts_numeric_regions() -> None:
+    region = ClientRegionConfig(timezone="Etc/UTC", language="es-419")
+
+    assert region.language == "es-419"
+
+
+def test_deployment_client_region_is_optional() -> None:
+    deployment = DeploymentConfig(
+        host="vpn.example.com",
+        ip="203.0.113.10",
+        trojan_port=8443,
+        hysteria2_port=4443,
+        naive_port=9443,
+        tls=TlsConfig(
+            enabled=True,
+            key_path="/etc/ssl/private.key",
+            certificate_path="/etc/ssl/certificate.pem",
+        ),
+    )
+
+    assert deployment.client_region is None
+
+
+@pytest.mark.parametrize(
+    "timezone",
+    [
+        "",
+        "/etc/passwd",
+        "../etc/passwd",
+        "Asia/../UTC",
+        "Asia/./Shanghai",
+        "posix/UTC",
+        "right/UTC",
+        "localtime",
+        "Mars/Olympus",
+        "Asia\\Shanghai",
+    ],
+)
+def test_client_region_rejects_unsafe_or_unknown_timezones(timezone: str) -> None:
+    with pytest.raises(ValueError, match=r"client_region\.timezone"):
+        ClientRegionConfig(timezone=timezone, language="zh-CN")
+
+
+@pytest.mark.parametrize(
+    "language",
+    ["zh", "zh-Hans", "zh_CN", "en-USA", "../etc/passwd", ""],
+)
+def test_client_region_requires_a_bcp47_language_with_region(language: str) -> None:
+    with pytest.raises(ValueError, match=r"client_region\.language"):
+        ClientRegionConfig(timezone="Asia/Shanghai", language=language)
 
 
 def test_traffic_stats_database_defaults_outside_the_deploy_root() -> None:

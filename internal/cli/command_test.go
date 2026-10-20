@@ -65,7 +65,7 @@ func TestCLIValidationRejectsInputBeforeActions(t *testing.T) {
 		{"start", "--bogus"}, {"stop", "extra"}, {"restart", "extra"}, {"run", "extra"},
 		{"ip", "extra"}, {"upgrade", "extra"}, {"refresh", "extra"},
 		{"refresh", "auto", "maybe"}, {"upgrade", "auto", "on", "extra"}, {"refresh", "interval", "0s"}, {"upgrade", "interval", "1h", "extra"}, {"version", "extra"},
-		{"env", "maybe"}, {"desktop", "on", "extra"}, {"webrtc"}, {"webrtc", "maybe"},
+		{"env", "maybe"}, {"desktop", "on", "extra"}, {"privacy", "browser", "maybe"}, {"privacy", "browser", "on", "extra"},
 		{"docker", "on", "off"}, {"docker", "--bogus"}, {"uninstall", "--yes", "extra"},
 		{"link", "set", "extra"}, {"link", "show"}, {"init", "fish"},
 		{"completion"}, {"completion", "fish"}, {"help", "bogus"}, {"help", "status", "extra"},

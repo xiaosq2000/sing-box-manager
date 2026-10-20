@@ -97,6 +97,7 @@ Important distinctions:
 - `deployment.host` is deployment metadata and an exact direct exception in every client profile
 - `deployment.direct_domain_suffixes` defaults to `[]`; each explicit domain covers its apex and subdomains for direct routing and DNS. Names are lowercased, optional outer dots removed, and duplicates removed. URLs, wildcards, IP suffixes, and malformed names are rejected. Parent domains are never inferred from the host
 - `deployment.ip` is the client connection target rendered into outbound `server`
+- `deployment.client_region` is optional, non-secret client-facing time zone and language metadata. It is sent only in the authenticated subscription envelope; leave it unset to disable region matching
 - `deployment.hysteria2_port` is the rendered Hysteria2 server and client port
 - `deployment.naive_port` is the rendered Naive server and client port
 - `deployment.tls.enabled` controls whether rendered protocol configs keep TLS enabled

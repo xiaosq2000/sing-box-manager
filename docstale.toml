@@ -39,6 +39,7 @@ sbc = [
   "internal/api/",
   "internal/probe/",
   "internal/singbox/",
+  "internal/region/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 unix-installer = [
@@ -173,7 +174,6 @@ control-plane = [
   "internal/routes/",
   "internal/desktop/",
   "internal/winsettings/",
-  "internal/browserprivacy/",
   "internal/powershell/",
   "internal/paths/",
   "internal/service/",
@@ -198,7 +198,6 @@ control-plane = [
 "docs/WEBRTC.md" = [
   "internal/browserprivacy/",
   "internal/desktop/",
-  "internal/winsettings/",
   "internal/cli/",
   "internal/paths/",
   "internal/e2e/",

@@ -23,6 +23,7 @@ import (
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
+	"github.com/xiaosq2000/sing-box-manager/internal/region"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 	"github.com/xiaosq2000/sing-box-manager/internal/trust"
 )
@@ -106,6 +107,52 @@ type Result struct {
 	ListenPort int
 	// Auth says whether the proxy asks for a password.
 	Auth bool
+	// Envelope is the subscription the install came from.
+	Envelope *Envelope
+}
+
+// Envelope is the part of the sbc subscription envelope that sbc reads.
+type Envelope struct {
+	Version     int             `json:"version"`
+	Config      json.RawMessage `json:"config"`
+	ConfigTun   json.RawMessage `json:"config_tun"`
+	DefaultNode string          `json:"default_node"`
+	Nodes       []Node          `json:"nodes"`
+}
+
+// Node is one server in the subscription.
+type Node struct {
+	Name      string          `json:"name"`
+	Protocols []string        `json:"protocols"`
+	Region    *region.Profile `json:"region"`
+}
+
+// ClientRegion returns the region for the default node. A subscription from a
+// portal that predates the field has no region, which is not an error.
+func (e *Envelope) ClientRegion() (*region.Profile, string, error) {
+	if len(e.Nodes) == 0 {
+		return nil, "", nil
+	}
+	name := e.DefaultNode
+	if name == "" {
+		if len(e.Nodes) != 1 {
+			return nil, "", i18n.New("the subscription lists multiple nodes without a default node")
+		}
+		name = e.Nodes[0].Name
+	}
+	for _, node := range e.Nodes {
+		if node.Name == name {
+			return node.Region, name, nil
+		}
+	}
+	return nil, "", i18n.Errorf("the subscription's default node %q is missing", name)
+}
+
+// RefreshResult reports what a refresh fetched. Envelope is nil when the
+// portal answered 304.
+type RefreshResult struct {
+	ConfigChanged bool
+	Envelope      *Envelope
 }
 
 // Install downloads what the link's release lists, checks each file against
@@ -122,10 +169,11 @@ func (i *Installer) Install(link Link) (*Result, error) {
 	if err := i.installRules(link, manifest); err != nil {
 		return nil, err
 	}
-	config, usage, err := i.fetchConfig(link, manifest.SingBox)
+	envelope, usage, err := i.fetchConfig(link, manifest.SingBox)
 	if err != nil {
 		return nil, err
 	}
+	config := envelope.Config
 	local, err := i.local()
 	if err != nil {
 		return nil, err
@@ -148,7 +196,7 @@ func (i *Installer) Install(link Link) (*Result, error) {
 	}
 	os.Remove(i.Layout.ETag())
 	i.saveUsage(usage)
-	return &Result{SingBox: manifest.SingBox, SBC: manifest.SBC, ListenPort: local.ListenPort, Auth: local.Username != ""}, nil
+	return &Result{SingBox: manifest.SingBox, SBC: manifest.SBC, ListenPort: local.ListenPort, Auth: local.Username != "", Envelope: envelope}, nil
 }
 
 // local picks this machine's settings. A reinstall keeps the port and the
@@ -395,44 +443,53 @@ func (i *Installer) installRules(link Link, manifest *trust.Manifest) error {
 	return nil
 }
 
-// fetchConfig returns the subscription's mixed config and the traffic count
-// that came with it.
-func (i *Installer) fetchConfig(link Link, singBoxVersion string) ([]byte, string, error) {
-	config, _, usage, err := i.fetchEnvelope(link, singBoxVersion)
-	return config, usage, err
+// fetchConfig returns the subscription's envelope and the traffic count
+// header. The envelope also carries the node region.
+func (i *Installer) fetchConfig(link Link, singBoxVersion string) (*Envelope, string, error) {
+	envelope, header, err := i.fetchEnvelope(link, singBoxVersion)
+	if err != nil {
+		return nil, "", err
+	}
+	return envelope, header.Get(UsageHeader), nil
 }
 
 // FetchTun returns the additive Linux TUN config from the same subscription
 // envelope. The field is optional so older portals keep working.
 func (i *Installer) FetchTun(link Link, singBoxVersion string) ([]byte, error) {
-	_, config, _, err := i.fetchEnvelope(link, singBoxVersion)
+	envelope, _, err := i.fetchEnvelope(link, singBoxVersion)
 	if err != nil {
 		return nil, err
 	}
-	if len(config) == 0 || string(config) == "null" {
+	if len(envelope.ConfigTun) == 0 || string(envelope.ConfigTun) == "null" {
 		return nil, i18n.New("the portal does not provide a Linux TUN config; update the portal")
 	}
-	return config, nil
+	return envelope.ConfigTun, nil
 }
 
-func (i *Installer) fetchEnvelope(link Link, singBoxVersion string) ([]byte, []byte, string, error) {
+func (i *Installer) fetchEnvelope(link Link, singBoxVersion string) (*Envelope, http.Header, error) {
 	query := url.Values{"format": {"sbc"}, "os": {i.OS}, "sing-box": {singBoxVersion}}
 	body, header, err := i.fetch(link, link.base+"?"+query.Encode())
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
-	var envelope struct {
-		Version   int             `json:"version"`
-		Config    json.RawMessage `json:"config"`
-		ConfigTun json.RawMessage `json:"config_tun"`
-	}
+	var envelope Envelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, nil, "", i18n.Errorf("read the subscription: %w", err)
+		return nil, nil, i18n.Errorf("read the subscription: %w", err)
 	}
 	if envelope.Version != 1 {
-		return nil, nil, "", i18n.Errorf("subscription version %d is not supported; upgrade sbc", envelope.Version)
+		return nil, nil, i18n.Errorf("subscription version %d is not supported; upgrade sbc", envelope.Version)
 	}
-	return envelope.Config, envelope.ConfigTun, header.Get(UsageHeader), nil
+	return &envelope, header, nil
+}
+
+// FetchRegion returns the region for the default node without applying or
+// writing the config. 'sbc privacy region on' uses it when no profile is cached.
+func (i *Installer) FetchRegion(link Link, singBoxVersion string) (*region.Profile, string, error) {
+	envelope, _, err := i.fetchEnvelope(link, singBoxVersion)
+	if err != nil {
+		return nil, "", err
+	}
+	return envelope.ClientRegion()
 }
 
 // NewClient returns the HTTP client sbc uses. It ignores proxy variables, since
@@ -455,45 +512,45 @@ func ReadLink(layout paths.Layout) (Link, error) {
 // Refresh fetches the subscription config and applies it when it changed.
 // A new config must pass `sing-box check`, and when sing-box does not come back
 // up with it, the previous config is restored. It reports whether the config
-// changed.
-func (i *Installer) Refresh(link Link, restart func() error, ready func() error) (bool, error) {
+// changed and returns the fetched envelope, including the node region.
+func (i *Installer) Refresh(link Link, restart func() error, ready func() error) (RefreshResult, error) {
 	current, err := os.ReadFile(i.Layout.ConfigFile())
 	if err != nil {
-		return false, i18n.New("sbc is not installed; run 'sbc install'")
+		return RefreshResult{}, i18n.New("sbc is not installed; run 'sbc install'")
 	}
 	local, err := singbox.ReadLocal(current)
 	if err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	// A config from before the speed test gets a port for it, and a full
 	// fetch to patch, since the portal answers an unchanged config with no
 	// body.
 	if local.SpeedPort == 0 {
 		if local.SpeedPort, err = speedPort(local); err != nil {
-			return false, err
+			return RefreshResult{}, err
 		}
 	}
 	conditional := !singbox.MissingSpeedTest(current)
 	version, err := os.ReadFile(i.Layout.SingBoxVersion())
 	if err != nil {
-		return false, i18n.New("the installed sing-box version is unknown; run 'sbc install'")
+		return RefreshResult{}, i18n.New("the installed sing-box version is unknown; run 'sbc install'")
 	}
 	query := url.Values{"format": {"sbc"}, "os": {i.OS}, "sing-box": {strings.TrimSpace(string(version))}}
 	request, err := http.NewRequest(http.MethodGet, link.base+"?"+query.Encode(), nil)
 	if err != nil {
-		return false, link.redact(err)
+		return RefreshResult{}, link.redact(err)
 	}
 	if etag, err := os.ReadFile(i.Layout.ETag()); err == nil && conditional {
 		request.Header.Set("If-None-Match", strings.TrimSpace(string(etag)))
 	}
 	response, err := i.Client.Do(request)
 	if err != nil {
-		return false, link.redact(err)
+		return RefreshResult{}, link.redact(err)
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return false, link.redact(err)
+		return RefreshResult{}, link.redact(err)
 	}
 	// The count comes with an unchanged config too.
 	if response.StatusCode == http.StatusOK || response.StatusCode == http.StatusNotModified {
@@ -501,63 +558,60 @@ func (i *Installer) Refresh(link Link, restart func() error, ready func() error)
 	}
 	switch response.StatusCode {
 	case http.StatusNotModified:
-		return false, nil
+		return RefreshResult{}, nil
 	case http.StatusOK:
 	case http.StatusNotFound:
-		return false, i18n.New("the portal does not know this link; it may have been replaced")
+		return RefreshResult{}, i18n.New("the portal does not know this link; it may have been replaced")
 	default:
-		return false, i18n.Errorf("the portal answered %s: %s", response.Status, strings.TrimSpace(string(body)))
+		return RefreshResult{}, i18n.Errorf("the portal answered %s: %s", response.Status, strings.TrimSpace(string(body)))
 	}
-	var envelope struct {
-		Version int             `json:"version"`
-		Config  json.RawMessage `json:"config"`
-	}
+	var envelope Envelope
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Version != 1 {
-		return false, i18n.New("the subscription is not one this sbc reads; upgrade sbc")
+		return RefreshResult{}, i18n.New("the subscription is not one this sbc reads; upgrade sbc")
 	}
 	patched, err := singbox.Patch(envelope.Config, local)
 	if err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	etag := response.Header.Get("ETag")
 	if bytes.Equal(patched, current) {
-		return false, paths.WriteFile(i.Layout.ETag(), []byte(etag+"\n"), 0o600)
+		return RefreshResult{Envelope: &envelope}, paths.WriteFile(i.Layout.ETag(), []byte(etag+"\n"), 0o600)
 	}
 	staged := i.Layout.ConfigFile() + ".new"
 	if err := paths.WriteFile(staged, patched, 0o600); err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	if err := singbox.Check(i.Layout.SingBox(), i.Layout.Data, staged); err != nil {
 		os.Remove(staged)
-		return false, err
+		return RefreshResult{}, err
 	}
 	previous := i.Layout.ConfigFile() + ".prev"
 	if err := paths.WriteFile(previous, current, 0o600); err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	if err := os.Rename(staged, i.Layout.ConfigFile()); err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	if err := restart(); err == nil {
 		if err := ready(); err == nil {
-			return true, paths.WriteFile(i.Layout.ETag(), []byte(etag+"\n"), 0o600)
+			return RefreshResult{ConfigChanged: true, Envelope: &envelope}, paths.WriteFile(i.Layout.ETag(), []byte(etag+"\n"), 0o600)
 		}
 	}
 	if i.BeforeRestore != nil {
 		if err := i.BeforeRestore(); err != nil {
-			return false, err
+			return RefreshResult{}, err
 		}
 	}
 	if err := os.Rename(previous, i.Layout.ConfigFile()); err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	if err := restart(); err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
 	if err := ready(); err != nil {
-		return false, err
+		return RefreshResult{}, err
 	}
-	return false, i18n.New("sing-box did not start with the new config, so the previous one is back")
+	return RefreshResult{}, i18n.New("sing-box did not start with the new config, so the previous one is back")
 }
 
 // Available reports what the release offers that this machine lacks.

@@ -76,45 +76,14 @@ changes. The unit tests stand sing-box in with shell scripts, so Windows gets a
 `GOOS=windows go vet` there and the end-to-end test below; the `internal/service`
 tests cover the scheduled tasks with a recorded `schtasks.exe` and PowerShell.
 Windows settings tests use an in-memory registry on Linux and macOS, covering
-environment variables and desktop proxy toggles. Browser-policy fixtures separate
-registry keys and cover permission failures, declined approval, read-back
-verification, ownership, interrupted cleanup, persistent opt-out and repair while
-the proxy is already on. CLI tests verify that failed browser cleanup leaves the
-client and proxy available for retry. Concurrency fixtures pause policy or profile
-setup and check that opt-out and uninstall cleanup wait for completion.
-Firefox discovery lives in `internal/desktop/firefox.go`; profile parsing, writes
-and cleanup live in `internal/desktop/firefox_profile.go`. Reads, writes, obsolete
-snapshots and native lock files share a regular-file check. Its fixtures cover
-regular files, missing paths, directories, symbolic links and dangling links.
-Firefox fixtures use temporary profiles. They check resetting exactly the four
-supported preferences in both profile files, including pre-existing values,
-orphaned profiles and stale or corrupt snapshots. Unrelated preferences and clean
-profiles remain unchanged. Discovery fixtures cover traditional, Snap, Flatpak,
-macOS and Windows locations; orphan cleanup leaves no remaining-settings warning.
-A subprocess holds the native profile lock to verify that cleanup rejects active
-managed and orphaned profiles and succeeds after the lock is released. Fixtures
-also cover symlink refusal, retry after failed cleanup, and reporting only actual
-remaining settings. Profile failures do not skip healthy profiles, and WebRTC
-setup and cleanup return those failures.
-Unix fixtures execute the embedded Linux helper in a temporary policy directory,
-without sudo. They cover ownership, exact legacy-file cleanup, conflicts, changed
-values, another account, failed writes, retry and concurrent commands. Legacy
-cleanup fixtures change a file or replace it with a symlink before the helper
-runs, and check that the elevated recheck refuses deletion. A macOS native fixture uses disposable
-plist paths and the native `plutil` and `PlistBuddy` tools, without sudo or browser preferences.
-The WebRTC lifecycle in `internal/browserprivacy` is shared with Windows.
-The Windows runner also tests `internal/winsettings`, `internal/desktop`,
-`internal/powershell`, `internal/maintenance`, and `internal/paths`.
-Native registry tests use disposable keys, not browser or environment keys. They
-check registry types and rollback, and run the fixed WebRTC payload in a disposable
-namespace to check ownership and cleanup. Edge migration tests check the supported
-policy name, cleanup of owned obsolete values, preserved manual settings and retry
-after failed deletion. Subprocess tests use disposable mutex
-names to check serialization and recovery after the owning process exits.
-These tests do not exercise the UAC dialog.
-Validate approval, cancellation and different-administrator hive targeting from an
-unelevated Windows account: an elevated runner can hide the `Access is denied`
-failure under `HKCU\Software\Policies`.
+environment variables and desktop proxy toggles. Browser protection is Linux
+Chrome-only, so Windows does not test browser policies or run a WebRTC probe.
+
+Chrome fixtures execute the embedded Linux helper in a temporary policy
+directory, without sudo. They cover ownership, exact legacy-file cleanup,
+conflicts, changed values, failed writes and retry. Legacy cleanup fixtures
+change a file or replace it with a symlink before the helper runs, and check
+that the elevated recheck refuses deletion.
 
 `internal/e2e` installs `sbc` through `install.sh` on Unix and the hosted
 `/install.ps1` on Windows, using a stand-in portal and the real systemd, launchd
@@ -130,34 +99,20 @@ installer runs with `Restricted` execution policy, and the test checks that it
 leaves the policy unchanged. `internal/powershell` clears `PSModulePath` when
 starting Windows PowerShell to avoid inheriting incompatible PowerShell 7 modules.
 Windows also checks user PATH, persistent proxy variables, current-session
-PowerShell output, desktop switching and port changes. It checks that browser
-protection survives proxy toggles, explicit WebRTC opt-out persists until re-enabled,
-and uninstall removes owned policies and ownership records. The Chrome and Edge
-regression checks remove each browser policy while the desktop proxy remains on.
-They then run `sbc on` to repair the missing policy. Each headless browser probe
-uses a fresh profile with loopback HTTP and STUN fixtures. The unprotected control
-must gather a fixture server-reflexive candidate. The protected run must complete
-ICE gathering without direct STUN. The runner needs Chrome and Edge installed. Each probe starts a new process, including after an
-Edge policy change that requires a restart. This IPv4 UDP check runs only in the
-gated lifecycle. Unix runners require Chrome and also probe Edge and Brave when
-installed. They check positive controls, protection after proxy toggles, explicit
-opt-out, repair after policy deletion, and cleanup after uninstall. Browser
-processes use disposable profiles. Startup flags suppress first-run UI, including
-Edge's `msEdgeFirstRunExperience`, without overriding WebRTC or proxy policies.
-A timeout before the browser requests the probe page permits one restart with a
-fresh profile and loopback page. Only the attempt's unique probe URL counts as a
-page request. The first process must stop before the restart.
-A page request during shutdown prevents the restart. Early exits, cleanup failures,
-ICE failures and privacy assertion failures do not permit retries.
-Timeouts report whether the browser requested the probe page and include captured
-browser output. Log capture is synchronized because a timeout can read it while
-the browser is still running. Unix process groups and Windows taskkill stop
-only the probe's processes. The Linux workflow repairs the packaged Edge sandbox
-helper's root ownership and setuid mode before launching Edge. Browser sandboxing
-stays enabled. The macOS lifecycle verifies cache refresh after managed policy
-changes, including off and uninstall. Unit tests stub that service operation.
-The responder, startup arguments, concurrent log capture and startup retry have
-fixture-only checks. Subprocess stand-ins check timeout classification and cleanup.
+PowerShell output, desktop switching and port changes. Uninstall removes the
+owned proxy and environment settings. Native registry tests use disposable keys.
+
+The Linux lifecycle runs Chrome with a fresh profile and loopback STUN fixtures.
+The unprotected control must gather a fixture server-reflexive candidate. The
+protected run must complete ICE gathering without direct STUN. It checks positive
+controls, protection after proxy toggles, explicit opt-out, repair after policy
+deletion, and cleanup after uninstall. A timeout before the browser requests the
+probe page permits one restart with a fresh profile and loopback page. Only the
+attempt's unique probe URL counts as a page request. The first process must stop
+before the restart. Early exits, cleanup failures, ICE failures and privacy
+assertion failures do not permit retries. Timeouts report whether the browser
+requested the probe page and include captured browser output. Browser sandboxing
+stays enabled.
 These checks do not launch a browser or change host settings:
 
 ```sh

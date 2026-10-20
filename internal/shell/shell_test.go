@@ -23,7 +23,7 @@ func shells(t *testing.T) []string {
 }
 
 type setup struct {
-	dir, cli, env, hint, init string
+	dir, cli, env, region, hint, init string
 }
 
 // newSetup writes `sbc init` output for shellName, with a space in the paths
@@ -32,15 +32,16 @@ func newSetup(t *testing.T, shellName string) setup {
 	t.Helper()
 	dir := t.TempDir()
 	s := setup{
-		dir:  dir,
-		cli:  filepath.Join(dir, "Application Support", "cli"),
-		env:  filepath.Join(dir, "env.sh"),
-		hint: filepath.Join(dir, "hint"),
-		init: filepath.Join(dir, "init.sh"),
+		dir:    dir,
+		cli:    filepath.Join(dir, "Application Support", "cli"),
+		env:    filepath.Join(dir, "env.sh"),
+		region: filepath.Join(dir, "region.sh"),
+		hint:   filepath.Join(dir, "hint"),
+		init:   filepath.Join(dir, "init.sh"),
 	}
 	os.MkdirAll(s.cli, 0o755)
 	os.WriteFile(filepath.Join(s.cli, "sbc"), []byte("#!/bin/sh\necho fake sbc \"$@\"\n"), 0o755)
-	code, err := Init(shellName, s.cli, s.env, s.hint)
+	code, err := Init(shellName, s.cli, s.env, s.region, s.hint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +75,55 @@ func TestInitPutsSbcOnPathAndRegistersTheHookOnce(t *testing.T) {
 
 		lines := strings.Split(strings.TrimSpace(output), "\n")
 		if len(lines) != 3 || lines[0] != "fake sbc status" || lines[1] != "1" || strings.Count(lines[2], "_sbc_apply") != 1 {
+			t.Errorf("%s printed:\n%s", shellName, output)
+		}
+	}
+}
+
+func TestTheHookAppliesRegionIndependentlyOfTheProxy(t *testing.T) {
+	for _, shellName := range shells(t) {
+		s := newSetup(t, shellName)
+		output := s.run(t, shellName, `
+export SBC_PROXY=off
+echo "start: ${TZ-unset}"
+cat > `+Quote(s.region)+` <<'EOF'
+_sbc_region_tz=1
+_sbc_region_lang=1
+export TZ='UTC'
+export LANG='en_US.UTF-8'
+unset LANGUAGE LC_MESSAGES
+EOF
+_sbc_apply
+echo "region: $TZ $LANG"
+rm `+Quote(s.region)+`
+_sbc_apply
+echo "off: ${TZ-unset} ${LANG-unset}"`)
+
+		want := "start: unset\nregion: UTC en_US.UTF-8\noff: unset unset\n"
+		if output != want {
+			t.Errorf("%s printed:\n%s", shellName, output)
+		}
+	}
+}
+
+func TestTheHookLeavesLanguageAloneWhenOnlyTheTimeZoneIsOn(t *testing.T) {
+	for _, shellName := range shells(t) {
+		s := newSetup(t, shellName)
+		output := s.run(t, shellName, `
+export LANG=fr_FR.UTF-8
+cat > `+Quote(s.region)+` <<'EOF'
+_sbc_region_tz=1
+export TZ='UTC'
+unset _sbc_region_lang
+EOF
+_sbc_apply
+echo "region: $TZ $LANG"
+rm `+Quote(s.region)+`
+_sbc_apply
+echo "off: ${TZ-unset} $LANG"`)
+
+		want := "region: UTC fr_FR.UTF-8\noff: unset fr_FR.UTF-8\n"
+		if output != want {
 			t.Errorf("%s printed:\n%s", shellName, output)
 		}
 	}
@@ -152,7 +202,7 @@ func TestEnvOnPutsThePasswordInTheURLs(t *testing.T) {
 }
 
 func TestInitRejectsOtherShells(t *testing.T) {
-	if _, err := Init("fish", "/cli", "/env", "/hint"); err == nil {
+	if _, err := Init("fish", "/cli", "/env", "/region", "/hint"); err == nil {
 		t.Error("fish was accepted")
 	}
 }
