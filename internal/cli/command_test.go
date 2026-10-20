@@ -50,7 +50,7 @@ func TestCommandHelpNeverInvokesActions(t *testing.T) {
 			}
 		}
 	}
-	for _, args := range [][]string{{"refresh", "auto", "--help"}, {"upgrade", "interval", "--help"}, {"uninstall", "--yes", "--help"}, {"install", "--auth", "on", "--help"}, {"docker", "on", "--yes", "--help"}} {
+	for _, args := range [][]string{{"privacy", "browser", "--help"}, {"privacy", "browser", "webrtc", "--help"}, {"privacy", "browser", "language", "--help"}, {"refresh", "auto", "--help"}, {"upgrade", "interval", "--help"}, {"uninstall", "--yes", "--help"}, {"install", "--auth", "on", "--help"}, {"docker", "on", "--yes", "--help"}} {
 		if code := Run(env, args); code != 0 {
 			t.Fatalf("%v: code %d", args, code)
 		}
@@ -66,6 +66,8 @@ func TestCLIValidationRejectsInputBeforeActions(t *testing.T) {
 		{"ip", "extra"}, {"upgrade", "extra"}, {"refresh", "extra"},
 		{"refresh", "auto", "maybe"}, {"upgrade", "auto", "on", "extra"}, {"refresh", "interval", "0s"}, {"upgrade", "interval", "1h", "extra"}, {"version", "extra"},
 		{"env", "maybe"}, {"lang", "fr"}, {"lang", "en", "extra"}, {"desktop", "on", "extra"}, {"privacy", "browser", "maybe"}, {"privacy", "browser", "on", "extra"},
+		{"privacy", "browser", "language", "on", "extra"}, {"privacy", "browser", "language", "maybe"},
+		{"privacy", "browser", "webrtc", "on", "extra"}, {"privacy", "browser", "webrtc", "--bogus"},
 		{"docker", "on", "off"}, {"docker", "--bogus"}, {"uninstall", "--yes", "extra"},
 		{"link", "set", "extra"}, {"link", "show"}, {"init", "fish"},
 		{"completion"}, {"completion", "fish"}, {"help", "bogus"}, {"help", "status", "extra"},

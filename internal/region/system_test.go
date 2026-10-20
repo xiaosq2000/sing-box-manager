@@ -72,7 +72,12 @@ func (f *systemFixture) run(name string, args ...string) error {
 			return errors.New("timedatectl failed")
 		}
 		zone := args[len(args)-1]
-		return replaceSymlink(f.paths.Localtime, filepath.Join(f.paths.ZoneRoot, zone))
+		// timedatectl writes a relative link on systemd-based systems.
+		target, err := filepath.Rel(filepath.Dir(f.paths.Localtime), filepath.Join(f.paths.ZoneRoot, zone))
+		if err != nil {
+			return err
+		}
+		return replaceSymlink(f.paths.Localtime, target)
 	case "update-locale":
 		if f.failLoc {
 			return errors.New("update-locale failed")
@@ -179,6 +184,120 @@ func TestSystemApplyWritesAndRestoresBothComponents(t *testing.T) {
 	}
 	if _, err := os.Stat(f.paths.StateFile); !os.IsNotExist(err) {
 		t.Fatal("state file remains")
+	}
+}
+
+func TestSystemApplyTimezoneAcceptsToolLinks(t *testing.T) {
+	for _, kind := range []string{"absolute", "relative", "unchanged relative"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newSystemFixture(t)
+			target := filepath.Join(f.zoneRoot, "Asia/Shanghai")
+			if kind != "absolute" {
+				var err error
+				target, err = filepath.Rel(filepath.Dir(f.paths.Localtime), target)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "unchanged relative" {
+				if err := replaceSymlink(f.paths.Localtime, target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			original, err := readSystemValue(f.paths.Localtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			opts := SystemApplyOptions{
+				Paths:    f.paths,
+				Profile:  Profile{Timezone: "Asia/Shanghai", Language: "zh-CN"},
+				Timezone: true,
+				Run: func(string, ...string) error {
+					calls++
+					if kind == "unchanged relative" {
+						return nil
+					}
+					return replaceSymlink(f.paths.Localtime, target)
+				},
+				LookPath: f.lookPath,
+				Euid:     func() int { return 0 },
+			}
+			for range 2 {
+				result, err := SystemApply(opts)
+				if err != nil || !result.TimezoneApplied || result.TimezoneError != nil {
+					t.Fatalf("apply: %#v, %v", result, err)
+				}
+			}
+			if calls != 1 {
+				t.Fatalf("timedatectl ran %d times; want 1", calls)
+			}
+			status, err := SystemStatusOf(f.paths)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !status.TimezoneMatches() || status.CurrentTimezone != "Asia/Shanghai" ||
+				status.State.Timezone.Written.Target != target {
+				t.Fatalf("unexpected status: %#v", status)
+			}
+			disabled, err := f.disable(t, true, false)
+			if err != nil || !disabled.TimezoneRestored {
+				t.Fatalf("disable: %#v, %v", disabled, err)
+			}
+			got, err := readSystemValue(f.paths.Localtime)
+			if err != nil || !sameSystemValue(got, original) {
+				t.Fatalf("restored localtime = %#v, %v; want %#v", got, err, original)
+			}
+		})
+	}
+}
+
+func TestSystemApplyTimezoneRollsBackWrongToolResults(t *testing.T) {
+	for _, kind := range []string{"wrong relative", "file", "missing", "unchanged"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newSystemFixture(t)
+			original, err := readSystemValue(f.paths.Localtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := SystemApply(SystemApplyOptions{
+				Paths:    f.paths,
+				Profile:  Profile{Timezone: "Asia/Shanghai", Language: "zh-CN"},
+				Timezone: true,
+				Language: true,
+				Run: func(name string, args ...string) error {
+					if filepath.Base(name) != "timedatectl" {
+						return f.run(name, args...)
+					}
+					switch kind {
+					case "wrong relative":
+						return replaceSymlink(f.paths.Localtime, "../zoneinfo/Europe/Berlin")
+					case "file", "missing":
+						if err := os.Remove(f.paths.Localtime); err != nil {
+							return err
+						}
+						if kind == "file" {
+							return os.WriteFile(f.paths.Localtime, []byte("wrong zone"), 0o644)
+						}
+					}
+					return nil
+				},
+				LookPath: f.lookPath,
+				Locales:  func() ([]string, error) { return f.locales, nil },
+				Euid:     func() int { return 0 },
+			})
+			if err != nil || result.TimezoneApplied || result.TimezoneError == nil || !result.LanguageApplied {
+				t.Fatalf("apply: %#v, %v", result, err)
+			}
+			got, err := readSystemValue(f.paths.Localtime)
+			if err != nil || !sameSystemValue(got, original) {
+				t.Fatalf("rolled back localtime = %#v, %v; want %#v", got, err, original)
+			}
+			state, err := loadSystemState(f.paths)
+			if err != nil || state == nil || state.Timezone != nil || state.Language == nil {
+				t.Fatalf("state = %#v, %v", state, err)
+			}
+		})
 	}
 }
 
