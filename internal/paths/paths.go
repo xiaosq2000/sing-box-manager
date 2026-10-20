@@ -99,6 +99,12 @@ func (l Layout) LanguageFile() string { return filepath.Join(l.Config, "language
 // UpgradeHint exists while a newer sbc or sing-box is available.
 func (l Layout) UpgradeHint() string { return filepath.Join(l.Config, "upgrade-available") }
 
+// TunState holds the owner's credential-protected TUN API state.
+func (l Layout) TunState() string { return filepath.Join(l.Config, "tun.json") }
+
+// TunUpdateHint records that an active TUN needs manual maintenance.
+func (l Layout) TunUpdateHint() string { return filepath.Join(l.Config, "tun-update-available") }
+
 // Usage holds the traffic count the portal sent with the last refresh.
 func (l Layout) Usage() string { return filepath.Join(l.Config, "usage") }
 

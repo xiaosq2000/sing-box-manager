@@ -18,13 +18,27 @@ import (
 func requestFixture(t *testing.T, handler http.Handler, capturedSocket bool, tls bool) (*api.Client, string) {
 	t.Helper()
 	var mu sync.Mutex
-	var peer string
-	target := httptest.NewUnstartedServer(handler)
+	peers := map[string]bool{}
+	nonce, err := RandomSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	probePath := "/" + nonce
+	target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != probePath {
+			http.NotFound(w, r)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
 	target.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
 		if state == http.StateNew {
-			mu.Lock()
-			peer = conn.RemoteAddr().String()
-			mu.Unlock()
+			peers[conn.RemoteAddr().String()] = true
+		}
+		if state == http.StateClosed {
+			delete(peers, conn.RemoteAddr().String())
 		}
 	}
 	if tls {
@@ -38,28 +52,33 @@ func requestFixture(t *testing.T, handler http.Handler, capturedSocket bool, tls
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fixture" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if r.Method != http.MethodGet || r.URL.Path != "/connections" {
 			t.Errorf("probe changed API state: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(500)
 			return
 		}
 		mu.Lock()
-		remote := peer
-		mu.Unlock()
+		defer mu.Unlock()
 		connections := []api.Connection{}
-		if remote != "" && capturedSocket {
-			host, port, _ := net.SplitHostPort(remote)
-			connections = append(connections, api.Connection{ID: "target", Metadata: api.ConnectionMetadata{
-				Type: "tun/tun-in", Network: "tcp", SourceIP: host, SourcePort: port,
-				DestinationIP: page.Hostname(), DestinationPort: page.Port(),
-			}})
+		if capturedSocket {
+			for remote := range peers {
+				host, port, _ := net.SplitHostPort(remote)
+				connections = append(connections, api.Connection{ID: remote, Metadata: api.ConnectionMetadata{
+					Type: "tun/tun-in", Network: "tcp", SourceIP: host, SourcePort: port,
+					DestinationIP: page.Hostname(), DestinationPort: page.Port(),
+				}})
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
 	}))
 	t.Cleanup(server.Close)
 	address, _ := url.Parse(server.URL)
 	port, _ := strconv.Atoi(address.Port())
-	return api.New(port, "fixture"), target.URL
+	return api.New(port, "fixture"), target.URL + probePath
 }
 
 func TestVerifyRequestUsesTheCapturedSocketWithoutProxyOrRedirect(t *testing.T) {

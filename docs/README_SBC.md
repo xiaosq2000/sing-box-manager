@@ -55,8 +55,8 @@ TUN on a machine; another user's `sbc tun on` is refused.
 TUN answers DNS through its route rules and never uses the systemd-resolved stub.
 Mixed mode and TUN never run together: `sbc on`, `sbc desktop on` and
 `sbc docker on` refuse while TUN is active, and the mixed user unit has a
-condition guard. `sbc install`, `sbc uninstall` and `sbc upgrade` also refuse
-while TUN is active; run `sbc tun off` first. The service is enabled at boot only
+condition guard. `sbc install` and `sbc uninstall` also refuse while TUN is
+active. Run `sbc tun off` first. The service is enabled at boot only
 after activation checks pass. `sbc tun off` stops and disables the service and
 leaves the mixed proxy off; run `sbc on` to restore it. There is no fail-open: if
 the proxy fails, captured traffic has no exit, so run `sbc tun off` at the machine.
@@ -85,6 +85,40 @@ If it cannot confirm cleanup, sbc retains a persistent mixed-mode block and mark
 the TUN as dirty. `sbc status` reports `tun: dirty` and exits 1. Run `sbc tun off`
 at the machine to retry recovery. Pending and dirty state also block install,
 uninstall and upgrade. Do not delete markers to bypass this protection.
+
+### TUN maintenance
+
+Run manual `sbc refresh` and `sbc upgrade` at the machine's own console.
+They can interrupt connectivity briefly. Refresh keeps the installed binaries.
+Upgrade uses signed client and engine downloads. Both prepare the complete
+configuration, rule snapshots and binaries before root stops the old capture.
+An invalid candidate leaves the active generation unchanged.
+
+Maintenance preserves the active route and selected protocol, not the portal's
+startup defaults. A new cache namespace prevents old cached selections from
+changing candidate startup. Root verifies the current policy before the owner
+publishes installed files and API state. Root then commits the generation.
+No failure automatically starts an old TUN or the mixed proxy.
+
+Enabled automatic jobs only check for changed configuration, signed rule
+snapshots and signed builds while TUN is active. They do not apply updates or
+restart services. `sbc status` shows an update hint. Run manual maintenance to
+apply the update.
+
+An interrupted update retains a private typed recovery record and file backups.
+Run `sbc refresh` locally to recover it. Root retains the commit fact after
+successful or failed shutdown. Recovery keeps committed user files, including
+when capture is already off. Otherwise, it restores files only after confirmed shutdown, or if the previous
+generation never stopped. Recovery after shutdown leaves capture off and returns
+an error with instructions. Run `sbc tun on` explicitly when ready.
+If shutdown is unconfirmed, recovery retains the backups and mixed-mode block.
+Do not delete the recovery record or staging directory to bypass this check.
+
+TUN command coverage is incomplete. `sbc route` and `sbc protocol` still use
+the mixed API, not the TUN API. Do not use them to change TUN selections.
+`sbc ip` and `sbc speed` also use mixed-mode paths, not TUN diagnostics.
+Maintenance preserves selections already present in the active TUN API.
+Native CLI switching and diagnostics remain separate M1b requirements.
 
 Android and iOS apps manage their own tunnels and are not affected.
 
@@ -322,6 +356,11 @@ whole seconds from `1m` through `720h`. Queries change no settings or services.
 Changing a policy only changes background scheduling. It does not immediately
 refresh configuration, install binaries, or restart the proxy.
 
+Active Linux TUN uses the [TUN maintenance contract](#tun-maintenance): automatic
+jobs only check and report updates. Manual maintenance republishes the TUN
+without starting the mixed proxy. The restart and rollback details below apply
+to mixed mode.
+
 Manual actions ignore the automatic switches. An upgrade can adapt configuration
 even when automatic refresh is off. Upgrades use the operator's signed release,
 not an upstream "latest" release.
@@ -355,8 +394,8 @@ replace files. If shutdown fails, recovery files remain for repair.
 
 The private `maintenance.json` file stores policies and recent action results.
 Invalid settings stop maintenance rather than enable defaults. `sbc status` shows
-an incomplete attempt as "running or interrupted". An interrupted upgrade keeps
-its recovery record and backups. The next maintenance action or proxy start
+an incomplete attempt as "running or interrupted". An interrupted mixed-mode
+upgrade keeps its recovery record and backups. The next maintenance action or proxy start
 restores the previous files before proceeding. A failed recovery retains those
 files for repair. Policy queries and changes do not perform this recovery.
 

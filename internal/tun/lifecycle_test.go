@@ -182,6 +182,63 @@ func TestRecoveryStopsPendingButNotCommittedOrDifferentTransactions(t *testing.T
 	}
 }
 
+func TestCommitFactSurvivesSuccessfulAndFailedStop(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "off", true: "dirty"}[failed], func(t *testing.T) {
+			opts, runner, stop := lifecycleOptions(t)
+			if err := Apply(opts); err != nil {
+				t.Fatal(err)
+			}
+			if err := Commit(stop, opts.Transaction); err != nil {
+				t.Fatal(err)
+			}
+			record, err := loadTransaction(opts.Paths)
+			if err != nil || !record.Committed {
+				t.Fatal("root commit has no durable receipt")
+			}
+			if failed {
+				runner.fail = func(call string) bool { return strings.Contains(call, "disable --now") }
+			}
+			err = Stop(stop)
+			if (err != nil) != failed {
+				t.Fatalf("unexpected stop result: %v", err)
+			}
+			record, err = loadTransaction(opts.Paths)
+			if err != nil || !record.Committed {
+				t.Fatal("stop erased the root commit fact")
+			}
+			runner.runCalls = nil
+			if err = Recover(stop, opts.Transaction); err != nil || len(runner.runCalls) != 0 {
+				t.Fatal("stale recovery acted on a committed generation")
+			}
+			if !failed {
+				opts.Transaction = "1123456789abcdef0123456789abcdef"
+				if err = Apply(opts); err != nil {
+					t.Fatal(err)
+				}
+				record, err = loadTransaction(opts.Paths)
+				if err != nil || record.Committed {
+					t.Fatal("new pending generation inherited an old commit")
+				}
+			}
+		})
+	}
+}
+
+func TestStopRetainsALegacyActiveCommitFact(t *testing.T) {
+	opts, _, stop := lifecycleOptions(t)
+	if err := saveTransaction(opts.Paths, transaction{ID: testTransactionID, Phase: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Stop(stop); err != nil {
+		t.Fatal(err)
+	}
+	record, err := loadTransaction(opts.Paths)
+	if err != nil || record.Phase != "off" || !record.Committed {
+		t.Fatal("legacy active journal lost its commit fact during stop")
+	}
+}
+
 func TestExpiredCommitAndRebootCannotActivatePendingGeneration(t *testing.T) {
 	opts, runner, stop := lifecycleOptions(t)
 	if err := Apply(opts); err != nil {

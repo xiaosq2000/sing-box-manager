@@ -15,8 +15,13 @@ import (
 func RecoveryFile(l paths.Layout) string { return filepath.Join(l.Data, "upgrade-recovery.json") }
 
 type upgradeRecovery struct {
-	Stage string            `json:"stage"`
-	Files map[string]string `json:"files"`
+	Stage               string            `json:"stage"`
+	Files               map[string]string `json:"files"`
+	Kind                string            `json:"kind,omitempty"`
+	Transaction         string            `json:"transaction,omitempty"`
+	PreviousTransaction string            `json:"previous_transaction,omitempty"`
+	Mode                string            `json:"mode,omitempty"`
+	Protocol            string            `json:"protocol,omitempty"`
 }
 
 func (r upgradeRecovery) save(l paths.Layout) error {
@@ -45,19 +50,12 @@ func (r upgradeRecovery) finish(l paths.Layout) error { return os.Remove(Recover
 // Recover restores an interrupted transaction under the caller's operation lock.
 // A proxy wrapper passes nil callbacks because it has not started sing-box yet.
 func (i *Installer) Recover(restart, ready func() error) (bool, error) {
-	data, err := os.ReadFile(RecoveryFile(i.Layout))
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
+	recovery, err := readRecovery(i.Layout)
+	if err != nil || recovery == nil {
 		return false, err
 	}
-	var recovery upgradeRecovery
-	if err = json.Unmarshal(data, &recovery); err != nil {
-		return false, i18n.New("invalid upgrade recovery record")
-	}
-	if err = recovery.validate(i.Layout); err != nil {
-		return false, err
+	if recovery.Kind == "tun" {
+		return false, i18n.New("A TUN update needs explicit recovery. Run 'sbc refresh' at the machine's own console.")
 	}
 	if i.BeforeRestore != nil {
 		if err = i.BeforeRestore(); err != nil {
@@ -84,13 +82,40 @@ func (i *Installer) Recover(restart, ready func() error) (bool, error) {
 	return true, nil
 }
 
+func readRecovery(layout paths.Layout) (*upgradeRecovery, error) {
+	data, err := os.ReadFile(RecoveryFile(layout))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var recovery upgradeRecovery
+	if json.Unmarshal(data, &recovery) != nil {
+		return nil, i18n.New("invalid upgrade recovery record")
+	}
+	if err := recovery.validate(layout); err != nil {
+		return nil, err
+	}
+	return &recovery, nil
+}
+
 func (r upgradeRecovery) validate(l paths.Layout) error {
 	invalid := i18n.New("invalid upgrade recovery record")
+	if r.Kind != "" && r.Kind != "tun" {
+		return invalid
+	}
+	if r.Kind == "tun" && (!tunTransactionID(r.Transaction) || !tunTransactionID(r.PreviousTransaction) || r.Mode == "" || r.Protocol == "") {
+		return invalid
+	}
 	if filepath.Dir(r.Stage) != filepath.Clean(l.Data) || !strings.HasPrefix(filepath.Base(r.Stage), ".upgrade-") || filepath.Clean(r.Stage) != r.Stage || len(r.Files) == 0 {
 		return invalid
 	}
 	for destination, source := range r.Files {
 		allowed := destination == l.ConfigFile() || destination == l.SBC() || destination == l.SBCVersion() || destination == l.SingBoxVersion() || destination == l.Usage()
+		if r.Kind == "tun" {
+			allowed = allowed || destination == l.TunState() || destination == l.ETag()
+		}
 		if filepath.Dir(destination) == l.Bin() {
 			name := filepath.Base(destination)
 			allowed = name == "sing-box"+l.Exe || name == "libcronet.so" || name == "libcronet.dll"

@@ -75,6 +75,8 @@ type Env struct {
 	TimeDownload func(client *http.Client, page string, limit time.Duration) (int64, time.Duration, error)
 	// TunHost reads the Linux TUN environment checks.
 	TunHost func() tun.Host
+	// TunCapture reads public root transaction metadata. Tests replace it.
+	TunCapture func() tun.CaptureState
 	// Sudo runs this sbc as root and may prompt on the terminal.
 	Sudo func(self string, args []string) error
 }
@@ -317,7 +319,7 @@ func runStatus(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if status := tun.Status(); status != "off" {
+	if status := tunCapture(env).Status; status != "off" {
 		if status != "active" {
 			fmt.Fprintln(env.Stdout, i18n.T("tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'"))
 			return 1
@@ -337,6 +339,9 @@ func runStatus(env Env) int {
 		}
 		fmt.Fprintf(env.Stdout, i18n.T("route:    %s\nprotocol: %s\n"), route, protocol)
 		fmt.Fprintln(env.Stdout, i18n.T("capture:  TUN; run 'sbc tun off' to stop it"))
+		if _, err := os.Stat(layout.TunUpdateHint()); err == nil {
+			fmt.Fprintln(env.Stdout, i18n.T("update:   TUN updates are available; run 'sbc refresh' or 'sbc upgrade'"))
+		}
 		return 0
 	}
 	client, local, err := localAPI(layout)

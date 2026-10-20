@@ -95,6 +95,7 @@ type Options struct {
 	// until that command saves its API state and calls Commit.
 	Transaction string
 	Self        string
+	Selection   Selection
 
 	Runner      Runner
 	Euid        func() int
@@ -180,6 +181,9 @@ func Apply(opts Options) error {
 	if err != nil {
 		return err
 	}
+	if err := checkSelection(candidate.Config, opts.Selection, opts.Transaction); err != nil {
+		return err
+	}
 	if err := Probe(opts.Runner, tools, opts.Paths); err != nil {
 		return err
 	}
@@ -226,6 +230,9 @@ func Apply(opts Options) error {
 	}
 	if err := opts.Runner.Run(tools.Systemctl, "start", ServiceName); err != nil {
 		return abort(opts, tools, i18n.New("the TUN service did not start"))
+	}
+	if err := verifySelection(opts.Paths, opts.Selection); err != nil {
+		return abort(opts, tools, err)
 	}
 	if err := opts.Verify(opts.Paths, opts.Runner, tools); err != nil {
 		return abort(opts, tools, i18n.Errorf("the TUN service failed verification: %w", err))

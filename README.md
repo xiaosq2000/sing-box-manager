@@ -129,7 +129,9 @@ with normal DNS expiry. See the
 [release guide](docs/RELEASE_AND_PORTAL.md#build-the-release) for build requirements.
 
 `sbc` enables automatic configuration refresh and signed binary upgrades by default,
-with separate 6h intervals. Use `sbc refresh auto off` or `sbc upgrade auto off` to
+with separate 6h intervals. Active Linux TUN only checks and reports updates.
+Manual `sbc refresh` or `sbc upgrade` republishes TUN under its current policy.
+Use `sbc refresh auto off` or `sbc upgrade auto off` to
 disable either policy. See [automatic maintenance](docs/README_SBC.md#automatic-maintenance)
 for intervals, saved preferences, and migration from older clients.
 

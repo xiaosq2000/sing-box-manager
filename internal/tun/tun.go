@@ -196,11 +196,13 @@ type State struct {
 	APISecret string `json:"api_secret"`
 	Interface string `json:"interface"`
 	Since     string `json:"since,omitempty"`
+	// SourceHash identifies the applied config and local rule contents.
+	SourceHash string `json:"source_hash,omitempty"`
 }
 
 // StatePath is the owner's local TUN state.
 func StatePath(layout paths.Layout) string {
-	return filepath.Join(layout.Config, "tun.json")
+	return layout.TunState()
 }
 
 // WriteState writes the owner's TUN state with the credential-protected mode.

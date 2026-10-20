@@ -67,6 +67,10 @@ func runTunOn(env Env) int {
 		return fail(env, err)
 	}
 	defer cleanup()
+	sourceHash, err := tun.InstalledFingerprint(layout, config)
+	if err != nil {
+		return fail(env, err)
+	}
 
 	if err := clearMixedProxy(env, layout); err != nil {
 		return fail(env, i18n.Errorf("Linux TUN was not started: %w", err))
@@ -96,10 +100,11 @@ func runTunOn(env Env) int {
 		return fail(env, i18n.Errorf("Linux TUN setup failed: %w; the mixed proxy remains off", err))
 	}
 	state := tun.State{
-		APIPort:   apiPort,
-		APISecret: secret,
-		Interface: tun.InterfaceName,
-		Since:     time.Now().UTC().Format(time.RFC3339),
+		APIPort:    apiPort,
+		APISecret:  secret,
+		Interface:  tun.InterfaceName,
+		Since:      time.Now().UTC().Format(time.RFC3339),
+		SourceHash: sourceHash,
 	}
 	if err := finishTunActivation(env, layout, self, transaction, state); err != nil {
 		return fail(env, err)
@@ -152,7 +157,7 @@ func runTunOff(env Env) int {
 }
 
 // runTunApply is the root-side hidden command.
-func runTunApply(env Env, config, binDir, rules string, ownerUID int, ownerUser, transaction string) int {
+func runTunApply(env Env, config, binDir, rules string, ownerUID int, ownerUser, transaction string, selection tun.Selection) int {
 	if err := tun.Apply(tun.Options{
 		Paths:       tun.DefaultPaths(),
 		Config:      config,
@@ -161,6 +166,7 @@ func runTunApply(env Env, config, binDir, rules string, ownerUID int, ownerUser,
 		OwnerUID:    ownerUID,
 		OwnerUser:   ownerUser,
 		Transaction: transaction,
+		Selection:   selection,
 	}); err != nil {
 		return fail(env, err)
 	}
