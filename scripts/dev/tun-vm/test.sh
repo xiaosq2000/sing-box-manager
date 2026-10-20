@@ -69,7 +69,11 @@ ls -la "$XDG_CONFIG_HOME/sbc" "$XDG_DATA_HOME/sbc"
 cat "$XDG_CONFIG_HOME/sbc/subscription"
 cat "$XDG_DATA_HOME/sbc/sing-box.version"
 sbc link
-sbc tun on
+if ! sbc tun on; then
+	sudo systemctl status sbc-tun.service --no-pager || true
+	sudo journalctl -u sbc-tun.service --no-pager -n 100 || true
+	exit 1
+fi
 sbc status | grep -q 'tun:      active (sbc-tun0)'
 ip link show sbc-tun0 >/dev/null
 systemctl is-active --quiet sbc-tun.service
