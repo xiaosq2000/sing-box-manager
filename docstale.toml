@@ -16,6 +16,7 @@ harness = [
   ".claude/settings.json",
   ".codex/hooks.json",
   ".github/workflows/",
+  ".pi/",
   "scripts/dev/",
   ".gitleaks.toml",
   ".prettierignore",

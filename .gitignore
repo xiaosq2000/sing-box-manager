@@ -19,6 +19,9 @@
 
 .pixi/
 
+# Pi installs project packages into the checkout.
+/.pi/git/
+
 /releases/
 
 .worktrees/

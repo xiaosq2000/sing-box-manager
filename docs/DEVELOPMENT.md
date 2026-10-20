@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-19.
+Checked on 2026-10-20.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -458,15 +458,21 @@ Read each listed document, update facts an operator or contributor would act on,
 then stamp it. A review may conclude that no edit is needed, but editing a document
 does not record a review. The check does not verify the prose.
 
-The hooks in `.claude/settings.json` and `.codex/hooks.json` use
-`.pixi/envs/default/bin/docstale hook` for both SessionStart and Stop. Run
-`pixi install` before relying on them. SessionStart saves each document's
+The Claude Code and Codex hooks in `.claude/settings.json` and `.codex/hooks.json`
+run `.pixi/envs/default/bin/docstale hook` for both SessionStart and Stop. Pi loads
+the docstale package from `.pi/settings.json` after project trust, and
+`.pi/extensions/docstale-executable.ts` points its adapter at the same command. Run
+`pixi install` before relying on any of them. SessionStart saves each document's
 fingerprint, and Stop reports documents whose sources changed during the session and
 that have not been stamped since. A document that was already stale when the session
-started does not trigger a reminder, but `check` still reports it. The reminder
-suggests the [`docstale-reviewer`](../.claude/agents/docstale-reviewer.md) subagent,
-which judges one document with a small model and leaves edits and stamps to the main
-agent.
+started does not trigger a reminder, but `check` still reports it. The Claude Code and
+Codex reminder suggests the
+[`docstale-reviewer`](../.claude/agents/docstale-reviewer.md) subagent, which judges
+one document with a small model and leaves edits and stamps to the main agent; the pi
+reminder omits that instruction.
+
+The `.pi/settings.json` package is pinned to the docstale commit in `pixi.lock`. Move
+both pins together when upgrading docstale.
 
 The baseline survives session resume and compaction. If it is missing, the first hook
 call saves the current state without checking for changes. Hooks report each document
