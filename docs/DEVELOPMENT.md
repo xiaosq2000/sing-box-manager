@@ -264,8 +264,9 @@ Do not upload them wholesale. The script prints the run directory and failure
 markers. Docker, `SO_BINDTODEVICE`, native reboot acceptance and non-SOCKS tunnel
 protocols are outside this VM suite.
 
-Local core acceptance passes with sing-box 1.14.3 and the Noble fixture under
-KVM and TCG. GitHub CI validation is pending.
+Core acceptance passes locally with sing-box 1.14.3 and the Noble fixture under
+KVM and TCG. The [GitHub CI run](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39415310872)
+also passes under TCG. This does not complete M1b acceptance.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real

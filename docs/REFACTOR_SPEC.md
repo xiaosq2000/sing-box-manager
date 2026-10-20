@@ -216,8 +216,8 @@ current location.
 5. **M1b: Linux TUN.** The core is implemented in the client. Environment, routing,
    DNS, privilege, and recovery requirements are defined in [M1b](#m1b-linux-tun).
    The client has route/protocol API access, lifecycle guards, a transaction
-   journal, and `scripts/dev/test-tun-vm.sh`. The `e2e-tun` job is configured for
-   native QEMU acceptance. Docker, bound sockets, reboot and maintenance acceptance
+   journal, and `scripts/dev/test-tun-vm.sh`. The `e2e-tun` job passes controlled
+   native QEMU acceptance under TCG on GitHub Actions. Docker, bound sockets, reboot and maintenance acceptance
    remain outside the core suite. Do not restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
