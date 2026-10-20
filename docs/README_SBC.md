@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-19.
+Checked on 2026-10-20.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -78,9 +78,9 @@ sbc help speed
 ```
 
 Help works without an installation. It does not read a subscription link,
-contact a server, or perform the command's action. Messages follow `SBC_LANG`
-and the locale, in English or Simplified Chinese. Command and flag names stay
-in English.
+contact a server, or perform the command's action. Messages follow `SBC_LANG`,
+a saved choice, and the locale, in English or Simplified Chinese. Command and
+flag names stay in English.
 
 The CLI rejects unknown flags and extra arguments before performing an action.
 Use `refresh` for configuration and `upgrade` for binaries. The public `update`
@@ -97,6 +97,7 @@ command is removed. Other commands retain their syntax and meaning.
 | `sbc privacy`                             | Show browser and region privacy choices                         |
 | `sbc privacy browser [on\|off]`           | Show or change Chrome WebRTC protection (Linux)                 |
 | `sbc privacy region [on\|off]`            | Show or match the node's client time zone and language (Linux)  |
+| `sbc lang [en\|zh\|auto]`                 | Show or set the language of sbc messages                        |
 | `sbc docker [on\|off] [--yes]`            | Show or switch the Linux Docker daemon's proxy                  |
 | `sbc route [name]`, `sbc protocol [name]` | Show or switch a choice without restarting sing-box             |
 | `sbc route --list`                        | List installed route strategies and their meanings              |
@@ -115,6 +116,33 @@ Docker changes require confirmation or `--yes` because they restart Docker.
 
 Subscription links are credentials. Pass them through the installer prompt or
 stdin, not command arguments. `sbc link set` also reads from stdin.
+
+## CLI language
+
+`sbc lang` shows the effective language and what selected it. `sbc lang en` and
+`sbc lang zh` save English or Simplified Chinese. `sbc lang auto` removes the
+saved choice and follows `SBC_LANG` and the locale again. The command works
+without an installation or a subscription.
+
+The saved choice is in the private config directory: `~/.config/sbc/language`
+on Linux, `~/Library/Application Support/sbc/language` on macOS, and
+`%LOCALAPPDATA%\sbc\language` on Windows. The order is:
+
+1. `SBC_LANG`, where a value starting with `zh` selects Chinese and any other
+   value selects English.
+2. The saved choice.
+3. The first of `LC_ALL`, `LC_MESSAGES` and `LANG` that is set. Only `zh_CN` and
+   `zh_SG` select Chinese.
+4. English.
+
+`SBC_LANG` still overrides the saved choice. `sbc lang` shows both when they
+differ. A corrupt saved choice falls back to `SBC_LANG` and the locale; run
+`sbc lang auto` to remove it.
+
+This setting changes only sbc messages. It does not change the system locale,
+the language of other programs, the hosted installer, or the portal. Use
+`sbc privacy region` to match the client's system time zone and language to the
+node.
 
 ## Chrome WebRTC protection
 
@@ -218,7 +246,8 @@ Limits:
   `/etc/localtime` or locale. A node that runs in UTC can tell clients to use
   `Europe/Berlin`.
 - A user-set `LC_ALL` overrides `LANG` and `LC_MESSAGES`. `sbc privacy region`
-  warns when it sees one.
+  warns when it sees one. A saved `sbc lang en|zh` controls sbc's own messages;
+  run `sbc lang auto` to let region matching change them too.
 - Snap and Flatpak browsers can ignore the session environment. Firefox can
   keep an Accept-Language or UI language chosen earlier.
 - Turning the proxy off or using `sbc route direct` leaves the region in place,

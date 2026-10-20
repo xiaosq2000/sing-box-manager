@@ -547,4 +547,20 @@ var zh = map[string]string{
 	"could not read the saved region profile; run 'sbc privacy region off' and then 'sbc refresh': %w":                    "无法读取已保存的地区配置；请先运行 'sbc privacy region off'，再运行 'sbc refresh'：%w",
 	"region:   on (system), but the saved profile is missing; run 'sbc refresh'":                                          "地区：  已开启（系统级），但保存的配置缺失；请运行 'sbc refresh'",
 	"New processes use the new system time zone. Restart open applications and browsers to update their display.":         "新进程将使用新的系统时区。请重启打开的应用和浏览器以更新显示。",
+
+	// CLI language.
+	"Show or set the CLI language": "查看或设置 CLI 语言",
+	"Language: %s (%s)\n":          "语言：%s（%s）\n",
+	"Saved choice: %s\n":           "已保存的选择：%s\n",
+	"saved setting":                "已保存设置",
+	"locale":                       "系统 locale",
+	"default":                      "默认",
+	"Saved %s, but SBC_LANG currently overrides it.\n":                                  "已保存%s，但 SBC_LANG 当前覆盖了它。\n",
+	"CLI language set to %s.\n":                                                         "CLI 语言已设置为%s。\n",
+	"The saved CLI language is cleared, but SBC_LANG still selects the language.":       "已清除保存的 CLI 语言，但 SBC_LANG 仍会选择语言。",
+	"The CLI language follows the locale; no saved choice remains.":                     "CLI 语言将跟随系统 locale；没有保存的选择。",
+	"could not read the saved CLI language: %w":                                         "无法读取已保存的 CLI 语言：%w",
+	"could not save the CLI language: %w":                                               "无法保存 CLI 语言：%w",
+	"the saved CLI language %q is invalid; run 'sbc lang auto' or set 'sbc lang en|zh'": "已保存的 CLI 语言 %q 无效；请运行 'sbc lang auto'，或设置 'sbc lang en|zh'",
+	"unknown CLI language %q":                                                           "未知的 CLI 语言 %q",
 }

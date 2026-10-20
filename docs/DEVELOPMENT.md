@@ -195,8 +195,10 @@ real maintenance task. Native scheduling checks run only in the gated lifecycle.
 keyed by the English. Its test reads the source and fails when a message has no
 translation, when a translation formats different values, or when the catalog keeps
 a message the code no longer has. Go tests see English whatever the machine's
-locale, unless a test asks for Chinese. `install.sh` keeps its translations in its
-`t` function, and `tests/test_install_sh.py` checks them the same way.
+locale, unless a test asks for Chinese. `cmd/sbc` applies the saved CLI language
+before it builds commands; `SBC_LANG` and the locale decide when no choice is
+saved. `install.sh` keeps its translations in its `t` function, and
+`tests/test_install_sh.py` checks them the same way.
 
 The shell compatibility tests check Bash 3.2 for the shared server scripts and
 Windows PowerShell 5.1 for the hosted Windows installer. The Unix installer uses

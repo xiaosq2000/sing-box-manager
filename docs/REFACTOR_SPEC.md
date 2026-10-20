@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-19.
+Checked on 2026-10-20.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Milestones preserve current access until the planned
@@ -393,7 +393,9 @@ Client:
 - Messages from `sbc` and `install.sh` are in Simplified Chinese when the first of
   `LC_ALL`, `LC_MESSAGES` and `LANG` that is set starts with `zh_CN` or `zh_SG`,
   and in English otherwise. `SBC_LANG=zh` or `SBC_LANG=en` overrides the locale.
-- Commands: `install`, `init`, `link`, `upgrade`, `uninstall`, `on`, `off`, `env`,
+  `sbc lang en|zh` saves a client-only choice, and `sbc lang auto` removes it;
+  `SBC_LANG` overrides that choice too. `install.sh` reads only the environment.
+- Commands: `install`, `init`, `link`, `lang`, `upgrade`, `uninstall`, `on`, `off`, `env`,
   `status`, `ip`, `speed`, `route`, `protocol`, `port`, `refresh`, `start`, `stop`,
   `restart`, `run`, `desktop on|off`, `docker on|off` and `version`. `on` and `off`
   point shells, and the desktop after `desktop on`, at the proxy or away from it,
