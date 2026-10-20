@@ -85,6 +85,17 @@ conflicts, changed values, failed writes and retry. Legacy cleanup fixtures
 change a file or replace it with a symlink before the helper runs, and check
 that the elevated recheck refuses deletion.
 
+`internal/browserlanguage` fixtures use temporary Chrome roots and policies.
+They cover full list replacement, both preference fields, multiple profiles,
+absent original fields, external edits, policy conflicts, singleton checks,
+symlink refusal, deferred targets and recovery after failed writes. Account
+fixtures cover existing `account_values` fields, separate originals, version 1
+migration, pending status and removed stores. No test creates missing account
+fields during application or restores a removed account store. Recovery records
+contain only language fields. CLI fixtures supply temporary language
+managers, including for region refresh and uninstall. No unit test reads or
+changes a developer's Chrome profiles.
+
 `internal/e2e` installs `sbc` through `install.sh` on Unix and the hosted
 `/install.ps1` on Windows, using a stand-in portal and the real systemd, launchd
 or Task Scheduler. It checks installation, route and protocol switches without a
@@ -114,10 +125,21 @@ assertion failures do not permit retries. Timeouts report whether the browser
 requested the probe page and include captured browser output. Browser sandboxing
 stays enabled.
 
+`TestChromeLanguagePreferences` runs only on an explicitly enabled disposable
+Linux runner. It launches Chrome with a temporary standard profile, checks the
+original language, applies the node language, and checks restoration. A loopback
+page reports `navigator.language`, `navigator.languages` and the actual
+`Accept-Language` header. The probe sets no language command-line flags and keeps
+the sandbox enabled. It disables sync only for the disposable probe, so it does
+not establish isolation from real Chrome Sync. The disposable profile has no
+signed-in account. It does not validate the effective account preference layer.
+Account storage fixtures check writes and recovery. Native account-layer acceptance needs a separate test with
+an authorized signed-in profile and unchanged sync settings.
+
 These checks do not launch a browser or change host settings:
 
 ```sh
-pixi run go test -tags e2e ./internal/e2e -run '^TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput|BrowserStartup(Retry|Timeout))$' -count=1
+pixi run go test -tags e2e ./internal/e2e -run '^(TestBrowserLanguageProbeCommand|TestWebRTC(STUNFixture|BrowserCommand|BrowserOutput|BrowserStartup(Retry|Timeout)))$' -count=1
 ```
 
 CLI help and argument-validation fixtures reject calls to installation lookup
@@ -125,10 +147,14 @@ or stdin. AI check fixtures cover explicit opt-in, direct-mode skips, direct
 permission, proxy-only inlet validation, HTTP denials, challenges, redirects,
 unknown regions, and absence of account credentials or automatic retries.
 Region fixtures use a temporary `/etc` tree and a fake tool runner. They cover
-system scope, tool and file fallback, ownership, external changes, partial
-components, pending retries and the root state. No test changes the host's time
-zone or locale. CLI fixtures check the `--system` confirmation, the no-sudo
-refresh path and the uninstall restore.
+system scope, absolute and relative time zone links, unchanged tool results,
+tool and file fallback, ownership, external changes, partial components, pending
+retries and the root state. No test changes the host's time
+zone or locale. The common CLI fixture uses temporary system region paths and
+rejects sudo calls without a fake runner. CLI fixtures check the `--system`
+confirmation, activation through a symbolic-link directory, the no-sudo refresh
+path and the uninstall restore. The directory fixture covers macOS path aliases
+on Linux too.
 
 Route alias fixtures cover old and new installed configs. Provider checks use
 loopback stand-ins only, never live provider requests. Completion fixtures read only a scratch config and use no running proxy.

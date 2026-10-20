@@ -433,11 +433,12 @@ Client:
   header of the last refresh.
 - `sbc` lives in a directory of its own, which `sbc init` puts on PATH.
 - `sbc desktop on` points the GNOME or macOS proxy settings at `sbc`.
-  WebRTC leak protection is Linux Chrome only. `sbc privacy browser on|off`
+  WebRTC leak protection is Linux Chrome only. `sbc privacy browser webrtc on|off`
   writes or removes the mandatory Chrome `WebRtcIPHandling` policy and records
-  an opt-out. See [WebRTC protection](WEBRTC.md) for ownership, restart
-  requirements, limits and manual cleanup after the cross-platform scope was
-  removed.
+  an opt-out. `sbc privacy browser language on|off` separately matches personal
+  profiles' language lists to the node and restores owned fields. Chrome must
+  be closed. `sbc privacy browser on|off` attempts both components independently.
+  See [Chrome privacy](WEBRTC.md) for ownership, recovery, sync risks and limits.
   `sbc docker on` writes the Docker daemon's systemd drop-in on Linux and restarts
   Docker after confirmation, or with `--yes`. Desktop and Docker integration refuse
   authenticated local proxies. Desktop settings cannot hold the password, and all

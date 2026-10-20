@@ -31,7 +31,7 @@ func (w *Manager) optedOut() (bool, error) {
 		return false, i18n.Errorf("could not read the WebRTC mode state: %w", err)
 	}
 	if strings.TrimSpace(string(data)) != "off" {
-		return false, i18n.New("the WebRTC mode state is invalid; use 'sbc privacy browser on' or 'sbc privacy browser off'")
+		return false, i18n.New("the WebRTC mode state is invalid; use 'sbc privacy browser webrtc on' or 'sbc privacy browser webrtc off'")
 	}
 	return true, nil
 }
@@ -72,7 +72,7 @@ func (w *Manager) Set(enabled bool) error {
 		return err
 	}
 	if err := w.Remove(); err != nil {
-		return i18n.Errorf("automatic WebRTC setup is now off, but cleanup failed; retry 'sbc privacy browser off' or uninstall: %w", err)
+		return i18n.Errorf("automatic WebRTC setup is now off, but cleanup failed; retry 'sbc privacy browser webrtc off' or uninstall: %w", err)
 	}
 	return nil
 }
