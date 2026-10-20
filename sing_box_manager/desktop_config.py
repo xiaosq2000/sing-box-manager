@@ -190,7 +190,10 @@ def build_linux_tun_config(
             "auto_route": True,
             "strict_route": True,
             "auto_redirect": True,
-            "dns_mode": "disabled",
+            # hijack announces the TUN DNS address to systemd-resolved and
+            # redirects port 53 to it. disabled leaves the resolver upstream on
+            # a directly attached network, which auto_redirect excludes.
+            "dns_mode": "hijack",
         }
     ]
 

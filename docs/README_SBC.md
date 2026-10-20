@@ -50,7 +50,9 @@ local API, cache and absolute rule snapshot paths. The service does not download
 rule updates; `sbc tun on` stages the installed snapshots again. One user owns the
 TUN on a machine; another user's `sbc tun on` is refused.
 
-TUN answers DNS through its route rules and never uses the systemd-resolved stub.
+TUN announces its own DNS address to systemd-resolved and hijacks port 53, so
+resolver queries stay inside the tunnel. It never uses the systemd-resolved stub
+as an upstream.
 Mixed mode and TUN never run together: `sbc on`, `sbc desktop on` and
 `sbc docker on` refuse while TUN is active, and the mixed user unit has a
 condition guard. `sbc install`, `sbc uninstall` and `sbc upgrade` also refuse

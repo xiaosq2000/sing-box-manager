@@ -43,7 +43,7 @@ complexity comes from machinery built around premises that the target design dro
 | Nodes apply user changes by reloading sing-box in batches                                         | Proposed, revisit if reloads disturb users |
 | Protocols stay trojan, hysteria2 and naive; VLESS-Reality is an option for nodes without a domain | Open until M6                              |
 | The subscription envelope carries the Linux TUN config beside the mixed config                    | Decided                                    |
-| Linux TUN answers DNS through its route rules, not through the systemd-resolved stub              | Decided                                    |
+| Linux TUN hijacks DNS on its own address, not through the systemd-resolved stub                   | Decided                                    |
 | Linux TUN is refused in WSL2, containers and remote shells                                        | Decided                                    |
 | The Linux TUN uses `auto_redirect`, prefers IPv4, and rejects UDP except DNS and NTP              | Decided                                    |
 
@@ -540,19 +540,20 @@ Routing:
 
 DNS:
 
-- Set `dns_mode: disabled`, and answer captured queries with the route's
-  `hijack-dns` rule.
+- Set `dns_mode: hijack`. It announces the TUN DNS address to systemd-resolved
+  and redirects port 53 to it. `disabled` leaves the resolver upstream on a
+  directly attached network, which `auto_redirect` excludes from capture, so
+  the resolver bypasses the TUN.
 - Resolve proxied names through Google over the proxy and direct names through
-  Aliyun (`223.5.5.5`). Never use the systemd-resolved stub as a DNS server in a
-  TUN config: captured upstream queries would loop back into it.
+  Aliyun (`223.5.5.5`). Never configure the systemd-resolved stub as a TUN DNS
+  server: captured upstream queries would loop back into it.
 - Give both direct outbounds the Aliyun resolver, and keep the deployment host and
   `direct_domain_suffixes` exceptions direct.
 - Set `dns.strategy: prefer_ipv4` in the TUN config.
 - Route NTP (UDP 123) direct and reject every other non-private UDP destination
   after DNS and NTP. The proxy's own UDP connections are unaffected.
-- Verify with `auto_redirect` and `dns_mode: disabled` that DNS from applications
-  and from systemd-resolved is captured and answered. If it is not, switch the TUN
-  config to `dns_mode: hijack` instead of adding a resolved stub server.
+- Verify with `auto_redirect` that DNS from applications and from
+  systemd-resolved is captured and answered.
 
 Maintenance:
 

@@ -242,7 +242,7 @@ def test_linux_tun_config_replaces_the_mixed_inbound_and_resolved_stub() -> None
             "auto_route": True,
             "strict_route": True,
             "auto_redirect": True,
-            "dns_mode": "disabled",
+            "dns_mode": "hijack",
         }
     ]
     assert config["route"]["auto_detect_interface"] is True
