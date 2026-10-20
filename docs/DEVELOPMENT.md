@@ -123,6 +123,12 @@ CLI help and argument-validation fixtures reject calls to installation lookup
 or stdin. AI check fixtures cover explicit opt-in, direct-mode skips, direct
 permission, proxy-only inlet validation, HTTP denials, challenges, redirects,
 unknown regions, and absence of account credentials or automatic retries.
+Region fixtures use a temporary `/etc` tree and a fake tool runner. They cover
+system scope, tool and file fallback, ownership, external changes, partial
+components, pending retries and the root state. No test changes the host's time
+zone or locale. CLI fixtures check the `--system` confirmation, the no-sudo
+refresh path and the uninstall restore.
+
 Route alias fixtures cover old and new installed configs. Provider checks use
 loopback stand-ins only, never live provider requests. Completion fixtures read only a scratch config and use no running proxy.
 Native completion tests build a temporary `sbc` and use isolated homes and profiles.

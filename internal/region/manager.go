@@ -54,6 +54,7 @@ func New(layout paths.Layout, getenv func(string) string) *Manager {
 // still match the saved choice.
 type Status struct {
 	Mode              Mode
+	Scope             Scope
 	State             *State
 	TimezoneAvailable bool
 	TimezoneError     error
@@ -89,9 +90,14 @@ func (m *Manager) Load() (*State, Mode, error) {
 	if state != nil {
 		normalized, err := state.Profile.Normalize()
 		if err != nil {
-			return nil, Mode{}, i18n.Errorf("the saved region profile is invalid; run 'sbc refresh': %w", err)
+			return nil, Mode{}, i18n.Errorf("the saved region profile is invalid; run 'sbc privacy region off' and then 'sbc refresh': %w", err)
 		}
 		state.Profile = normalized
+		switch state.Pending {
+		case "", PendingApply, PendingRemove:
+		default:
+			return nil, Mode{}, i18n.New("the saved region profile has an invalid pending action; run 'sbc privacy region off' and then 'sbc refresh'")
+		}
 	}
 	return state, mode, nil
 }
@@ -103,11 +109,50 @@ func (m *Manager) StoreState(state State) error {
 		return err
 	}
 	state.Profile = normalized
+	switch state.Pending {
+	case "", PendingApply, PendingRemove:
+	default:
+		return i18n.New("the saved region profile has an invalid pending action")
+	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
 	return paths.WriteFile(m.StateFile, append(data, '\n'), 0o600)
+}
+
+// LoadMode reads only the saved mode. Disabling a system-scope choice needs
+// the mode even when the cached profile is corrupt.
+func (m *Manager) LoadMode() (Mode, error) { return m.loadMode() }
+
+// SaveMode records the enabled components and scope without touching the
+// user-level files. System scope uses it after the root helper changes the
+// system settings.
+func (m *Manager) SaveMode(mode Mode) error {
+	if !mode.Scope.Valid() {
+		return i18n.Errorf("unknown region scope %q", mode.Scope)
+	}
+	if mode.Scope == "" {
+		mode.Scope = ScopeUser
+	}
+	return m.saveMode(mode)
+}
+
+// ClearUser removes the user-level files and the saved mode without changing
+// the systemd user environment. System scope uses it because sbc never set
+// those variables for the account.
+func (m *Manager) ClearUser() (ApplyResult, error) {
+	if !m.Supported {
+		return ApplyResult{}, i18n.New("region matching is available on Linux only")
+	}
+	result := ApplyResult{LCAll: m.Getenv("LC_ALL")}
+	if err := m.saveMode(Mode{}); err != nil {
+		return result, err
+	}
+	if err := m.removeFiles(); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 // Apply enables the requested components. A component whose local data is
@@ -116,6 +161,10 @@ func (m *Manager) Apply(state State, requested Mode) (ApplyResult, error) {
 	if !m.Supported {
 		return ApplyResult{}, i18n.New("region matching is available on Linux only")
 	}
+	if requested.System() {
+		return ApplyResult{}, i18n.New("system region settings are applied by the root helper")
+	}
+	requested.Scope = ScopeUser
 	normalized, err := state.Profile.Normalize()
 	if err != nil {
 		return ApplyResult{}, err
@@ -134,7 +183,7 @@ func (m *Manager) Apply(state State, requested Mode) (ApplyResult, error) {
 		oldMode = Mode{Timezone: true, Language: true}
 	}
 	result := ApplyResult{LCAll: m.Getenv("LC_ALL")}
-	applied := Mode{}
+	applied := Mode{Scope: ScopeUser}
 	if requested.Timezone {
 		if err := m.checkTimezone(normalized.Timezone); err != nil {
 			result.TimezoneError = err
@@ -178,8 +227,11 @@ func (m *Manager) Disable() (ApplyResult, error) {
 	if !m.Supported {
 		return ApplyResult{}, i18n.New("region matching is available on Linux only")
 	}
-	result := ApplyResult{LCAll: m.Getenv("LC_ALL")}
 	mode, err := m.loadMode()
+	if err == nil && mode.System() {
+		return m.ClearUser()
+	}
+	result := ApplyResult{LCAll: m.Getenv("LC_ALL")}
 	if err != nil {
 		// A corrupt mode file still leaves owned files to remove. Clearing all
 		// four variables is the safe cleanup when its contents are unknown.
@@ -229,6 +281,7 @@ func (m *Manager) Status() (Status, error) {
 	}
 	status := Status{
 		Mode:  mode,
+		Scope: mode.EffectiveScope(),
 		State: state,
 		LCAll: m.Getenv("LC_ALL"),
 	}
@@ -272,7 +325,7 @@ func (m *Manager) loadState() (*State, error) {
 	}
 	var state State
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, i18n.Errorf("could not read the saved region profile; run 'sbc refresh': %w", err)
+		return nil, i18n.Errorf("could not read the saved region profile; run 'sbc privacy region off' and then 'sbc refresh': %w", err)
 	}
 	return &state, nil
 }
@@ -289,6 +342,10 @@ func (m *Manager) loadMode() (Mode, error) {
 	if err := json.Unmarshal(data, &mode); err != nil {
 		return Mode{}, i18n.Errorf("could not read the region mode; run 'sbc privacy region off': %w", err)
 	}
+	if !mode.Scope.Valid() {
+		return Mode{}, i18n.Errorf("unknown region scope %q; run 'sbc privacy region off'", mode.Scope)
+	}
+	mode.Scope = mode.EffectiveScope()
 	return mode, nil
 }
 
@@ -299,6 +356,10 @@ func (m *Manager) saveMode(mode Mode) error {
 		}
 		return nil
 	}
+	if !mode.Scope.Valid() {
+		return i18n.Errorf("unknown region scope %q", mode.Scope)
+	}
+	mode.Scope = mode.EffectiveScope()
 	data, err := json.Marshal(mode)
 	if err != nil {
 		return err
@@ -438,20 +499,6 @@ func environmentContent(mode Mode, profile Profile) string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
-}
-
-func systemLocales() ([]string, error) {
-	output, err := exec.Command("locale", "-a").Output()
-	if err != nil {
-		return nil, err
-	}
-	var locales []string
-	for _, line := range strings.Split(string(output), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			locales = append(locales, line)
-		}
-	}
-	return locales, nil
 }
 
 func runCommand(name string, args ...string) error {

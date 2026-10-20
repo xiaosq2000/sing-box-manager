@@ -7,6 +7,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
+	"github.com/xiaosq2000/sing-box-manager/internal/region"
 )
 
 // runPrivacy summarizes the browser and region choices. It changes nothing.
@@ -50,20 +51,41 @@ func printRegionChoice(env Env, layout paths.Layout) {
 		fmt.Fprintf(env.Stdout, i18n.T("Region matching: unknown (%v)\n"), err)
 		return
 	}
+	if status.Scope == region.ScopeSystem {
+		if status.State != nil && status.Mode.Any() {
+			profile := status.State.Profile
+			fmt.Fprintf(env.Stdout, i18n.T("Region matching: %s (system) (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language)
+		} else if status.Mode.Any() {
+			fmt.Fprintln(env.Stdout, i18n.T("Region matching: on (system), but the saved profile is missing; run 'sbc refresh'."))
+		} else if region.SystemStateExists(systemRegionPaths(env)) {
+			fmt.Fprintln(env.Stdout, i18n.T("Region matching: a system region record exists; run 'sbc privacy region off --system'"))
+		} else {
+			fmt.Fprintln(env.Stdout, i18n.T("Region matching: off"))
+		}
+		return
+	}
 	if status.State == nil {
 		if status.MissingState {
 			fmt.Fprintln(env.Stdout, i18n.T("Region matching: on, but the saved profile is missing; run 'sbc refresh'."))
 		} else {
 			fmt.Fprintln(env.Stdout, i18n.T("Region matching: unavailable: no client region is saved"))
 		}
+		printOrphanedSystemRegion(env)
 		return
 	}
 	if status.Mode.Any() {
 		profile := status.State.Profile
 		fmt.Fprintf(env.Stdout, i18n.T("Region matching: %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language)
-		return
+	} else {
+		fmt.Fprintln(env.Stdout, i18n.T("Region matching: off"))
 	}
-	fmt.Fprintln(env.Stdout, i18n.T("Region matching: off"))
+	printOrphanedSystemChoice(env)
+}
+
+func printOrphanedSystemChoice(env Env) {
+	if region.SystemStateExists(systemRegionPaths(env)) {
+		fmt.Fprintln(env.Stdout, i18n.T("Region matching: a system region record exists; run 'sbc privacy region off --system'"))
+	}
 }
 
 // runPrivacyBrowser changes the Chrome WebRTC policy choice.

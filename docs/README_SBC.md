@@ -128,20 +128,28 @@ cleanup after the scope change.
 
 ## Region matching
 
-`sbc privacy region on` makes this Linux account present the time zone and
-language the portal assigns to its node. It changes `TZ`, `LANG`, `LANGUAGE`
-and `LC_MESSAGES` for the account, not for other accounts or the system. It is
-off until enabled. The operator sets the target in the node's
-`deployment.client_region`: `timezone` is an IANA name and `language` is BCP 47
-with a region, such as `zh-CN`. The subscription carries it per node. A portal
-without that block reports the target as unavailable; `sbc` does not guess.
+`sbc privacy region on` makes this Linux machine present the time zone and
+language the portal assigns to its node. It is off until enabled. The operator
+sets the target in the node's `deployment.client_region`: `timezone` is an IANA
+name and `language` is BCP 47 with a region, such as `zh-CN`. The subscription
+carries it per node. A portal without that block reports the target as
+unavailable; `sbc` does not guess.
+
+By default, region matching changes only the current account. `--system` changes
+the whole machine. System scope needs `sudo`, asks for confirmation, and records
+the previous settings so `off` or uninstall restores them.
 
 ```sh
 sbc privacy region              # Show the saved choice and availability
-sbc privacy region on           # Time zone and language
+sbc privacy region on           # This account: time zone and language
 sbc privacy region on --timezone
 sbc privacy region off --language
+sbc privacy region on --system  # All users: confirm and sudo
+sbc privacy region on --system --yes
+sbc privacy region off --system # Restore the previous system settings
 ```
+
+### User scope
 
 The command writes `~/.config/sbc/region.sh` for the `sbc init` prompt hook,
 `~/.config/environment.d/90-sbc-region.conf` for the next login, and updates the
@@ -149,10 +157,46 @@ systemd user environment for newly started user services. An open shell picks
 up `region.sh` at its next prompt. A desktop session needs a new login; open
 browsers and applications need a restart. `off` removes the files and clears the
 variables sbc set; it keeps the last profile so `on` does not need a download.
-`sbc refresh` updates the profile and reapplies it when the node's region
-changes. `sbc on` uses the cache and does not fetch. Replacing the subscription
-with one that has no region turns matching off; a refresh that temporarily lacks
-the field keeps the last profile.
+
+### System scope
+
+`--system` writes `/etc/localtime` and the system locale file. It uses
+`timedatectl set-timezone` for the time zone and `update-locale` for the
+language on Ubuntu 18.04 to 26.04. If a tool is missing, sbc writes the file
+directly. The language applies at the next login; the time zone applies to new
+processes immediately. Open applications and browsers keep their current values
+until you restart them.
+
+System scope affects every account and service. It can change log timestamps,
+cron schedules, and the language of system tools. On a shared machine, it can
+match only one node at a time.
+
+The first `on --system` records the previous time zone and locale under
+`/var/lib/sbc/region`. `off` restores them. If someone changes a system setting
+after sbc, sbc leaves that setting in place and reports it. `sbc uninstall`
+restores the settings that sbc still owns, and asks for `sudo` when it does. If the record is damaged, sbc refuses
+to guess: restore the time zone and language manually, then remove the record.
+
+You cannot change scope while matching is on. Run `off` first:
+
+```sh
+sbc privacy region off
+sbc privacy region on --system
+```
+
+### Refresh and automation
+
+In user scope, `sbc refresh` updates the saved profile and reapplies it when
+the node's region changes. In system scope, it does not call `sudo` and does
+not change the system settings. It reports that a new target is
+available; run `sbc privacy region on` to apply it. A refresh that temporarily
+lacks `client_region` keeps the last profile and system settings. A new
+subscription without it marks the system settings for removal; run `sbc privacy
+region off`.
+
+`sbc on` uses the cache and does not fetch. Replacing the subscription with one
+that has no region turns user-scope matching off. In system scope, it asks you
+to run `off` instead.
 
 The language is applied only when its locale is generated. If it is missing,
 `on` still applies the time zone, reports the missing locale, and exits 1:
@@ -181,11 +225,18 @@ Limits:
   so the exit IP and the region disagree. `sbc status` warns.
 - Region matching does not change the keyboard layout, input method, fonts, or
   DNS, and it is not a complete anti-fingerprinting measure.
-- It is Linux-only and user-scoped. System-wide `/etc/localtime` and locale
-  changes are not part of this feature. The login setting uses the systemd user
-  manager; a session without one gets only the shell hook.
-- `sbc uninstall` removes the files and restores the system defaults at the next
-  login.
+- It is Linux-only. System scope needs `sudo` and a locale that is already
+  generated. sbc uses `timedatectl` and `update-locale` when they exist and
+  writes the files directly otherwise. It does not generate locales or install
+  language packs.
+- System scope does not manage `/etc/timezone`. tzdata derives it from
+  `/etc/localtime` where the file still exists, and Ubuntu 26.04 removes it.
+- System scope is machine-wide. On a shared machine, the last account that runs
+  `on --system` owns the setting.
+- `sbc uninstall` from any account restores the system settings that sbc still
+  owns. A user-scope choice is removed with the account's files.
+- A client older than the system scope ignores the saved scope. Run `sbc privacy
+region off` before downgrading.
 
 ## Automatic maintenance
 

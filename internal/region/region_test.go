@@ -339,3 +339,50 @@ func TestDisableClearsOnlyComponentsThatWereOn(t *testing.T) {
 		t.Fatalf("language was cleared even though it was off:\n%s", joined)
 	}
 }
+
+func TestModeWithoutScopeIsTheUserScope(t *testing.T) {
+	layout := testLayout(t)
+	manager, _ := testManager(t, layout, []string{"C.utf8"})
+	if err := os.MkdirAll(filepath.Dir(layout.RegionMode()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.RegionMode(), []byte(`{"timezone":true,"language":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, mode, err := manager.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode.EffectiveScope() != ScopeUser || !mode.Timezone || mode.Language {
+		t.Fatalf("mode = %#v", mode)
+	}
+}
+
+func TestModeRoundTripsTheSystemScope(t *testing.T) {
+	layout := testLayout(t)
+	manager, _ := testManager(t, layout, []string{"C.utf8"})
+	if err := manager.SaveMode(Mode{Timezone: true, Scope: ScopeSystem}); err != nil {
+		t.Fatal(err)
+	}
+	_, mode, err := manager.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mode.System() || !mode.Timezone || mode.Language {
+		t.Fatalf("mode = %#v", mode)
+	}
+}
+
+func TestModeRejectsAnUnknownScope(t *testing.T) {
+	layout := testLayout(t)
+	manager, _ := testManager(t, layout, []string{"C.utf8"})
+	if err := os.MkdirAll(filepath.Dir(layout.RegionMode()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.RegionMode(), []byte(`{"timezone":true,"scope":"global"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := manager.Load(); err == nil {
+		t.Fatal("accepted an unknown scope")
+	}
+}
