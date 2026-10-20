@@ -95,7 +95,11 @@ func (f *systemCLIFixture) tool(name string, args ...string) error {
 		zone := args[len(args)-1]
 		tmp := f.paths.Localtime + ".tmp"
 		_ = os.Remove(tmp)
-		if err := os.Symlink(filepath.Join(f.zoneRoot, zone), tmp); err != nil {
+		target, err := filepath.Rel(filepath.Dir(f.paths.Localtime), filepath.Join(f.zoneRoot, zone))
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(target, tmp); err != nil {
 			return err
 		}
 		return os.Rename(tmp, f.paths.Localtime)
@@ -227,7 +231,7 @@ func TestPrivacyRegionSystemOn(t *testing.T) {
 	if mode.EffectiveScope() != region.ScopeSystem || !mode.Timezone || !mode.Language {
 		t.Fatalf("mode = %#v", mode)
 	}
-	target, err := os.Readlink(f.paths.Localtime)
+	target, err := filepath.EvalSymlinks(f.paths.Localtime)
 	if err != nil || target != filepath.Join(f.zoneRoot, "Asia/Shanghai") {
 		t.Fatalf("localtime = %q, %v", target, err)
 	}

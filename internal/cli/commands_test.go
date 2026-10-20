@@ -19,6 +19,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
 	"github.com/xiaosq2000/sing-box-manager/internal/maintenance"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
+	"github.com/xiaosq2000/sing-box-manager/internal/region"
 	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 )
@@ -191,7 +192,14 @@ func newHarness(t *testing.T) *harness {
 	home := filepath.Join(root, "home")
 	os.MkdirAll(home, 0o755)
 	h.env.Home = func() (string, error) { return home, nil }
-	// Tests never read or change this machine's desktop or Docker settings.
+	// Tests never read or change this machine's system region, desktop or
+	// Docker settings. Tests that need elevation must supply a fake runner.
+	system := newSystemCLIFixture(t)
+	h.env.SystemRegion = func() region.SystemPaths { return system.paths }
+	h.env.Sudo = func(string, []string) error {
+		t.Fatal("test attempted to run sudo without a fake runner")
+		return nil
+	}
 	h.env.Privacy = func() (desktop.BrowserPrivacy, error) { return &fakeDesktop{}, nil }
 	h.env.Desktop = func() (desktop.Desktop, error) { return nil, desktop.ErrUnsupported }
 	h.env.Docker = func() (*docker.Daemon, error) { return nil, docker.ErrUnsupported }

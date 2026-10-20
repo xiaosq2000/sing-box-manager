@@ -383,7 +383,9 @@ func applySystemTimezone(opts SystemApplyOptions, state *SystemState, zone strin
 	if err != nil {
 		return warning, rollbackTimezone(opts.Paths, state, old, current, currentData, err)
 	}
-	if !sameSystemValue(got, component.Written) {
+	// timedatectl can write a relative link. Check its normalized target,
+	// then record the actual link for later ownership checks and restoration.
+	if !timezoneOwned(opts.Paths, got, component) {
 		return warning, rollbackTimezone(opts.Paths, state, old, current, currentData,
 			i18n.Errorf("the system time zone did not change to %s", zone))
 	}
