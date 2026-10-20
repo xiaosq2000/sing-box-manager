@@ -74,7 +74,7 @@ for _ in $(seq 30); do
 	fi
 	sleep 1
 done
-curl -fsS "http://127.0.0.1:18080/sub/$TOKEN" | grep -q '"config_tun"'
+curl -fsS "http://127.0.0.1:18080/sub/$TOKEN" | grep '"config_tun"' >/dev/null
 
 step "activate"
 echo "HOME=$HOME XDG_CONFIG_HOME=$XDG_CONFIG_HOME XDG_DATA_HOME=$XDG_DATA_HOME"
@@ -87,7 +87,12 @@ if ! sbc tun on; then
 	sudo journalctl -u sbc-tun.service --no-pager -n 100 || true
 	exit 1
 fi
-sbc status | grep -q 'tun:      active (sbc-tun0)'
+if ! status=$(sbc status); then
+	printf '%s\n' "$status"
+	false
+fi
+printf '%s\n' "$status"
+printf '%s\n' "$status" | grep -q 'tun:      active (sbc-tun0)'
 ip link show sbc-tun0 >/dev/null
 systemctl is-active --quiet sbc-tun.service
 test -e /run/sbc-tun/active
@@ -108,10 +113,10 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 done
 
 step "local site and tunnel"
-curl -fsS http://test.example:8080/ | grep -q "tun-e2e"
+curl -fsS http://test.example:8080/ | grep "tun-e2e" >/dev/null
 curl -fsS -X PATCH -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
 	-d '{"mode":"global"}' "http://127.0.0.1:$port/configs" >/dev/null
-curl -fsS http://example.com/ | grep -q "Example Domain"
+curl -fsS http://example.com/ | grep "Example Domain" >/dev/null
 
 step "deactivate"
 sbc tun off
