@@ -161,7 +161,7 @@ printf 'http://127.0.0.1:%d/sub/%s\n' "$PORTAL_PORT" "$TOKEN" >"$ASSETS/subscrip
 cat >"$WORK/host-upstream.json" <<JSON
 {"log": {"level": "warn"},
  "inbounds": [{"type": "socks", "tag": "in", "listen": "0.0.0.0", "listen_port": $UPSTREAM_PORT}],
- "outbounds": [{"type": "direct", "tag": "direct"}]}
+ "outbounds": [{"type": "direct", "tag": "direct", "domain_strategy": "ipv4_only"}]}
 JSON
 "$ASSETS/sing-box" run -c "$WORK/host-upstream.json" >"$WORK/host-upstream.log" 2>&1 &
 upstream_pid=$!
