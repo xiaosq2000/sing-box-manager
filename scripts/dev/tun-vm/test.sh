@@ -112,11 +112,22 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 	}
 done
 
-step "local site and tunnel"
-curl -fsS http://test.example:8080/ | grep "tun-e2e" >/dev/null
+step "local site"
+if ! curl -fsS http://test.example:8080/ | grep "tun-e2e" >/dev/null; then
+	echo "the local site did not answer"
+	cat "$HOME/site.log" || true
+	false
+fi
+
+step "tunnel through the proxy"
 curl -fsS -X PATCH -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
 	-d '{"mode":"global"}' "http://127.0.0.1:$port/configs" >/dev/null
-curl -fsS http://example.com/ | grep "Example Domain" >/dev/null
+if ! curl -fsS https://www.gstatic.com/generate_204 >/dev/null; then
+	echo "the tunnel request failed"
+	curl -v --max-time 10 https://www.gstatic.com/generate_204 || true
+	sudo journalctl -u sbc-tun.service --no-pager -n 80 || true
+	false
+fi
 
 step "deactivate"
 sbc tun off
