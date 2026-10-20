@@ -53,7 +53,7 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	}
 	// Delay proves the selected outbound reaches the probe host; capture then
 	// runs in global mode so the probe stays on the same working path.
-	if _, err := client.Delay(api.ProxySelector, 10*time.Second); err != nil {
+	if _, err := client.Delay(api.ProxySelector, 30*time.Second); err != nil {
 		return i18n.Errorf("a page did not load through the TUN: %w", err)
 	}
 	if err := verifyCapture(client, tag, address); err != nil {
