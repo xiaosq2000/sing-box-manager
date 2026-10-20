@@ -522,8 +522,10 @@ Routing:
   state (0600) and the root config (0640 `root:sbc-tun`), so `sbc route`,
   `sbc protocol`, `sbc ip` and `sbc speed` keep working without sudo.
 - Before accepting activation, check a stable process, the interface, routes and
-  rules, DNS answers, a request through the tunnel, and increasing interface packet
-  counts.
+  rules, DNS answers, a connection captured on the TUN inbound, and a request
+  through the selected outbound. Do not check interface packet counters:
+  `auto_redirect` redirects captured TCP to a local socket, so packets never
+  reach `sbc-tun0`. Read capture from the Clash API connection list instead.
 - Stop the mixed service and clear owned proxy settings before publishing. `sbc on`,
   `desktop on` and `docker on` refuse while TUN is active.
 - Keep a journal, the previous generation, a `safe-off`, `active` or `dirty` status,

@@ -130,6 +130,28 @@ func TestAWrongSecretAndAStoppedSingBoxAreReported(t *testing.T) {
 	}
 }
 
+func TestConnectionsReportTheTunInbound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/connections" || r.Header.Get("Authorization") != "Bearer s3cret" {
+			http.Error(w, "unexpected request "+r.URL.String(), http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte(`{"connections":[{"id":"abc","metadata":{"type":"tun/tun-in","network":"tcp","destinationIP":"1.1.1.1","destinationPort":"443"}}]}`))
+	}))
+	defer server.Close()
+	client := New(0, "s3cret")
+	client.base = server.URL
+
+	connections, err := client.Connections()
+	if err != nil || len(connections) != 1 {
+		t.Fatalf("connections %#v, %v", connections, err)
+	}
+	got := connections[0]
+	if got.ID != "abc" || got.Metadata.Type != "tun/tun-in" || got.Metadata.DestinationIP != "1.1.1.1" || got.Metadata.DestinationPort != "443" {
+		t.Fatalf("connection %#v", got)
+	}
+}
+
 func TestDelayReportsWhatSingBoxMeasured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
