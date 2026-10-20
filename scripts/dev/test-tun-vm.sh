@@ -128,6 +128,7 @@ cat >"$ASSETS/tun.json" <<JSON
       {"ip_is_private": true, "outbound": "direct"},
       {"network": "udp", "port": 123, "outbound": "direct"},
       {"network": "udp", "action": "reject"},
+      {"process_name": "sing-box", "outbound": "direct"},
       {"clash_mode": "direct", "outbound": "direct"},
       {"clash_mode": "ai-only", "outbound": "direct"},
       {"clash_mode": "china-direct", "outbound": "proxy"},

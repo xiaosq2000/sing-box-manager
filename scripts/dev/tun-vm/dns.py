@@ -1,13 +1,19 @@
 # ruff: noqa: INP001
 """A tiny DNS server for the nested-VM TUN test.
 
-test.example resolves to the local site. Every other query is forwarded to
-8.8.8.8 so the TUN verification and an HTTP request can use ordinary names.
+The names the checks use resolve to fixed addresses. No query leaves the VM,
+which keeps the TUN's DNS path from looping through the local upstream.
 """
 
 import socket
 import struct
 import sys
+
+ANSWERS = {
+    "test.example": "127.0.0.1",
+    "example.com": "93.184.216.34",
+    "www.gstatic.com": "142.251.153.120",
+}
 
 
 def question_end(data: bytes) -> tuple[str, int]:
@@ -23,22 +29,18 @@ def question_end(data: bytes) -> tuple[str, int]:
     return ".".join(labels).lower(), offset + 4
 
 
-def answer_for_test(data: bytes, end: int, name: str) -> bytes:
+def answer(data: bytes, end: int, address: str) -> bytes:
     header = data[:2] + struct.pack(">HHHHH", 0x8180, 1, 1, 0, 0)
-    question = data[12:end]
-    record = (
-        b"\xc0\x0c" + struct.pack(">HHIH", 1, 1, 60, 4) + socket.inet_aton("127.0.0.1")
-    )
-    return header + question + record
+    record = b"\xc0\x0c" + struct.pack(">HHIH", 1, 1, 60, 4) + socket.inet_aton(address)
+    return header + data[12:end] + record
 
 
-def fail(data: bytes, rcode: int) -> bytes:
-    return data[:2] + struct.pack(">HHHHH", 0x8180 | rcode, 0, 0, 0, 0)
+def empty(data: bytes, end: int) -> bytes:
+    header = data[:2] + struct.pack(">HHHHH", 0x8180, 1, 0, 0, 0)
+    return header + data[12:end]
 
 
 def serve(port: int) -> None:
-    upstream = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    upstream.settimeout(5)
     server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server.bind(("127.0.0.1", port))
     while True:
@@ -49,18 +51,11 @@ def serve(port: int) -> None:
             name, end = question_end(query)
             qtype = struct.unpack(">H", query[end - 4 : end - 2])[0]
         except (IndexError, struct.error):
-            server.sendto(fail(query, 1), peer)
             continue
-        if name == "test.example" and qtype == 1:
-            server.sendto(answer_for_test(query, end, name), peer)
-            continue
-        try:
-            upstream.sendto(query, ("8.8.8.8", 53))
-            response, _ = upstream.recvfrom(4096)
-        except OSError:
-            server.sendto(fail(query, 2), peer)
-            continue
-        server.sendto(response, peer)
+        if qtype == 1 and name in ANSWERS:
+            server.sendto(answer(query, end, ANSWERS[name]), peer)
+        else:
+            server.sendto(empty(query, end), peer)
 
 
 if __name__ == "__main__":
