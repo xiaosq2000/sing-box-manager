@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-18.
+Checked on 2026-10-19.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -123,6 +123,14 @@ Desktop DNS cache files contain queried domains and answers. They stay in the
 client's private state directory. `sbc` uses one `cache.db` for its route modes and
 protocol selector. Single-route mixed profiles use separate cache files.
 Release packages contain public rule snapshots, never a client's DNS cache.
+
+The Linux TUN service keeps the endpoint- and credential-bearing config in
+`/etc/sbc/tun/config.json` (mode 0640, `root:sbc-tun`), its rule snapshots under
+`/etc/sbc/tun/rules`, and the staged binary under `/usr/local/lib/sbc-tun`.
+The owner's loopback API secret is in the owner's `sbc` config directory
+(`tun.json`, mode 0600). The `sbc-tun` service reads the root config; the owner
+does not need to. Treat both files like the mixed client config. The TUN DNS cache
+lives in `/var/lib/sbc-tun` and is writable only by the `sbc-tun` service user.
 
 AI diagnostics use no browser cookies, API keys, or account credentials.
 `sbc ip --ai --allow-direct-ai` permits requests through the active route and can

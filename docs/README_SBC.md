@@ -40,15 +40,34 @@ failure recovery and settings ownership.
 
 ## Linux TUN
 
-`sbc` does not support Linux TUN. [M1b](REFACTOR_SPEC.md#m1b-linux-tun) is the next
-feature priority after automatic client maintenance and official mobile-app import.
+`sbc tun on` runs a root-owned sing-box TUN service (`sbc-tun.service`, interface
+`sbc-tun0`) on native Linux. It needs a running systemd and `/dev/net/tun`; it
+refuses WSL2, containers, SSH sessions, and machines with other login accounts.
+The command asks for sudo. Root owns `/etc/sbc/tun`, `/var/lib/sbc-tun`, the
+staged binary and the unit; the service runs as `sbc-tun` with `CAP_NET_ADMIN`
+only. The subscription's `config_tun` supplies the TUN config, and `sbc` adds the
+local API, cache and absolute rule snapshot paths. The service does not download
+rule updates; `sbc tun on` stages the installed snapshots again. One user owns the
+TUN on a machine; another user's `sbc tun on` is refused.
+
+TUN answers DNS through its route rules and never uses the systemd-resolved stub.
+Mixed mode and TUN never run together: `sbc on`, `sbc desktop on` and
+`sbc docker on` refuse while TUN is active, and the mixed user unit has a
+condition guard. `sbc install`, `sbc uninstall` and `sbc upgrade` also refuse
+while TUN is active; run `sbc tun off` first. The service is enabled at boot only
+after activation checks pass. `sbc tun off` stops and disables the service and
+leaves the mixed proxy off; run `sbc on` to restore it. There is no fail-open: if
+the proxy fails, captured traffic has no exit, so run `sbc tun off` at the machine.
+
 Android and iOS apps manage their own tunnels and are not affected.
 
 The hosted installer refuses when a legacy TUN unit, transaction marker, or
 unsafe status remains. This check also applies when user-scoped client files
 are missing. It changes no files and performs no download in that case.
 Use the installed legacy client's cleanup tools before installing `sbc`.
-The installer does not remove privileged TUN state automatically.
+The installer does not remove privileged TUN state automatically. For the native
+TUN service, run `sbc tun off` before uninstalling; `sbc uninstall` refuses while it
+is active.
 
 ## Command help
 

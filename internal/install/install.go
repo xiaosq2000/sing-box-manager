@@ -395,25 +395,44 @@ func (i *Installer) installRules(link Link, manifest *trust.Manifest) error {
 	return nil
 }
 
-// fetchConfig returns the subscription's config and the traffic count that
-// came with it.
+// fetchConfig returns the subscription's mixed config and the traffic count
+// that came with it.
 func (i *Installer) fetchConfig(link Link, singBoxVersion string) ([]byte, string, error) {
+	config, _, usage, err := i.fetchEnvelope(link, singBoxVersion)
+	return config, usage, err
+}
+
+// FetchTun returns the additive Linux TUN config from the same subscription
+// envelope. The field is optional so older portals keep working.
+func (i *Installer) FetchTun(link Link, singBoxVersion string) ([]byte, error) {
+	_, config, _, err := i.fetchEnvelope(link, singBoxVersion)
+	if err != nil {
+		return nil, err
+	}
+	if len(config) == 0 || string(config) == "null" {
+		return nil, i18n.New("the portal does not provide a Linux TUN config; update the portal")
+	}
+	return config, nil
+}
+
+func (i *Installer) fetchEnvelope(link Link, singBoxVersion string) ([]byte, []byte, string, error) {
 	query := url.Values{"format": {"sbc"}, "os": {i.OS}, "sing-box": {singBoxVersion}}
 	body, header, err := i.fetch(link, link.base+"?"+query.Encode())
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	var envelope struct {
-		Version int             `json:"version"`
-		Config  json.RawMessage `json:"config"`
+		Version   int             `json:"version"`
+		Config    json.RawMessage `json:"config"`
+		ConfigTun json.RawMessage `json:"config_tun"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, "", i18n.Errorf("read the subscription: %w", err)
+		return nil, nil, "", i18n.Errorf("read the subscription: %w", err)
 	}
 	if envelope.Version != 1 {
-		return nil, "", i18n.Errorf("subscription version %d is not supported; upgrade sbc", envelope.Version)
+		return nil, nil, "", i18n.Errorf("subscription version %d is not supported; upgrade sbc", envelope.Version)
 	}
-	return envelope.Config, header.Get(UsageHeader), nil
+	return envelope.Config, envelope.ConfigTun, header.Get(UsageHeader), nil
 }
 
 // NewClient returns the HTTP client sbc uses. It ignores proxy variables, since

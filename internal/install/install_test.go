@@ -35,12 +35,13 @@ const fakeSBC = "#!/bin/sh\nprintf 'sbc abc123\\n'\n"
 const fakeSingBox = "#!/bin/sh\nif grep -q reject \"$5\"; then echo 'FATAL bad config' >&2; exit 1; fi\n"
 
 type portal struct {
-	server   *httptest.Server
-	files    map[string][]byte
-	key      ed25519.PrivateKey
-	tamper   string
-	config   string
-	requests []string
+	server    *httptest.Server
+	files     map[string][]byte
+	key       ed25519.PrivateKey
+	tamper    string
+	config    string
+	configTun string
+	requests  []string
 	// usage is the traffic count the subscription sends, when set.
 	usage       string
 	notModified int
@@ -117,7 +118,12 @@ func (p *portal) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		io.WriteString(w, `{"version":1,"config":`+p.config+`}`)
+		io.WriteString(w, `{"version":1,"config":`+p.config+func() string {
+			if p.configTun == "" {
+				return "}"
+			}
+			return `,"config_tun":` + p.configTun + "}"
+		}())
 	case r.URL.Path == prefix+"/files/manifest.json":
 		w.Write(p.manifest())
 	case r.URL.Path == prefix+"/files/manifest.json.sig":
@@ -668,5 +674,23 @@ func TestWindowsGetsSingBoxAndItsLibraryFromTheZip(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(layout.Bin(), "sing-box")); !os.IsNotExist(err) {
 		t.Error("a program without the .exe suffix was written")
+	}
+}
+
+func TestFetchTunReadsTheAdditiveField(t *testing.T) {
+	p := newPortal(t)
+	p.configTun = `{"inbounds":[{"type":"tun","tag":"tun-in"}]}`
+	i, _ := installer(t, p)
+	config, err := i.FetchTun(link(t, p), "1.14.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(config), `"type":"tun"`) {
+		t.Fatalf("config = %s", config)
+	}
+
+	p.configTun = ""
+	if _, err := i.FetchTun(link(t, p), "1.14.2"); err == nil {
+		t.Fatal("expected an error when the portal has no TUN config")
 	}
 }

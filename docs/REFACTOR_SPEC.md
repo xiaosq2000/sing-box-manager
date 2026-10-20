@@ -181,7 +181,7 @@ current location.
 | --------- | ------------------------------------------ | ---------------------------------------- |
 | M0        | Security fixes                             | Done                                     |
 | M1a       | Client CLI for Linux and macOS, mixed mode | Done                                     |
-| M1b       | Linux TUN in the client CLI                | Next feature                             |
+| M1b       | Linux TUN in the client CLI                | In progress                              |
 | M2        | Client CLI for Windows                     | Done                                     |
 | M3        | Configs in code, one server process        | Done                                     |
 | M4b       | Control plane, devices and subscriptions   | Core deployed, devices planned after TUN |
@@ -212,9 +212,11 @@ current location.
    are implemented. iOS App 1.14.3 passed user testing for Trojan, Hysteria2, and Naive.
    Android device testing is deferred and does not block this change. See the
    [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
-5. **M1b: Linux TUN.** This is the next feature after maintenance and mobile import.
+5. **M1b: Linux TUN.** This is the current feature after maintenance and mobile import.
    Environment, routing, DNS, privilege, and recovery behavior are defined in
-   [M1b](#m1b-linux-tun). Do not restore the legacy Bash client.
+   [M1b](#m1b-linux-tun); the client foundation has landed. Maintenance, route and
+   protocol API integration, install/uninstall, the journal, the safeguard and the
+   nested-VM acceptance remain. Do not restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
 7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
@@ -474,9 +476,9 @@ the Docker bridge address with auth.
 #### M1b: Linux TUN
 
 Required after automatic client maintenance and official mobile-app import.
-`sbc` supports mixed mode, not Linux TUN. The legacy implementation is not maintained.
+`sbc` supports mixed mode and, on native Linux, TUN. The legacy implementation is not maintained.
 
-Add `sbc tun on|off` for native Linux. The portal renders the Linux TUN config
+`sbc tun on|off` runs for native Linux. The portal renders the Linux TUN config
 beside the mixed config in the `sbc` subscription envelope, and release validation
 runs `sing-box check` on both. The `config_tun` field is additive, so the envelope
 version stays 1 and older clients ignore it. `sbc` selects the profile for the mode
