@@ -88,8 +88,11 @@ that the elevated recheck refuses deletion.
 `internal/browserlanguage` fixtures use temporary Chrome roots and policies.
 They cover full list replacement, both preference fields, multiple profiles,
 absent original fields, external edits, policy conflicts, singleton checks,
-symlink refusal, deferred targets and recovery after failed writes. Recovery
-records contain only language fields. CLI fixtures supply temporary language
+symlink refusal, deferred targets and recovery after failed writes. Account
+fixtures cover existing `account_values` fields, separate originals, version 1
+migration, pending status and removed stores. No test creates missing account
+fields during application or restores a removed account store. Recovery records
+contain only language fields. CLI fixtures supply temporary language
 managers, including for region refresh and uninstall. No unit test reads or
 changes a developer's Chrome profiles.
 
@@ -128,7 +131,10 @@ original language, applies the node language, and checks restoration. A loopback
 page reports `navigator.language`, `navigator.languages` and the actual
 `Accept-Language` header. The probe sets no language command-line flags and keeps
 the sandbox enabled. It disables sync only for the disposable probe, so it does
-not establish isolation from real Chrome Sync.
+not establish isolation from real Chrome Sync. The disposable profile has no
+signed-in account. It does not validate the effective account preference layer.
+Account storage fixtures check writes and recovery. Native account-layer acceptance needs a separate test with
+an authorized signed-in profile and unchanged sync settings.
 
 These checks do not launch a browser or change host settings:
 

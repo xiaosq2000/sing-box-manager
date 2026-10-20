@@ -34,6 +34,13 @@ type Record struct {
 	HadIntl  bool                       `json:"had_intl"`
 	Written  string                     `json:"written"`
 	Previous string                     `json:"previous,omitempty"`
+	Account  *AccountRecord             `json:"account_values,omitempty"`
+}
+
+// AccountRecord owns only language fields that already existed in the account
+// store. Missing fields and account containers are never created or restored.
+type AccountRecord struct {
+	Original map[string]json.RawMessage `json:"original"`
 }
 
 // State is a write-ahead recovery record. Its absence means disabled.
@@ -106,7 +113,7 @@ func (m *Manager) load() (State, error) {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if !validRecordJSON(data) || decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || state.Version != 1 || state.Records == nil {
+	if !validRecordJSON(data) || decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version != 1 && state.Version != 2) || state.Records == nil {
 		return state, invalidRecord()
 	}
 	if state.Target != nil {
@@ -121,11 +128,11 @@ func (m *Manager) load() (State, error) {
 		if record.Original == nil || (!record.HadIntl && len(record.Original) != 0) || !validWritten(record.Written) || (record.Previous != "" && !validWritten(record.Previous)) {
 			return state, invalidRecord()
 		}
-		for key, value := range record.Original {
-			_, isString := stringValue(value)
-			if (key != fields[0] && key != fields[1]) || !isString {
-				return state, invalidRecord()
-			}
+		if !validOriginalFields(record.Original) {
+			return state, invalidRecord()
+		}
+		if record.Account != nil && (state.Version != 2 || len(record.Account.Original) == 0 || !validOriginalFields(record.Account.Original)) {
+			return state, invalidRecord()
 		}
 	}
 	return state, nil
@@ -155,6 +162,28 @@ func validRecordJSON(data []byte) bool {
 		if _, err := object(record["original"]); err != nil {
 			return false
 		}
+		if value, exists := record["account_values"]; exists {
+			account, err := object(value)
+			if err != nil {
+				return false
+			}
+			if _, err := object(account["original"]); err != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validOriginalFields(values map[string]json.RawMessage) bool {
+	if values == nil {
+		return false
+	}
+	for key, value := range values {
+		_, isString := stringValue(value)
+		if (key != fields[0] && key != fields[1]) || !isString {
+			return false
+		}
 	}
 	return true
 }
@@ -170,6 +199,15 @@ func validWritten(value string) bool {
 }
 
 func (m *Manager) save(state State) error {
+	// Version 1 remains valid for local-only records. Account ownership needs
+	// version 2, which makes a local-only client refuse unsafe cleanup.
+	state.Version = 1
+	for _, record := range state.Records {
+		if record.Account != nil {
+			state.Version = 2
+			break
+		}
+	}
 	data, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -270,7 +308,7 @@ func (m *Manager) applyProfile(state *State, id, want string) error {
 	if err != nil {
 		return err
 	}
-	if hasForcedLanguages(prefs.intl) {
+	if hasForcedLanguages(prefs.intl) || hasForcedLanguages(prefs.accountIntl) {
 		return policyConflict()
 	}
 	record, owned := state.Records[id]
@@ -291,6 +329,9 @@ func (m *Manager) applyProfile(state *State, id, want string) error {
 			}
 		}
 	}
+	if err := captureAccountFields(&record, prefs.accountIntl); err != nil {
+		return err
+	}
 	if record.Previous != "" && record.Written != want {
 		return i18n.New("a Chrome language change is incomplete. Run 'sbc privacy browser language off' before applying another target")
 	}
@@ -306,12 +347,43 @@ func (m *Manager) applyProfile(state *State, id, want string) error {
 	for _, key := range fields {
 		prefs.intl[key] = value
 	}
+	if record.Account != nil {
+		for key := range record.Account.Original {
+			if _, exists := prefs.accountIntl[key]; exists {
+				prefs.accountIntl[key] = value
+				prefs.accountDirty = true
+			}
+		}
+	}
 	if err := m.writePreferences(root, path, prefs, false); err != nil {
 		return err
 	}
 	record.Previous = ""
 	state.Records[id] = record
 	return m.save(*state)
+}
+
+func captureAccountFields(record *Record, values map[string]json.RawMessage) error {
+	for _, key := range fields {
+		value, exists := values[key]
+		if !exists {
+			continue
+		}
+		if _, isString := stringValue(value); !isString {
+			return i18n.New("the Chrome language preference is not a string. sbc changed nothing")
+		}
+		if record.Account == nil {
+			record.Account = &AccountRecord{Original: map[string]json.RawMessage{}}
+		}
+		if original, owned := record.Account.Original[key]; owned {
+			if !matchesWritten(value, *record) && !equalValue(value, original) {
+				return i18n.New("Chrome languages changed outside sbc. Run 'sbc privacy browser language off' before applying a new target")
+			}
+		} else {
+			record.Account.Original[key] = value
+		}
+	}
+	return nil
 }
 
 // Disable records the opt-out before restoration. Failed restores retain their
@@ -390,6 +462,21 @@ func (m *Manager) restoreProfile(id string, record Record) (bool, error) {
 			delete(prefs.intl, key)
 		}
 	}
+	if record.Account != nil {
+		for key, original := range record.Account.Original {
+			value := prefs.accountIntl[key]
+			if equalValue(value, original) {
+				continue
+			}
+			if !matchesWritten(value, record) {
+				// A removed account field stays removed, including after sign-out.
+				preserved = true
+				continue
+			}
+			prefs.accountIntl[key] = original
+			prefs.accountDirty, changed = true, true
+		}
+	}
 	if !changed {
 		return preserved, nil
 	}
@@ -421,9 +508,13 @@ func (m *Manager) Status() (Status, error) {
 			want, _ = Languages(state.Target.Language)
 		}
 		record, owned := state.Records[id]
-		current := readErr == nil && owned && want != "" && record.Written == want && record.Previous == "" && !hasForcedLanguages(prefs.intl)
+		current := readErr == nil && owned && want != "" && record.Written == want && record.Previous == "" && !hasForcedLanguages(prefs.intl) && !hasForcedLanguages(prefs.accountIntl)
 		for _, key := range fields {
 			current = current && matchesText(prefs.intl[key], want)
+			if value, exists := prefs.accountIntl[key]; exists {
+				accountOwned := record.Account != nil && record.Account.Original[key] != nil
+				current = current && accountOwned && matchesText(value, want)
+			}
 		}
 		if current {
 			status.Current++

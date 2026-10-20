@@ -380,7 +380,7 @@ func TestPartialSuccessNoProfilesDeletedProfilesAndUnsafeRecovery(t *testing.T) 
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("deleted profile was recreated")
 	}
-	for _, data := range []string{`invalid`, `{"version":2,"profiles":{}}`, `{"version":1,"profiles":{"../Default":{"original":{},"written":"en-US,en"}}}`} {
+	for _, data := range []string{`invalid`, `{"version":3,"profiles":{}}`, `{"version":1,"profiles":{"../Default":{"original":{},"written":"en-US,en"}}}`} {
 		if err := atomicWrite(m.StateFile, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}

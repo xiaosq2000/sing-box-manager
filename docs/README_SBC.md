@@ -161,8 +161,10 @@ cleanup after the scope change.
 `sbc privacy browser language on` replaces the language list in this account's
 standard Chrome personal profiles with the node language and its base language,
 such as `en-US,en`. It updates `intl.selected_languages` and
-`intl.accept_languages`. Exit Chrome completely before applying or restoring
-languages. Do not start Chrome while the command runs.
+`intl.accept_languages` at the top level and in existing `account_values` fields.
+It creates no account store or missing account language field. Exit Chrome
+completely before applying or restoring languages. Do not start Chrome while
+the command runs.
 
 The node's subscription region supplies the target. Language matching does not
 require a generated system locale or enable system region matching. It changes

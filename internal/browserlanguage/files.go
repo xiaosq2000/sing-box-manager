@@ -14,11 +14,14 @@ import (
 
 // Keep unrelated JSON as RawMessage, including numbers above 2^53.
 type preferences struct {
-	root     map[string]json.RawMessage
-	intl     map[string]json.RawMessage
-	hadIntl  bool
-	original []byte
-	mode     os.FileMode
+	root         map[string]json.RawMessage
+	intl         map[string]json.RawMessage
+	account      map[string]json.RawMessage
+	accountIntl  map[string]json.RawMessage
+	accountDirty bool
+	hadIntl      bool
+	original     []byte
+	mode         os.FileMode
 }
 
 func readPreferences(path string) (preferences, error) {
@@ -36,6 +39,16 @@ func readPreferences(path string) (preferences, error) {
 		if value, ok := prefs.root["intl"]; ok {
 			prefs.hadIntl = true
 			prefs.intl, err = object(value)
+		}
+	}
+	if err == nil {
+		if value, ok := prefs.root["account_values"]; ok {
+			prefs.account, err = object(value)
+			if err == nil {
+				if value, ok := prefs.account["intl"]; ok {
+					prefs.accountIntl, err = object(value)
+				}
+			}
 		}
 	}
 	if err != nil {
@@ -88,6 +101,20 @@ func (m *Manager) writePreferences(root, path string, prefs preferences, removeI
 			return err
 		}
 		prefs.root["intl"] = value
+	}
+	if prefs.accountDirty {
+		// Only existing account language fields can set accountDirty. Never
+		// create an account store or copy unrelated account data into state.
+		value, err := json.Marshal(prefs.accountIntl)
+		if err != nil {
+			return err
+		}
+		prefs.account["intl"] = value
+		value, err = json.Marshal(prefs.account)
+		if err != nil {
+			return err
+		}
+		prefs.root["account_values"] = value
 	}
 	data, err := json.Marshal(prefs.root)
 	if err != nil {

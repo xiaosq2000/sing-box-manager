@@ -100,7 +100,9 @@ The target is `nodes[].region.language` for the subscription's default node.
 The ordered list contains the regional language and its base language, such as
 `en-US,en` or `de-DE,de`. sbc does not guess from the exit IP. It changes both
 `intl.selected_languages` and `intl.accept_languages` in each profile's
-`Preferences`. Chrome's [language preference code](https://chromium.googlesource.com/chromium/src/+/main/components/language/core/browser/language_prefs.cc)
+`Preferences`. It also updates these fields under `account_values` when they
+already exist. Chrome's account preferences can override the top-level values.
+sbc creates no account store or missing account language field. Chrome's [language preference code](https://chromium.googlesource.com/chromium/src/+/main/components/language/core/browser/language_prefs.cc)
 derives the effective list from the selected languages and managed language policies. `ForcedLanguages` alone cannot remove other languages.
 
 This feature needs neither sudo nor a generated system locale. It does not enable
@@ -124,14 +126,21 @@ preferences and files owned by another account. It rechecks the singleton and
 file contents before replacing preferences atomically.
 
 The private `browser-language.json` in sbc's config directory stores the choice,
-target and per-profile recovery records. A record contains only the two original
-language fields, their absence state and sbc's written values. It contains no
-copy of the rest of `Preferences`. sbc saves the record before each profile
-write and keeps it after interrupted or failed changes.
+target and per-profile recovery records. A record saves the original top-level
+language fields, their absence state and sbc's written values. It separately
+saves any existing account language fields that sbc manages. It contains no
+copy of other preferences or account identity data. sbc saves the record before
+each profile write and keeps it after interrupted or failed changes.
+
+Account records use recovery format version 2. sbc can extend version 1 records
+without replacing their original top-level values. A client that supports only
+version 1 refuses version 2 records. Before a downgrade, restore languages with
+the client that wrote the record.
 
 Off records the disabled choice before restoration. It restores each field only
 if that field still equals a value sbc wrote. It preserves external changes and
-reports the affected profiles. Other preferences remain intact. Failed restores
+reports the affected profiles. It does not recreate removed account fields or
+stores, including after sign-out. Other preferences remain intact. Failed restores
 keep their records for retry, and prevent uninstall from removing the client.
 A damaged record needs manual recovery. Do not discard it before restoring the
 language fields.
@@ -154,7 +163,7 @@ language fields.
   reduce the exposed list or treat incognito mode differently. Do not expect
   byte-identical lists in every mode.
 - This is not a persistent language lock or complete fingerprint protection.
-  Account preferences, cookies and other browser signals remain outside its scope.
+  Other account preferences, cookies and other browser signals remain outside its scope.
 
 ## Manual cleanup after the scope change
 
