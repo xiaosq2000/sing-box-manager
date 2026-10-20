@@ -77,8 +77,9 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc uninstall`                   | Remove scheduled tasks, files, PATH entry, and owned proxy settings            |
 | `sbc version`                     | Display `sbc` version and commit information                                   |
 
-Region matching (`sbc privacy region`) is Linux-only. On Windows the command
-reports that it is unavailable.
+Region matching (`sbc privacy region`) and Linux TUN (`sbc tun on`) are
+Linux-only. On Windows these commands report that they are unavailable; the
+mixed proxy and scheduled tasks provide the client service.
 
 ### Current session environment
 

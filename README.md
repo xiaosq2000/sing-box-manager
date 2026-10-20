@@ -80,6 +80,10 @@ present for the node; see
 `sbc privacy region on` for one account or `sbc privacy region on --system` for
 the whole machine.
 
+On native Linux, `sbc tun on` runs a root-owned TUN service instead of mixed
+mode. It needs systemd, `/dev/net/tun`, and sudo, and it refuses remote SSH
+sessions. See [Linux TUN](docs/README_SBC.md#linux-tun).
+
 `sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
 It requires `control_plane.enabled` and `control_plane.secret_key`.
 Retain `web.session_secret` for installed legacy clients' machine tokens.

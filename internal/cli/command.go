@@ -14,6 +14,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
 	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
+	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
 // Run creates a fresh command tree for each invocation. Handlers retain their
@@ -238,12 +239,13 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	})
 	tunCmd.ValidArgsFunction = fixedChoices("on", "off")
 
-	var tunConfig, tunBinDir, tunRules, tunOwnerUser string
+	var tunConfig, tunBinDir, tunRules, tunOwnerUser, tunTransaction string
 	var tunOwnerUID int
 	tunApply := add("_tun-apply", "", "proxy", argumentRange(0, 0), func([]string) int {
-		return runTunApply(env, tunConfig, tunBinDir, tunRules, tunOwnerUID, tunOwnerUser)
+		return runTunApply(env, tunConfig, tunBinDir, tunRules, tunOwnerUID, tunOwnerUser, tunTransaction)
 	})
 	tunApply.Hidden = true
+	tunApply.Flags().StringVar(&tunTransaction, "transaction", "", "")
 	tunApply.Flags().StringVar(&tunConfig, "config", "", "")
 	tunApply.Flags().StringVar(&tunBinDir, "bin-dir", "", "")
 	tunApply.Flags().StringVar(&tunRules, "rules", "", "")
@@ -253,7 +255,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		if err := argumentRange(0, 0)(cmd, args); err != nil {
 			return err
 		}
-		if tunConfig == "" || tunBinDir == "" || tunRules == "" || tunOwnerUID <= 0 || tunOwnerUser == "" {
+		if tunConfig == "" || tunBinDir == "" || tunRules == "" || tunOwnerUID <= 0 || tunOwnerUser == "" || tunTransaction == "" {
 			return i18n.New("_tun-apply: missing staging arguments")
 		}
 		return nil
@@ -262,6 +264,31 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		return runTunOffRoot(env)
 	})
 	tunOffRoot.Hidden = true
+	checkTunStart := add("_tun-check-start", "", "proxy", argumentRange(0, 0), func([]string) int {
+		if err := tun.AllowStart(tun.StopOptions{Paths: tun.DefaultPaths()}); err != nil {
+			return fail(env, err)
+		}
+		return 0
+	})
+	checkTunStart.Hidden = true
+	for _, action := range []string{"commit", "recover"} {
+		var id string
+		cmd := add("_tun-"+action, "", "proxy", argumentRange(0, 0), func([]string) int {
+			opts := tun.StopOptions{Paths: tun.DefaultPaths()}
+			var err error
+			if action == "commit" {
+				err = tun.Commit(opts, id)
+			} else {
+				err = tun.Recover(opts, id)
+			}
+			if err != nil {
+				return fail(env, err)
+			}
+			return 0
+		})
+		cmd.Hidden = true
+		cmd.Flags().StringVar(&id, "transaction", "", "")
+	}
 
 	add("status", i18n.T("Show service, proxy, route, protocol, shells, and traffic"), "proxy", argumentRange(0, 0), func([]string) int { return runStatus(env) })
 	var ip ipOptions

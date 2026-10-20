@@ -1,6 +1,6 @@
 # Contributing
 
-Checked on 2026-10-18.
+Checked on 2026-10-20.
 
 ## Development environment
 
@@ -72,7 +72,9 @@ history, then scans reachable history for secrets. Keep these checks enabled.
 Use fixture-based local tests for code changes. Do not run a release, deploy,
 server installation, or destructive cleanup merely to validate a pull request.
 The native end-to-end tests modify their runner user's services and settings; run
-them only in a disposable environment.
+them only in a disposable environment. Linux TUN acceptance runs in a disposable
+QEMU guest with synthetic fixtures; use the image and binary setup in
+[Development](docs/DEVELOPMENT.md), not an operator machine.
 
 Preserve the GPLv3 license and third-party notices, including the bundled fonts'
 OFL license. Submit security vulnerabilities through the private reporting path

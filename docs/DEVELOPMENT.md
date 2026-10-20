@@ -113,6 +113,7 @@ before the restart. Early exits, cleanup failures, ICE failures and privacy
 assertion failures do not permit retries. Timeouts report whether the browser
 requested the probe page and include captured browser output. Browser sandboxing
 stays enabled.
+
 These checks do not launch a browser or change host settings:
 
 ```sh
@@ -205,8 +206,66 @@ Windows PowerShell 5.1 for the hosted Windows installer. The Unix installer uses
 POSIX sh. These checks do not prove native service or networking behavior.
 The `sbc` workflow exercises supported client services on disposable runners.
 Linux TUN is implemented for native Linux; its unit tests cover the environment
-gate, config patch, staged files, capability probe, rollback and mixed-mode
-guard. The nested-VM acceptance checks remain in M1b.
+gate, config patch, staged files, capability probe, transaction journal,
+dirty-state recovery, rollback and mixed-mode guard. `scripts/dev/test-tun-vm.sh`
+runs the native acceptance check in a disposable QEMU guest. It serves bounded
+SOCKS, TLS, DNS and HTTP fixtures from the host and accepts only the guest's
+run-specific success marker. The host's services and network stay unchanged.
+`scripts/dev/fetch-tun-image.sh` downloads and verifies the default Ubuntu cloud
+image. `tests/test_tun_vm.py` checks the fixture DNS/SOCKS allowlist and the
+prepared config without starting a VM. The `e2e-tun` CI job installs QEMU,
+fetches sing-box and the image, and runs the acceptance script on a disposable
+Ubuntu runner. The script needs `qemu-system-x86_64`, `qemu-img`, `curl`,
+`openssl`, `python3`, OpenBSD `nc` and the sing-box binary from `pixi run fetch-sing-box`. Set
+`SBC_TUN_E2E_IMAGE` to a prepared Noble cloud image; the default is
+`~/.cache/sbc-tun-e2e/noble-server-cloudimg-amd64.img`. It selects KVM when
+available and otherwise uses TCG. Set `SBC_TUN_E2E_ACCEL=tcg` to check that fallback
+on a KVM host.
+
+```sh
+bash scripts/dev/fetch-tun-image.sh
+pixi run bash scripts/dev/test-tun-vm.sh
+```
+
+The guest disk has a sparse virtual size of 12 GiB. This permits repeated
+activation with retained generations without filling the base image's small
+root filesystem. Host space is allocated as the guest writes data.
+The image downloader clears proxy variables, checks SHA-256, and reuses the
+verified cache. It downloads about 600 MB on first use. The guest requires `ip`,
+`nft`, `dig`, `curl`, Python and CA-management tools. Acceptance installs no
+packages and needs no public DNS or websites.
+
+QEMU uses `restrict=on`. Only the asset and SOCKS fixture ports have guest
+forwarding rules. The guest cannot use the host as a general internet gateway.
+The config comes from the product renderer. Only external dependencies,
+certificates, rule-set contents and cache identities change. A guest router
+namespace makes the direct target reachable through a non-adjacent subnet.
+The proxy-only target is unreachable directly. SOCKS forwards only allowlisted
+fixture destinations. TLS uses an ephemeral test CA inside the guest only.
+Reserved `.test` names reach the resolver, unlike locally rejected `.invalid`
+names. Distinct DNS answers and nonce-bearing responses distinguish direct and
+proxy paths in all five modes. Checks cover stop failure, recovery after a dead proxy,
+`direct` with an unused dead proxy, and controller death after service startup.
+The last case observes timer recovery before explicit test cleanup.
+
+A guest-only wrapper shortens the real systemd timer to 15 seconds and pauses
+the start command after the service starts. No production skip flag is used.
+Unit tests check expired commits, stale timers, user-state write failure,
+complete candidates and native systemd unit syntax. Local fixture checks need no VM:
+
+```sh
+pixi run test tests/test_tun_vm.py tests/test_desktop_config.py
+pixi run go test ./internal/tun ./internal/cli ./internal/api ./internal/service
+```
+
+Each VM run retains its disk, generated assets, guest-only packet trace and
+serial log under the image cache's `runs/` directory. These contain synthetic private keys and credentials.
+Do not upload them wholesale. The script prints the run directory and failure
+markers. Docker, `SO_BINDTODEVICE`, native reboot acceptance and non-SOCKS tunnel
+protocols are outside this VM suite.
+
+Local core acceptance passes with sing-box 1.14.3 and the Noble fixture under
+KVM and TCG. GitHub CI validation is pending.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
@@ -382,7 +441,8 @@ that database-managed users survive repeated installs, and exercises the shared 
 lock. It does not install or stop anything on the host. The runtime tests need permission to bind loopback
 sockets. They do not establish native Windows Task Scheduler, macOS launchd, or
 Linux TUN kernel compatibility. Native `sbc` lifecycle checks run on disposable
-CI runners. Linux TUN end-to-end checks require a disposable Linux VM.
+CI runners. Linux TUN end-to-end checks run in a disposable QEMU guest with
+`scripts/dev/test-tun-vm.sh`.
 
 ## Generated protobuf stubs
 

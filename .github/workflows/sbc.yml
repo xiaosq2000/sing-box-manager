@@ -18,6 +18,12 @@ on:
       - "scripts/dev/test-install-ps1.ps1"
       - "config/inventory/example.yaml"
       - ".github/workflows/sbc.yml"
+      - "scripts/dev/test-tun-vm.sh"
+      - "scripts/dev/fetch-tun-image.sh"
+      - "scripts/dev/tun-vm/**"
+      - "sing_box_manager/desktop_config.py"
+      - "sing_box_manager/release/**"
+      - "sing_box_manager/settings.py"
   pull_request:
     branches: [main]
     paths:
@@ -30,6 +36,12 @@ on:
       - "scripts/dev/test-install-ps1.ps1"
       - "config/inventory/example.yaml"
       - ".github/workflows/sbc.yml"
+      - "scripts/dev/test-tun-vm.sh"
+      - "scripts/dev/fetch-tun-image.sh"
+      - "scripts/dev/tun-vm/**"
+      - "sing_box_manager/desktop_config.py"
+      - "sing_box_manager/release/**"
+      - "sing_box_manager/settings.py"
 
 permissions:
   contents: read
@@ -116,3 +128,26 @@ jobs:
         shell: pwsh
         run: ./scripts/dev/test-install-ps1.ps1
       - run: go test -tags e2e -count=1 -v ./internal/e2e
+
+  e2e-tun:
+    # Only the disposable guest changes services, certificates and networking.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          locked: true
+          cache: true
+      - name: Install the VM tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils netcat-openbsd
+      - name: Prepare the verified binaries and cloud image
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          pixi run fetch-sing-box
+          bash scripts/dev/fetch-tun-image.sh
+      - name: Run controlled Linux TUN acceptance
+        run: pixi run bash scripts/dev/test-tun-vm.sh

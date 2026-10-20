@@ -133,7 +133,7 @@ const (
 func (s *Systemd) Units() map[string]string {
 	sbc := strconv.Quote(s.SBC)
 	return map[string]string{
-		proxyUnit: "[Unit]\nDescription=sing-box proxy (sbc)\nConditionPathExists=!/run/sbc-tun/active\n\n" +
+		proxyUnit: "[Unit]\nDescription=sing-box proxy (sbc)\nConditionPathExists=!/run/sbc-tun/active\nConditionPathExists=!/etc/sbc/tun-control/blocked\n\n" +
 			"After=network-online.target\n\n" +
 			"[Service]\nExecStart=" + sbc + " run\nRestart=on-failure\nRestartSec=5s\n\n" +
 			"[Install]\nWantedBy=default.target\n",

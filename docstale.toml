@@ -26,6 +26,7 @@ harness = [
   "tests/test_shell_compat.py",
   "tests/test_powershell_compat.py",
   "tests/test_sing_box_114.py",
+  "tests/test_tun_vm.py",
 ]
 sbc = [
   "go.mod",
@@ -40,6 +41,8 @@ sbc = [
   "internal/probe/",
   "internal/singbox/",
   "internal/region/",
+  "internal/tun/",
+  "internal/service/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 unix-installer = [
@@ -122,6 +125,8 @@ control-plane = [
 
 "docs/SECRET_HANDLING.md" = [
   "@control-plane",
+  "internal/tun/",
+  "internal/cli/tun.go",
   "sing_box_manager/models.py",
   "sing_box_manager/settings.py",
   "config/inventory/",
@@ -182,6 +187,9 @@ control-plane = [
 
 "docs/REFACTOR_SPEC.md" = [
   "@unix-installer",
+  ".github/workflows/sbc.yml",
+  "scripts/dev/test-tun-vm.sh",
+  "scripts/dev/tun-vm/",
   "@control-plane",
   "scripts/lib/ui.sh",
   "sing_box_manager/release/",

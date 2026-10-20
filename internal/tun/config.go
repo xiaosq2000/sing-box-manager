@@ -56,18 +56,33 @@ func Patch(config []byte, local Local) ([]byte, []string, error) {
 			continue
 		}
 		initial, _ := set["initial_path"].(string)
+		if initial == "" && set["type"] == "local" {
+			initial, _ = set["path"].(string)
+		}
 		if initial == "" {
+			if set["type"] == "remote" {
+				return nil, nil, i18n.Errorf("the TUN rule set %q has no installed snapshot", set["tag"])
+			}
 			continue
 		}
 		name := filepath.Base(filepath.FromSlash(initial))
 		if name == "" || name == "." || name == ".." {
 			return nil, nil, i18n.Errorf("invalid rule snapshot path %q", initial)
 		}
-		set["initial_path"] = filepath.Join(local.RulesDir, name)
-		// The service must not write the root-owned snapshots. sbc tun on
-		// stages the installed snapshots and restarts the service.
-		if set["type"] == "remote" {
-			set["update_interval"] = "0"
+		// Remote rule sets still fetch at startup with update_interval=0.
+		// The root service must only read the complete installed snapshot.
+		localSet := map[string]any{
+			"type": "local", "tag": set["tag"],
+			"path": filepath.Join(local.RulesDir, name),
+		}
+		if format, ok := set["format"]; ok {
+			localSet["format"] = format
+		}
+		for key := range set {
+			delete(set, key)
+		}
+		for key, value := range localSet {
+			set[key] = value
 		}
 		if _, ok := seen[name]; !ok {
 			seen[name] = struct{}{}

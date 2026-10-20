@@ -1,6 +1,6 @@
 # Security policy
 
-Checked on 2026-10-18.
+Checked on 2026-10-20.
 
 ## Report vulnerabilities privately
 
@@ -44,6 +44,11 @@ CI uses disposable GitHub-hosted runners, read-only repository permissions, and
 no production credentials. Do not run untrusted public pull requests on persistent
 self-hosted runners, even when the runner is containerized. Do not execute PR code
 in a privileged `pull_request_target` workflow.
+
+The Linux TUN acceptance script boots a disposable QEMU guest and serves synthetic
+fixtures locally. It needs no operator credentials and changes no host network or
+service. Run it on a development host or the disposable `e2e-tun` CI runner, not
+an operator machine or VPS.
 
 The repository's secret scanner and forbidden-path checks reduce accidental
 exposure. They do not prove that all sensitive data or application vulnerabilities

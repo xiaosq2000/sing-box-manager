@@ -180,14 +180,13 @@ func sbinLookPath(name string) (string, error) {
 	return "", exec.ErrNotFound
 }
 
-// Active reports whether the TUN service owns packet capture. The systemd
-// unit keeps this marker in step with the service.
-func Active() bool { return ActiveAt(ActivePath) }
+// Active blocks mixed mode for active, pending and unconfirmed TUN state.
+func Active() bool { return Status() != "off" }
 
 // ActiveAt reports whether a marker exists. Tests use a temporary path.
 func ActiveAt(path string) bool {
 	_, err := os.Stat(path)
-	return err == nil
+	return !os.IsNotExist(err)
 }
 
 // State is the owner's copy of the TUN API address. It is a credential and
@@ -210,7 +209,7 @@ func WriteState(layout paths.Layout, state State) error {
 	if err != nil {
 		return err
 	}
-	return paths.WriteFile(StatePath(layout), append(data, '\n'), 0o600)
+	return writeDurable(StatePath(layout), append(data, '\n'), 0o600)
 }
 
 // ReadState reads the owner's TUN state.

@@ -34,7 +34,7 @@ complexity comes from machinery built around premises that the target design dro
 | The control plane uses Django and Postgres                                                        | Decided                                    |
 | The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                    |
 | Add a node agent, with Go as the proposed language                                                | Planned after device management            |
-| Give each enrolled installation its own subscription token and proxy credentials                  | Planned after Linux TUN                    |
+| Give each enrolled installation its own subscription token and proxy credentials                  | Planned after M1b                          |
 | Support multiple nodes before invalidating all legacy user credentials and links                  | Decided                                    |
 | A client runs one config per installation, with routes as Clash modes and protocols in a selector | Decided                                    |
 | Configs are built in code and pass `sing-box check` before release                                | Implemented                                |
@@ -54,7 +54,8 @@ accepts a server config and a client config that use it.
 
 The current system is one Django/PostgreSQL control plane and one sing-box node,
 with systemd-triggered config sync and SQLite traffic history.
-Linux TUN, device management, a node agent, and multiple nodes are the planned scope.
+The Linux TUN core is implemented. M1b acceptance is incomplete. Device
+management, a node agent, and multiple nodes are the planned scope.
 The diagram describes that target, not deployed functionality. Detailed schemas and
 interfaces need review in their implementation PRs. Quotas, public registration,
 plans, and payments remain outside this delivery sequence.
@@ -177,18 +178,18 @@ current location.
 
 ## Milestones
 
-| Milestone | Name                                       | Status                                   |
-| --------- | ------------------------------------------ | ---------------------------------------- |
-| M0        | Security fixes                             | Done                                     |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                     |
-| M1b       | Linux TUN in the client CLI                | In progress                              |
-| M2        | Client CLI for Windows                     | Done                                     |
-| M3        | Configs in code, one server process        | Done                                     |
-| M4b       | Control plane, devices and subscriptions   | Core deployed, devices planned after TUN |
-| M5        | Node agent                                 | Planned after device management          |
-| M6        | Multiple nodes                             | Planned after the node agent             |
-| M7        | Invitation self-service and reusable plans | Deferred pending need                    |
-| M8        | Paid plans                                 | Deferred pending need                    |
+| Milestone | Name                                       | Status                                  |
+| --------- | ------------------------------------------ | --------------------------------------- |
+| M0        | Security fixes                             | Done                                    |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                    |
+| M1b       | Linux TUN in the client CLI                | Core implemented; acceptance incomplete |
+| M2        | Client CLI for Windows                     | Done                                    |
+| M3        | Configs in code, one server process        | Done                                    |
+| M4b       | Control plane, devices and subscriptions   | Core deployed; devices planned          |
+| M5        | Node agent                                 | Planned after device management         |
+| M6        | Multiple nodes                             | Planned after the node agent            |
+| M7        | Invitation self-service and reusable plans | Deferred pending need                   |
+| M8        | Paid plans                                 | Deferred pending need                   |
 
 ### Delivery order
 
@@ -212,11 +213,12 @@ current location.
    are implemented. iOS App 1.14.3 passed user testing for Trojan, Hysteria2, and Naive.
    Android device testing is deferred and does not block this change. See the
    [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
-5. **M1b: Linux TUN.** This is the current feature after maintenance and mobile import.
-   Environment, routing, DNS, privilege, and recovery behavior are defined in
-   [M1b](#m1b-linux-tun); the client foundation has landed. Maintenance, route and
-   protocol API integration, install/uninstall, the journal, the safeguard and the
-   nested-VM acceptance remain. Do not restore the legacy Bash client.
+5. **M1b: Linux TUN.** The core is implemented in the client. Environment, routing,
+   DNS, privilege, and recovery requirements are defined in [M1b](#m1b-linux-tun).
+   The client has route/protocol API access, lifecycle guards, a transaction
+   journal, and `scripts/dev/test-tun-vm.sh`. The `e2e-tun` job is configured for
+   native QEMU acceptance. Docker, bound sockets, reboot and maintenance acceptance
+   remain outside the core suite. Do not restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
 7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
@@ -231,7 +233,7 @@ Keep the current systemd sync path until the agent replaces it safely.
 ### Clean break and legacy removal
 
 This is an approved product direction, not authorization to reset production credentials now.
-The cutover follows Linux TUN, device management, the node agent, and multi-node acceptance.
+The cutover follows M1b acceptance, device management, the node agent, and multi-node acceptance.
 
 - Preserve account records, operator authentication, infrastructure settings, signed
   downloads, and traffic history. Do not reset the database or rewrite proven config builders.
@@ -279,7 +281,7 @@ host's proxy.
 ### M1: Client CLI for Linux and macOS
 
 Replace the sourced bash client with `sbc`, one Go binary that reads a subscription
-and replaces the `proxy` command with `sbc`. M1a ships mixed mode, and M1b moves
+and replaces the `proxy` command with `sbc`. M1a ships mixed mode, and M1b adds
 Linux TUN.
 
 | Area         | Bash client                                                                  | `sbc`                                                                                 |
@@ -458,7 +460,8 @@ Client:
   own uninstaller and desktop library. Small fixtures cover that interface.
 - Legacy Linux TUN state blocks installation before downloads or file changes,
   even when user-scoped client files are missing. The installed client's cleanup
-  tools must remove that state first. Native Linux TUN support is planned in M1b.
+  tools must remove that state first. Native Linux TUN support is provided by
+  M1b; see [Linux TUN](README_SBC.md#linux-tun).
 
 Done when CI on Linux and macOS runners installs from a test subscription, starts,
 switches route and protocol without a restart, rolls back a bad refresh and
@@ -517,16 +520,31 @@ Routing:
   `sbc tun on` generates the API port and secret and writes them to the owner's
   state (0600) and the root config (0640 `root:sbc-tun`), so `sbc route`,
   `sbc protocol`, `sbc ip` and `sbc speed` keep working without sudo.
-- Before accepting activation, check a stable process, the interface, routes and
-  rules, DNS answers, a connection captured on the TUN inbound, and a request
-  through the selected outbound. Do not check interface packet counters:
-  `auto_redirect` redirects captured TCP to a local socket, so packets never
-  reach `sbc-tun0`. Read capture from the Clash API connection list instead.
+- Accept activation only when a representative request works under the current
+  mode. Never switch modes for verification. Resolve with the system resolver,
+  match the new TUN connection by its source and destination socket, and obtain
+  a verified HTTPS response on that socket. `direct` does not require the unused
+  proxy. Other modes also require the selected proxy's latency request to work.
+  No automatic probe contacts an AI provider. Native fixtures check each mode's
+  direct and proxy branches with synthetic rule-set contents.
+- Do not check interface packet counters: `auto_redirect` redirects captured
+  TCP to a local socket before routing. Read capture from the Clash API instead.
 - Stop the mixed service and clear owned proxy settings before publishing. `sbc on`,
   `desktop on` and `docker on` refuse while TUN is active.
-- Keep a journal, the previous generation, a `safe-off`, `active` or `dirty` status,
-  and a transient timer that stops the unit when the controlling process dies.
-  Release the operation lock when `sbc` exits, including after Ctrl-C.
+- Prepare a complete candidate before replacing live files. Retain superseded
+  config and binary directories with `.prev-` suffixes. Keep the transaction
+  journal and persistent mixed-mode block under root-owned `/etc/sbc/tun-control`,
+  outside the engine's writable state directory.
+- Apply leaves the transaction pending. Commit requires saved user API state,
+  a live service and an unexpired three-minute recovery deadline. A transient
+  root service stops uncommitted capture independently of the controlling
+  process. Stale recovery tasks cannot stop a committed or different generation.
+  Refuse pending startup after reboot without an armed recovery timer.
+- Report `off`, `active` or `dirty`. A failed stop retains the mixed-mode block.
+  Confirm service state, MainPID, interface, routes and the sing-box nftables
+  table before clearing it. Never restore mixed mode or start an old TUN on
+  failure. Root operations use an OS lock, separate from the user's operation
+  lock. Both locks release when their process exits.
 - `sbc tun off` does not restore mixed mode. Under TUN, `sbc off` reports that
   capture remains, and `sbc status` reports the TUN service.
 - `sbc tun on` enables the unit at boot after verification, and `sbc tun off`
@@ -536,19 +554,19 @@ Routing:
 
 DNS:
 
-- Set `dns_mode: disabled`, and answer captured queries with the route's
-  `hijack-dns` rule.
+- Set `dns_mode: hijack`, so sing-box answers captured queries with its DNS.
+  `auto_redirect` with `dns_mode: disabled` did not capture DNS from applications
+  and systemd-resolved on the target kernel. Do not add a resolved stub server.
 - Resolve proxied names through Google over the proxy and direct names through
   Aliyun (`223.5.5.5`). Never use the systemd-resolved stub as a DNS server in a
   TUN config: captured upstream queries would loop back into it.
-- Give both direct outbounds the Aliyun resolver, and keep the deployment host and
+- Give the direct outbound the Aliyun resolver, and keep the deployment host and
   `direct_domain_suffixes` exceptions direct.
 - Set `dns.strategy: prefer_ipv4` in the TUN config.
 - Route NTP (UDP 123) direct and reject every other non-private UDP destination
   after DNS and NTP. The proxy's own UDP connections are unaffected.
-- Verify with `auto_redirect` and `dns_mode: disabled` that DNS from applications
-  and from systemd-resolved is captured and answered. If it is not, switch the TUN
-  config to `dns_mode: hijack` instead of adding a resolved stub server.
+- Verify with `auto_redirect` and `dns_mode: hijack` that DNS from applications
+  and from systemd-resolved is captured and answered.
 
 Maintenance:
 
@@ -560,11 +578,13 @@ Maintenance:
 
 Stop an active TUN before install or upgrade.
 
-Done when a disposable Linux runner checks activation, deactivation, failed
-activation recovery, interrupted-operation cleanup, DNS in every Clash mode, and
-nftables routing with Docker and `SO_BINDTODEVICE`.
-The end-to-end checks run in a nested VM, so they cannot capture the runner's own
-network. Keep `scripts/lib/ui.sh` while the server scripts use it.
+The core `e2e-tun` suite runs in a disposable QEMU guest through
+`scripts/dev/test-tun-vm.sh` and cannot capture the runner's network. It uses
+product-rendered routing, a guest router namespace, distinct DNS answers, and a
+proxy-only target that cannot succeed by direct access. It includes native stop
+failure, failed activation, an unused dead proxy under `direct`, and controller
+death after startup. Docker, `SO_BINDTODEVICE` and native reboot acceptance remain
+separate work. Keep `scripts/lib/ui.sh` while the server scripts use it.
 
 ### M2: Client CLI for Windows
 
@@ -682,7 +702,7 @@ Neither this status nor the roadmap authorizes a production cutover.
    Migrations `0003_account_portal_enabled` and `0004_traffic_permission` are applied.
    Production acceptance passed.
    Operational details belong in [the control-plane guide](CONTROL_PLANE.md).
-4. **Device management: planned after Linux TUN.** Operators issue single-use
+4. **Device management: next after M1b.** Operators issue single-use
    enrollment codes through private Admin. Each enrolled device gets its own
    subscription and protocol credentials. Operators manage revocation and enrollment limits.
    No ordinary-user login or password recovery is required. Codes and subscription
