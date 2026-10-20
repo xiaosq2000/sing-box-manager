@@ -243,7 +243,10 @@ POSIX sh. These checks do not prove native service or networking behavior.
 The `sbc` workflow exercises supported client services on disposable runners.
 Linux TUN is implemented for native Linux; its unit tests cover the environment
 gate, config patch, staged files, capability probe, rollback and mixed-mode
-guard. The nested-VM acceptance checks remain in M1b.
+guard. The core nested-VM checks run with `scripts/dev/test-tun-vm.sh`: QEMU
+boots an Ubuntu cloud image, stages a local portal, proxy and DNS, and checks
+activation, deactivation, failed-activation recovery, interrupted cleanup and
+DNS in every Clash mode. Docker and `SO_BINDTODEVICE` routing remain in M1b.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
@@ -419,7 +422,8 @@ that database-managed users survive repeated installs, and exercises the shared 
 lock. It does not install or stop anything on the host. The runtime tests need permission to bind loopback
 sockets. They do not establish native Windows Task Scheduler, macOS launchd, or
 Linux TUN kernel compatibility. Native `sbc` lifecycle checks run on disposable
-CI runners. Linux TUN end-to-end checks require a disposable Linux VM.
+CI runners. Linux TUN end-to-end checks run in a disposable Linux VM through
+`scripts/dev/test-tun-vm.sh`.
 
 ## Generated protobuf stubs
 

@@ -214,9 +214,10 @@ current location.
    [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
 5. **M1b: Linux TUN.** This is the current feature after maintenance and mobile import.
    Environment, routing, DNS, privilege, and recovery behavior are defined in
-   [M1b](#m1b-linux-tun); the client foundation has landed. Maintenance, route and
-   protocol API integration, install/uninstall, the journal, the safeguard and the
-   nested-VM acceptance remain. Do not restore the legacy Bash client.
+   [M1b](#m1b-linux-tun); the client foundation and the core nested-VM checks have
+   landed. Maintenance, route and protocol API integration, install/uninstall, the
+   journal, the safeguard, Docker and `SO_BINDTODEVICE` routing remain. Do not
+   restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
 7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
