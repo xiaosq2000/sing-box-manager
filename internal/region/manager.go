@@ -79,7 +79,7 @@ type ApplyResult struct {
 
 // Load reads the last profile and the saved mode.
 func (m *Manager) Load() (*State, Mode, error) {
-	state, err := m.loadState()
+	state, err := m.LoadProfile()
 	if err != nil {
 		return nil, Mode{}, err
 	}
@@ -87,19 +87,29 @@ func (m *Manager) Load() (*State, Mode, error) {
 	if err != nil {
 		return nil, Mode{}, err
 	}
+	return state, mode, nil
+}
+
+// LoadProfile reads the node target without requiring a valid region mode.
+// Browser language matching does not enable or depend on system locale changes.
+func (m *Manager) LoadProfile() (*State, error) {
+	state, err := m.loadState()
+	if err != nil {
+		return nil, err
+	}
 	if state != nil {
 		normalized, err := state.Profile.Normalize()
 		if err != nil {
-			return nil, Mode{}, i18n.Errorf("the saved region profile is invalid; run 'sbc privacy region off' and then 'sbc refresh': %w", err)
+			return nil, i18n.Errorf("the saved region profile is invalid; run 'sbc privacy region off' and then 'sbc refresh': %w", err)
 		}
 		state.Profile = normalized
 		switch state.Pending {
 		case "", PendingApply, PendingRemove:
 		default:
-			return nil, Mode{}, i18n.New("the saved region profile has an invalid pending action; run 'sbc privacy region off' and then 'sbc refresh'")
+			return nil, i18n.New("the saved region profile has an invalid pending action; run 'sbc privacy region off' and then 'sbc refresh'")
 		}
 	}
-	return state, mode, nil
+	return state, nil
 }
 
 // StoreState saves the profile the portal sent, without enabling it.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/api"
+	"github.com/xiaosq2000/sing-box-manager/internal/browserlanguage"
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
 	"github.com/xiaosq2000/sing-box-manager/internal/docker"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
@@ -61,6 +62,8 @@ type Env struct {
 	Desktop func() (desktop.Desktop, error)
 	// Privacy manages browser settings without a desktop session.
 	Privacy func() (desktop.BrowserPrivacy, error)
+	// BrowserLanguage manages Chrome profiles independently of system locales.
+	BrowserLanguage func(paths.Layout) (*browserlanguage.Manager, error)
 	// Region manages the user-scoped time zone and language choice.
 	Region func(layout paths.Layout) *region.Manager
 	// SystemRegion names the fixed system locations for system-scope region
@@ -527,12 +530,21 @@ func runUninstall(env Env, yes bool) int {
 		disableDesktop = err == nil && state == desktop.On
 	}
 	if env.OS == "linux" {
+		language, err := browserLanguageFor(env, layout)
+		if err != nil {
+			return fail(env, err)
+		}
+		languageResult, err := language.Disable()
+		reportPreservedLanguages(env, languageResult)
+		if err != nil {
+			return fail(env, i18n.Errorf("Chrome language cleanup failed. sbc is still installed. Exit Chrome and retry 'sbc privacy browser language off' or uninstall: %w", err))
+		}
 		privacy, err := env.Privacy()
 		if err != nil {
 			return fail(env, err)
 		}
 		if err := privacy.CleanupWebRTC(); err != nil {
-			return fail(env, i18n.Errorf("Chrome WebRTC cleanup failed; sbc is still installed. Retry 'sbc privacy browser off' or uninstall: %w", err))
+			return fail(env, i18n.Errorf("Chrome WebRTC cleanup failed; sbc is still installed. Retry 'sbc privacy browser webrtc off' or uninstall: %w", err))
 		}
 		if err := reportRemainingWebRTC(env, privacy); err != nil {
 			return fail(env, err)

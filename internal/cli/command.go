@@ -161,14 +161,33 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	})
 	browser := &cobra.Command{
 		Use:   "browser [on|off|status]",
-		Short: i18n.T("Show or change Chrome WebRTC protection (Linux)"),
+		Short: i18n.T("Show or change Chrome WebRTC protection and languages (Linux)"),
 		Args:  choiceArgs(0, "on", "off", "status"),
 		Run: func(_ *cobra.Command, args []string) {
-			*exit = runPrivacyBrowser(env, args)
+			*exit = browserOperation(env, args, runPrivacyBrowser)
 		},
 	}
 	browser.Flags().BoolP("help", "h", false, i18n.T("Show help for this command"))
 	browser.ValidArgsFunction = fixedChoices("on", "off", "status")
+	for _, component := range []struct {
+		name string
+		help string
+		run  func(Env, []string) int
+	}{
+		{"webrtc", i18n.T("Show or change Chrome WebRTC protection (Linux)"), runPrivacyWebRTC},
+		{"language", i18n.T("Show or match Chrome languages to the node (Linux)"), runPrivacyBrowserLanguage},
+	} {
+		child := &cobra.Command{
+			Use: component.name + " [on|off|status]", Short: component.help,
+			Args: choiceArgs(0, "on", "off", "status"),
+			Run: func(_ *cobra.Command, args []string) {
+				*exit = browserOperation(env, args, component.run)
+			},
+			ValidArgsFunction: fixedChoices("on", "off", "status"),
+		}
+		child.Flags().BoolP("help", "h", false, i18n.T("Show help for this command"))
+		browser.AddCommand(child)
+	}
 	privacy.AddCommand(browser)
 	var regionTimezone, regionLanguage, regionSystem, regionYes bool
 	region := &cobra.Command{

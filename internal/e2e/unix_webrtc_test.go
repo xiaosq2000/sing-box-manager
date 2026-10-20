@@ -36,17 +36,17 @@ func checkUnixWebRTC(t *testing.T, layout paths.Layout) {
 	}
 	chrome := unixChrome(t)
 	checkBrowserSTUN(t, chrome, false)
-	run(t, nil, layout.SBC(), "privacy", "browser", "on")
+	run(t, nil, layout.SBC(), "privacy", "browser", "webrtc", "on")
 	run(t, nil, layout.SBC(), "off")
 	run(t, nil, layout.SBC(), "on")
 	checkBrowserSTUN(t, chrome, true)
-	run(t, nil, layout.SBC(), "privacy", "browser", "off")
+	run(t, nil, layout.SBC(), "privacy", "browser", "webrtc", "off")
 	run(t, nil, layout.SBC(), "on")
 	checkBrowserSTUN(t, chrome, false)
-	run(t, nil, layout.SBC(), "privacy", "browser", "on")
+	run(t, nil, layout.SBC(), "privacy", "browser", "webrtc", "on")
 	// Simulate manual deletion while the mode stays enabled, then repair.
 	run(t, nil, "sudo", "rm", filepath.Join("/etc/opt/chrome/policies/managed", "sbc-webrtc-"+strconv.Itoa(os.Getuid())+".json"))
-	run(t, nil, layout.SBC(), "privacy", "browser", "on")
+	run(t, nil, layout.SBC(), "privacy", "browser", "webrtc", "on")
 	checkBrowserSTUN(t, chrome, true)
 }
 

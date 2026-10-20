@@ -200,6 +200,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal("test attempted to run sudo without a fake runner")
 		return nil
 	}
+	isolateBrowserLanguage(t, &h.env, h.layout)
 	h.env.Privacy = func() (desktop.BrowserPrivacy, error) { return &fakeDesktop{}, nil }
 	h.env.Desktop = func() (desktop.Desktop, error) { return nil, desktop.ErrUnsupported }
 	h.env.Docker = func() (*docker.Daemon, error) { return nil, docker.ErrUnsupported }

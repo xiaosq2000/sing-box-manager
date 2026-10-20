@@ -40,6 +40,7 @@ sbc = [
   "internal/probe/",
   "internal/singbox/",
   "internal/region/",
+  "internal/browserlanguage/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 unix-installer = [
@@ -133,6 +134,8 @@ control-plane = [
 ]
 
 "docs/RELEASE_AND_PORTAL.md" = [
+  "internal/browserlanguage/",
+  "internal/cli/browser_language.go",
   "@traffic",
   "@control-plane",
   "sing_box_manager/release/",
@@ -196,6 +199,7 @@ control-plane = [
 ]
 
 "docs/WEBRTC.md" = [
+  "internal/browserlanguage/",
   "internal/browserprivacy/",
   "internal/desktop/",
   "internal/cli/",
