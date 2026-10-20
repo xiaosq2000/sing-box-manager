@@ -383,11 +383,11 @@ func TestCapturedRequiresANewTunConnection(t *testing.T) {
 		Metadata: api.ConnectionMetadata{
 			Type:            "tun/tun-in",
 			Network:         "tcp",
-			DestinationIP:   "1.1.1.1",
+			DestinationIP:   "142.251.153.120",
 			DestinationPort: "443",
 		},
 	}
-	if !captured(probe, "tun-in", before) {
+	if !captured(probe, "tun-in", "142.251.153.120", before) {
 		t.Fatal("a new TUN connection was not accepted")
 	}
 
@@ -404,7 +404,7 @@ func TestCapturedRequiresANewTunConnection(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			connection := probe
 			test.mutate(&connection)
-			if captured(connection, "tun-in", before) {
+			if captured(connection, "tun-in", "142.251.153.120", before) {
 				t.Fatal("an unrelated connection was accepted")
 			}
 		})

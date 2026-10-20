@@ -525,7 +525,9 @@ Routing:
   rules, DNS answers, a connection captured on the TUN inbound, and a request
   through the selected outbound. Do not check interface packet counters:
   `auto_redirect` redirects captured TCP to a local socket, so packets never
-  reach `sbc-tun0`. Read capture from the Clash API connection list instead.
+  reach `sbc-tun0`. Read capture from the Clash API connection list instead:
+  probe a host the selected outbound reaches, in `global` mode, and restore the
+  mode afterwards so the probe connection stays open long enough to observe.
 - Stop the mixed service and clear owned proxy settings before publishing. `sbc on`,
   `desktop on` and `docker on` refuse while TUN is active.
 - Keep a journal, the previous generation, a `safe-off`, `active` or `dirty` status,

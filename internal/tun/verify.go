@@ -3,6 +3,7 @@ package tun
 import (
 	"context"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -11,10 +12,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
 
-const (
-	captureProbeHost = "1.1.1.1"
-	captureProbePort = "443"
-)
+const captureProbePort = "443"
 
 // Verify accepts an activation only when the service, capture, DNS and an
 // egress request all work.
@@ -37,7 +35,8 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	if _, err := runner.Output(tools.Nft, "list", "ruleset"); err != nil {
 		return i18n.New("the nftables ruleset is unavailable")
 	}
-	if err := lookupThroughTunnel(); err != nil {
+	address, err := lookupThroughTunnel()
+	if err != nil {
 		return err
 	}
 	port, secret, err := ReadAPI(paths.Config)
@@ -52,11 +51,13 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	if err := client.WaitReady(15 * time.Second); err != nil {
 		return i18n.Errorf("the TUN API did not become ready: %w", err)
 	}
-	if err := verifyCapture(client, tag); err != nil {
-		return err
-	}
+	// Delay proves the selected outbound reaches the probe host; capture then
+	// runs in global mode so the probe stays on the same working path.
 	if _, err := client.Delay(api.ProxySelector, 10*time.Second); err != nil {
 		return i18n.Errorf("a page did not load through the TUN: %w", err)
+	}
+	if err := verifyCapture(client, tag, address); err != nil {
+		return err
 	}
 	return nil
 }
@@ -134,13 +135,27 @@ func mainPID(runner Runner, tools Tools) (int, error) {
 // verifyCapture proves that the TUN captures locally generated traffic. Under
 // auto_redirect, nftables redirects captured TCP to a local socket before
 // routing, so the interface packet counters do not change. A new connection in
-// sing-box's own Clash API list is the reliable evidence.
-func verifyCapture(client *api.Client, tag string) error {
+// sing-box's own Clash API list is the reliable evidence. The probe uses a host
+// that the selected outbound just reached, so the connection stays open while
+// it is observed.
+func verifyCapture(client *api.Client, tag string, address netip.Addr) error {
+	mode, _, err := client.Modes()
+	if err != nil {
+		return err
+	}
+	if mode != "global" {
+		if err := client.SetMode("global"); err != nil {
+			return err
+		}
+		defer func() { _ = client.SetMode(mode) }()
+	}
 	before, err := connectionIDs(client)
 	if err != nil {
 		return err
 	}
-	probe, err := net.DialTimeout("tcp", net.JoinHostPort(captureProbeHost, captureProbePort), 5*time.Second)
+	probe, err := net.DialTimeout(
+		"tcp", net.JoinHostPort(address.String(), captureProbePort), 5*time.Second,
+	)
 	if err != nil {
 		return i18n.Errorf("the TUN did not capture a test connection: %w", err)
 	}
@@ -152,7 +167,7 @@ func verifyCapture(client *api.Client, tag string) error {
 			return err
 		}
 		for _, connection := range connections {
-			if captured(connection, tag, before) {
+			if captured(connection, tag, address.String(), before) {
 				return nil
 			}
 		}
@@ -175,18 +190,18 @@ func connectionIDs(client *api.Client) (map[string]struct{}, error) {
 	return ids, nil
 }
 
-func captured(connection api.Connection, tag string, before map[string]struct{}) bool {
+func captured(connection api.Connection, tag, host string, before map[string]struct{}) bool {
 	if _, seen := before[connection.ID]; seen {
 		return false
 	}
 	if connection.Metadata.Type != "tun/"+tag {
 		return false
 	}
-	return connection.Metadata.DestinationIP == captureProbeHost &&
+	return connection.Metadata.DestinationIP == host &&
 		connection.Metadata.DestinationPort == captureProbePort
 }
 
-func lookupThroughTunnel() error {
+func lookupThroughTunnel() (netip.Addr, error) {
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -196,8 +211,25 @@ func lookupThroughTunnel() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := resolver.LookupHost(ctx, "example.com"); err != nil {
-		return i18n.Errorf("DNS through the TUN failed: %w", err)
+	addresses, err := resolver.LookupHost(ctx, "www.gstatic.com")
+	if err != nil {
+		return netip.Addr{}, i18n.Errorf("DNS through the TUN failed: %w", err)
 	}
-	return nil
+	var fallback netip.Addr
+	for _, text := range addresses {
+		address, err := netip.ParseAddr(text)
+		if err != nil {
+			continue
+		}
+		if address.Is4() {
+			return address, nil
+		}
+		if !fallback.IsValid() {
+			fallback = address
+		}
+	}
+	if fallback.IsValid() {
+		return fallback, nil
+	}
+	return netip.Addr{}, i18n.New("DNS through the TUN returned no address")
 }

@@ -392,6 +392,7 @@ var zh = map[string]string{
 	"invalid user ID %q":                                                                                            "用户 ID 无效 %q",
 	"the TUN service has no main process":                                                                           "TUN 服务没有主进程",
 	"DNS through the TUN failed: %w":                                                                                "通过 TUN 的 DNS 查询失败：%w",
+	"DNS through the TUN returned no address":                                                                       "通过 TUN 的 DNS 查询未返回地址",
 	"the %s interface is missing":                                                                                   "缺少 %s 接口",
 	"the %s interface has no %s routes":                                                                             "%s 接口没有 %s 路由",
 	"the TUN routing rules are missing":                                                                             "缺少 TUN 路由规则",
