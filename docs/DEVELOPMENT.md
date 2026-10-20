@@ -243,7 +243,7 @@ POSIX sh. These checks do not prove native service or networking behavior.
 The `sbc` workflow exercises supported client services on disposable runners.
 Linux TUN is implemented for native Linux; its unit tests cover the environment
 gate, config patch, staged files, capability probe, rollback and mixed-mode
-guard. The core nested-VM checks run with `scripts/dev/test-tun-vm.sh`: QEMU
+guard. The core nested-VM harness is `scripts/dev/test-tun-vm.sh`: QEMU
 boots an Ubuntu cloud image, stages a local portal, proxy and DNS, and checks
 activation, deactivation, failed-activation recovery, interrupted cleanup and
 DNS in every Clash mode. Docker and `SO_BINDTODEVICE` routing remain in M1b.
