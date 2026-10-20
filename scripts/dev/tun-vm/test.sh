@@ -109,6 +109,8 @@ if sbc tun on; then
 	echo "activation with a dead proxy succeeded"
 	false
 fi
+sudo systemctl status sbc-tun.service --no-pager || true
+sudo journalctl -u sbc-tun.service --no-pager -n 80 || true
 absent systemctl is-active --quiet sbc-tun.service
 absent ip link show sbc-tun0
 absent test -e /run/sbc-tun/active
