@@ -18,6 +18,10 @@ cleanup() {
 		kill "$pid" 2>/dev/null || true
 	done
 	rm -f "$HOME/.local/bin/sudo" "$HOME/sudo-wrapper.pid"
+	if [ -s "$HOME/tun-on.log" ]; then
+		echo "--- sbc tun on"
+		cat "$HOME/tun-on.log"
+	fi
 	echo "TUN_E2E_RESULT=$result"
 }
 trap cleanup EXIT
@@ -82,7 +86,7 @@ ls -la "$XDG_CONFIG_HOME/sbc" "$XDG_DATA_HOME/sbc"
 cat "$XDG_CONFIG_HOME/sbc/subscription"
 cat "$XDG_DATA_HOME/sbc/sing-box.version"
 sbc link
-if ! sbc tun on; then
+if ! sbc tun on >"$HOME/tun-on.log" 2>&1; then
 	sudo systemctl status sbc-tun.service --no-pager || true
 	sudo journalctl -u sbc-tun.service --no-pager -n 100 || true
 	exit 1
