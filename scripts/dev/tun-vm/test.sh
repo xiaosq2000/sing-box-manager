@@ -34,6 +34,22 @@ absent() {
 	fi
 }
 
+dns_diagnostics() {
+	echo "--- /etc/resolv.conf"
+	cat /etc/resolv.conf || true
+	echo "--- dig test.example"
+	dig test.example A || true
+	echo "--- dig example.com"
+	dig example.com A || true
+	echo "--- dig the local fixture"
+	dig @127.0.0.1 -p 5353 test.example A || true
+	echo "--- resolvectl status"
+	resolvectl status || true
+	echo "--- dns fixture"
+	pgrep -af dns.py || true
+	cat "$HOME/dns.log" || true
+}
+
 step "stage the client layout"
 install -d -m 700 "$XDG_CONFIG_HOME/sbc" "$XDG_DATA_HOME/sbc/bin" "$XDG_DATA_HOME/sbc/rules" "$HOME/.local/bin"
 install -m 755 "$ASSETS/sbc" "$HOME/.local/bin/sbc"
@@ -86,6 +102,7 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 	answer=$(dig +short test.example A | head -n1)
 	[ "$answer" = "127.0.0.1" ] || {
 		echo "mode $mode answered $answer"
+		dns_diagnostics
 		false
 	}
 done
