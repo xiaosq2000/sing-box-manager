@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xiaosq2000/sing-box-manager/internal/api"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 )
 
@@ -169,6 +170,24 @@ func TestPatchRefusesAConfigWithoutExperimental(t *testing.T) {
 	}
 }
 
+func TestReadTunTag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	config := `{"inbounds":[{"type":"mixed","tag":"mixed"},{"type":"tun","tag":"tun-in","interface_name":"sbc-tun0"}]}`
+	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tag, err := ReadTunTag(path)
+	if err != nil || tag != "tun-in" {
+		t.Fatalf("ReadTunTag = %q, %v", tag, err)
+	}
+	if err := os.WriteFile(path, []byte(`{"inbounds":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadTunTag(path); err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
 func TestUnitCarriesTheHardeningAndTheMarker(t *testing.T) {
 	paths := DefaultPaths()
 	unit := Unit(paths)
@@ -180,6 +199,7 @@ func TestUnitCarriesTheHardeningAndTheMarker(t *testing.T) {
 		"ConditionPathExists=/dev/net/tun",
 		"ExecStartPre=+/bin/touch \"" + paths.Active + "\"",
 		"ExecStopPost=+/bin/rm -f \"" + paths.Active + "\"",
+		"WorkingDirectory=" + paths.StateDir,
 		"RuntimeDirectory=sbc-tun",
 		"StateDirectory=sbc-tun",
 		"LD_LIBRARY_PATH=" + paths.BinaryDir,
@@ -353,6 +373,41 @@ func TestApplyStagesAndEnablesTheService(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.Active); !os.IsNotExist(err) {
 		t.Fatalf("active marker survived a failed activation: %v", err)
+	}
+}
+
+func TestCapturedRequiresANewTunConnection(t *testing.T) {
+	before := map[string]struct{}{"old": {}}
+	probe := api.Connection{
+		ID: "new",
+		Metadata: api.ConnectionMetadata{
+			Type:            "tun/tun-in",
+			Network:         "tcp",
+			DestinationIP:   "1.1.1.1",
+			DestinationPort: "443",
+		},
+	}
+	if !captured(probe, "tun-in", before) {
+		t.Fatal("a new TUN connection was not accepted")
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(*api.Connection)
+	}{
+		{"old connection", func(connection *api.Connection) { connection.ID = "old" }},
+		{"other inbound", func(connection *api.Connection) { connection.Metadata.Type = "mixed/mixed" }},
+		{"other destination", func(connection *api.Connection) { connection.Metadata.DestinationIP = "8.8.8.8" }},
+		{"other port", func(connection *api.Connection) { connection.Metadata.DestinationPort = "80" }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			connection := probe
+			test.mutate(&connection)
+			if captured(connection, "tun-in", before) {
+				t.Fatal("an unrelated connection was accepted")
+			}
+		})
 	}
 }
 

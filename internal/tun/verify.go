@@ -3,7 +3,6 @@ package tun
 import (
 	"context"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,8 +11,13 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
 
+const (
+	captureProbeHost = "1.1.1.1"
+	captureProbePort = "443"
+)
+
 // Verify accepts an activation only when the service, capture, DNS and an
-// egress request all work and packets moved through the interface.
+// egress request all work.
 func Verify(paths Paths, runner Runner, tools Tools) error {
 	if err := waitActive(runner, tools); err != nil {
 		return err
@@ -21,25 +25,17 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	if err := stableProcess(runner, tools); err != nil {
 		return err
 	}
-	if _, err := runner.Output(tools.IP, "-o", "link", "show", InterfaceName); err != nil {
-		return i18n.Errorf("the %s interface is missing", InterfaceName)
+	if err := waitInterface(runner, tools); err != nil {
+		return err
 	}
-	for _, family := range []string{"-4", "-6"} {
-		output, err := runner.Output(tools.IP, family, "route", "show", "dev", InterfaceName)
-		if err != nil || strings.TrimSpace(output) == "" {
-			return i18n.Errorf("the %s interface has no %s routes", InterfaceName, family)
-		}
+	if err := waitRoutes(runner, tools); err != nil {
+		return err
 	}
 	if _, err := runner.Output(tools.IP, "rule", "show"); err != nil {
 		return i18n.New("the TUN routing rules are missing")
 	}
 	if _, err := runner.Output(tools.Nft, "list", "ruleset"); err != nil {
 		return i18n.New("the nftables ruleset is unavailable")
-	}
-
-	beforeRX, beforeTX, err := readPackets(InterfaceName)
-	if err != nil {
-		return err
 	}
 	if err := lookupThroughTunnel(); err != nil {
 		return err
@@ -48,19 +44,19 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	if err != nil {
 		return err
 	}
+	tag, err := ReadTunTag(paths.Config)
+	if err != nil {
+		return err
+	}
 	client := api.New(port, secret)
 	if err := client.WaitReady(15 * time.Second); err != nil {
 		return i18n.Errorf("the TUN API did not become ready: %w", err)
 	}
-	if _, err := client.Delay(api.ProxySelector, 10*time.Second); err != nil {
-		return i18n.Errorf("a page did not load through the TUN: %w", err)
-	}
-	afterRX, afterTX, err := readPackets(InterfaceName)
-	if err != nil {
+	if err := verifyCapture(client, tag); err != nil {
 		return err
 	}
-	if afterRX <= beforeRX && afterTX <= beforeTX {
-		return i18n.New("the TUN interface packet counters did not increase")
+	if _, err := client.Delay(api.ProxySelector, 10*time.Second); err != nil {
+		return i18n.Errorf("a page did not load through the TUN: %w", err)
 	}
 	return nil
 }
@@ -73,6 +69,38 @@ func waitActive(runner Runner, tools Tools) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 	return i18n.New("the TUN service did not become active")
+}
+
+// waitInterface waits for sing-box, which systemd reports active before it
+// creates the interface.
+func waitInterface(runner Runner, tools Tools) error {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if _, err := runner.Output(tools.IP, "-o", "link", "show", InterfaceName); err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return i18n.Errorf("the %s interface is missing", InterfaceName)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func waitRoutes(runner Runner, tools Tools) error {
+	for _, family := range []string{"-4", "-6"} {
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			output, err := runner.Output(tools.IP, family, "route", "show", "dev", InterfaceName)
+			if err == nil && strings.TrimSpace(output) != "" {
+				break
+			}
+			if time.Now().After(deadline) {
+				return i18n.Errorf("the %s interface has no %s routes", InterfaceName, family)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	return nil
 }
 
 func stableProcess(runner Runner, tools Tools) error {
@@ -103,6 +131,61 @@ func mainPID(runner Runner, tools Tools) (int, error) {
 	return pid, nil
 }
 
+// verifyCapture proves that the TUN captures locally generated traffic. Under
+// auto_redirect, nftables redirects captured TCP to a local socket before
+// routing, so the interface packet counters do not change. A new connection in
+// sing-box's own Clash API list is the reliable evidence.
+func verifyCapture(client *api.Client, tag string) error {
+	before, err := connectionIDs(client)
+	if err != nil {
+		return err
+	}
+	probe, err := net.DialTimeout("tcp", net.JoinHostPort(captureProbeHost, captureProbePort), 5*time.Second)
+	if err != nil {
+		return i18n.Errorf("the TUN did not capture a test connection: %w", err)
+	}
+	defer probe.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		connections, err := client.Connections()
+		if err != nil {
+			return err
+		}
+		for _, connection := range connections {
+			if captured(connection, tag, before) {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return i18n.New("the TUN did not capture a test connection")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func connectionIDs(client *api.Client) (map[string]struct{}, error) {
+	connections, err := client.Connections()
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]struct{}, len(connections))
+	for _, connection := range connections {
+		ids[connection.ID] = struct{}{}
+	}
+	return ids, nil
+}
+
+func captured(connection api.Connection, tag string, before map[string]struct{}) bool {
+	if _, seen := before[connection.ID]; seen {
+		return false
+	}
+	if connection.Metadata.Type != "tun/"+tag {
+		return false
+	}
+	return connection.Metadata.DestinationIP == captureProbeHost &&
+		connection.Metadata.DestinationPort == captureProbePort
+}
+
 func lookupThroughTunnel() error {
 	resolver := &net.Resolver{
 		PreferGo: true,
@@ -117,29 +200,4 @@ func lookupThroughTunnel() error {
 		return i18n.Errorf("DNS through the TUN failed: %w", err)
 	}
 	return nil
-}
-
-func readPackets(name string) (uint64, uint64, error) {
-	base := "/sys/class/net/" + name + "/statistics/"
-	rx, err := readCounter(base + "rx_packets")
-	if err != nil {
-		return 0, 0, err
-	}
-	tx, err := readCounter(base + "tx_packets")
-	if err != nil {
-		return 0, 0, err
-	}
-	return rx, tx, nil
-}
-
-func readCounter(path string) (uint64, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, i18n.Errorf("read packet counters: %w", err)
-	}
-	value, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
-	if err != nil {
-		return 0, i18n.Errorf("read packet counters: %w", err)
-	}
-	return value, nil
 }

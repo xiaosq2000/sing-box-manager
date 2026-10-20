@@ -112,3 +112,26 @@ func ReadAPI(configPath string) (int, string, error) {
 	}
 	return port, root.Experimental.ClashAPI.Secret, nil
 }
+
+// ReadTunTag reads the tag of the TUN inbound from a staged TUN config.
+func ReadTunTag(configPath string) (string, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	var root struct {
+		Inbounds []struct {
+			Type string `json:"type"`
+			Tag  string `json:"tag"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return "", i18n.Errorf("read the TUN config: %w", err)
+	}
+	for _, inbound := range root.Inbounds {
+		if inbound.Type == "tun" && inbound.Tag != "" {
+			return inbound.Tag, nil
+		}
+	}
+	return "", i18n.New("the TUN config has no TUN inbound tag")
+}
