@@ -124,10 +124,14 @@ or stdin. AI check fixtures cover explicit opt-in, direct-mode skips, direct
 permission, proxy-only inlet validation, HTTP denials, challenges, redirects,
 unknown regions, and absence of account credentials or automatic retries.
 Region fixtures use a temporary `/etc` tree and a fake tool runner. They cover
-system scope, tool and file fallback, ownership, external changes, partial
-components, pending retries and the root state. No test changes the host's time
-zone or locale. CLI fixtures check the `--system` confirmation, the no-sudo
-refresh path and the uninstall restore.
+system scope, absolute and relative time zone links, unchanged tool results,
+tool and file fallback, ownership, external changes, partial components, pending
+retries and the root state. No test changes the host's time
+zone or locale. The common CLI fixture uses temporary system region paths and
+rejects sudo calls without a fake runner. CLI fixtures check the `--system`
+confirmation, activation through a symbolic-link directory, the no-sudo refresh
+path and the uninstall restore. The directory fixture covers macOS path aliases
+on Linux too.
 
 Route alias fixtures cover old and new installed configs. Provider checks use
 loopback stand-ins only, never live provider requests. Completion fixtures read only a scratch config and use no running proxy.

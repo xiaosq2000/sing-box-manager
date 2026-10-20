@@ -25,7 +25,11 @@ type systemCLIFixture struct {
 
 func newSystemCLIFixture(t *testing.T) *systemCLIFixture {
 	t.Helper()
-	root := t.TempDir()
+	return newSystemCLIFixtureAt(t, t.TempDir())
+}
+
+func newSystemCLIFixtureAt(t *testing.T, root string) *systemCLIFixture {
+	t.Helper()
 	zoneRoot := filepath.Join(root, "zoneinfo")
 	for _, zone := range []string{"Asia/Shanghai", "Asia/Singapore", "Europe/Berlin", "UTC"} {
 		path := filepath.Join(zoneRoot, zone)
@@ -95,7 +99,11 @@ func (f *systemCLIFixture) tool(name string, args ...string) error {
 		zone := args[len(args)-1]
 		tmp := f.paths.Localtime + ".tmp"
 		_ = os.Remove(tmp)
-		if err := os.Symlink(filepath.Join(f.zoneRoot, zone), tmp); err != nil {
+		target, err := filepath.Rel(filepath.Dir(f.paths.Localtime), filepath.Join(f.zoneRoot, zone))
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(target, tmp); err != nil {
 			return err
 		}
 		return os.Rename(tmp, f.paths.Localtime)
@@ -210,37 +218,54 @@ func (f *systemCLIFixture) storeProfile(t *testing.T) {
 }
 
 func TestPrivacyRegionSystemOn(t *testing.T) {
-	f := newSystemCLIFixture(t)
-	f.storeProfile(t)
-	env, out, errOut := f.env(t)
+	for _, name := range []string{"directory", "symlinked directory"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if name == "symlinked directory" {
+				// Model macOS /var -> /private/var on every test host.
+				alias := filepath.Join(t.TempDir(), "root")
+				if err := os.Symlink(root, alias); err != nil {
+					t.Fatal(err)
+				}
+				root = alias
+			}
+			f := newSystemCLIFixtureAt(t, root)
+			f.storeProfile(t)
+			env, out, errOut := f.env(t)
 
-	if code := Run(env, []string{"privacy", "region", "on", "--system", "--yes"}); code != 0 {
-		t.Fatalf("code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
-	}
-	if len(f.sudoCalls) != 1 || !strings.Contains(f.sudoCalls[0], "_region-system-on") {
-		t.Fatalf("sudo calls %v", f.sudoCalls)
-	}
-	mode, err := f.manager.LoadMode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode.EffectiveScope() != region.ScopeSystem || !mode.Timezone || !mode.Language {
-		t.Fatalf("mode = %#v", mode)
-	}
-	target, err := os.Readlink(f.paths.Localtime)
-	if err != nil || target != filepath.Join(f.zoneRoot, "Asia/Shanghai") {
-		t.Fatalf("localtime = %q, %v", target, err)
-	}
-	data, _ := os.ReadFile(f.paths.LocaleDefault)
-	if !strings.Contains(string(data), "LANG=zh_CN.UTF-8") {
-		t.Fatalf("locale file = %q", data)
-	}
-	out.Reset()
-	if code := Run(env, []string{"privacy", "region"}); code != 0 {
-		t.Fatalf("status code %d, stderr %q", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "(system)") || !strings.Contains(out.String(), "System time zone: current") {
-		t.Fatalf("status = %q", out.String())
+			if code := Run(env, []string{"privacy", "region", "on", "--system", "--yes"}); code != 0 {
+				t.Fatalf("code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+			}
+			if len(f.sudoCalls) != 1 || !strings.Contains(f.sudoCalls[0], "_region-system-on") {
+				t.Fatalf("sudo calls %v", f.sudoCalls)
+			}
+			mode, err := f.manager.LoadMode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode.EffectiveScope() != region.ScopeSystem || !mode.Timezone || !mode.Language {
+				t.Fatalf("mode = %#v", mode)
+			}
+			want, err := filepath.EvalSymlinks(filepath.Join(f.zoneRoot, "Asia/Shanghai"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := filepath.EvalSymlinks(f.paths.Localtime)
+			if err != nil || target != want {
+				t.Fatalf("localtime = %q, %v; want %q", target, err, want)
+			}
+			data, _ := os.ReadFile(f.paths.LocaleDefault)
+			if !strings.Contains(string(data), "LANG=zh_CN.UTF-8") {
+				t.Fatalf("locale file = %q", data)
+			}
+			out.Reset()
+			if code := Run(env, []string{"privacy", "region"}); code != 0 {
+				t.Fatalf("status code %d, stderr %q", code, errOut.String())
+			}
+			if !strings.Contains(out.String(), "(system)") || !strings.Contains(out.String(), "System time zone: current") {
+				t.Fatalf("status = %q", out.String())
+			}
+		})
 	}
 }
 

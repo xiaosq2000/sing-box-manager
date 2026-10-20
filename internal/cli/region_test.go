@@ -47,6 +47,9 @@ func regionTestEnv(t *testing.T, layout paths.Layout, manager *region.Manager) (
 	env.OS = "linux"
 	env.Layout = func() (paths.Layout, error) { return layout, nil }
 	env.Region = func(paths.Layout) *region.Manager { return manager }
+	system := newSystemCLIFixture(t)
+	env.SystemRegion = func() region.SystemPaths { return system.paths }
+	env.Sudo = nil
 	return env, &out, &errOut
 }
 

@@ -191,8 +191,9 @@ variables sbc set; it keeps the last profile so `on` does not need a download.
 `--system` writes `/etc/localtime` and the system locale file. It uses
 `timedatectl set-timezone` for the time zone and `update-locale` for the
 language on Ubuntu 18.04 to 26.04. If a tool is missing, sbc writes the file
-directly. The language applies at the next login; the time zone applies to new
-processes immediately. Open applications and browsers keep their current values
+directly. The time zone check accepts both absolute and relative `/etc/localtime`
+links to the target zone. The language applies at the next login; the time zone
+applies to new processes immediately. Open applications and browsers keep their current values
 until you restart them.
 
 System scope affects every account and service. It can change log timestamps,
