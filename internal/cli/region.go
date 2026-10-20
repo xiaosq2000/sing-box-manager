@@ -13,10 +13,10 @@ import (
 )
 
 func regionFor(env Env, layout paths.Layout) *region.Manager {
-	if env.Region != nil {
-		return env.Region(layout)
-	}
 	manager := region.New(layout, os.Getenv)
+	if env.Region != nil {
+		manager = env.Region(layout)
+	}
 	// Follow Env.OS so fixtures can exercise the Linux path on other hosts.
 	manager.Supported = env.OS == "linux"
 	return manager
