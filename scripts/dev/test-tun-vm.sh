@@ -165,6 +165,21 @@ cat >"$WORK/host-upstream.json" <<JSON
 JSON
 "$ASSETS/sing-box" run -c "$WORK/host-upstream.json" >"$WORK/host-upstream.log" 2>&1 &
 upstream_pid=$!
+echo "checking the host upstream"
+host_ok=
+for _ in $(seq 30); do
+	if curl -fsS --max-time 5 --socks5-hostname "127.0.0.1:$UPSTREAM_PORT" \
+		https://www.gstatic.com/generate_204 >/dev/null 2>&1; then
+		host_ok=1
+		break
+	fi
+	sleep 1
+done
+if [ -z "$host_ok" ]; then
+	echo "the host upstream did not reach the delay URL" >&2
+	cat "$WORK/host-upstream.log" >&2
+	exit 1
+fi
 printf '<!doctype html><title>tun-e2e</title>tun-e2e\n' >"$ASSETS/site/index.html"
 install -m 755 "$ROOT/scripts/dev/tun-vm/test.sh" "$ASSETS/test.sh"
 install -m 644 "$ROOT/scripts/dev/tun-vm/dns.py" "$ASSETS/dns.py"
