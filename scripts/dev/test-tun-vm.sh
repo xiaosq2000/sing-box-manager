@@ -160,7 +160,14 @@ install -m 644 "$ROOT/scripts/dev/tun-vm/dns.py" "$ASSETS/dns.py"
 echo "fetching the Ubuntu cloud image"
 if [ ! -f "$IMAGE" ]; then
 	curl -fsSL --retry 3 "$IMAGE_URL" -o "$IMAGE.part"
-	expected=$(curl -fsSL "$IMAGE_SUMS" | awk '$2 == "noble-server-cloudimg-amd64.img" {print $1; exit}')
+	expected=$(curl -fsSL "$IMAGE_SUMS" | awk '{
+		name = $2
+		sub(/^\*/, "", name)
+		if (name == "noble-server-cloudimg-amd64.img") {
+			print $1
+			exit
+		}
+	}')
 	[ -n "$expected" ] || {
 		echo "the Ubuntu image checksum is missing" >&2
 		exit 1
