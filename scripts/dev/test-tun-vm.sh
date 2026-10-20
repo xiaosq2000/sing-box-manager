@@ -88,6 +88,8 @@ if [ -f "$sing_box_dir/libcronet.so" ]; then
 fi
 printf '%s\n' "$version" >"$ASSETS/sing-box.version"
 
+# hijack makes systemd-resolved use the TUN DNS address. disabled leaves
+# its upstream on the directly attached 10.0.2.0/24, which auto_redirect excludes.
 cat >"$ASSETS/tun.json" <<JSON
 {
   "log": {"level": "warn"},
@@ -114,7 +116,7 @@ cat >"$ASSETS/tun.json" <<JSON
       "auto_route": true,
       "strict_route": true,
       "auto_redirect": true,
-      "dns_mode": "disabled"
+      "dns_mode": "hijack"
     }
   ],
   "outbounds": [
