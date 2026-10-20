@@ -23,6 +23,9 @@ type ipOptions struct {
 // runIP checks general exit IPs through the active route. AI checks are opt-in
 // and use a validated proxy-only inlet unless direct access is permitted.
 func runIP(env Env, options ipOptions) int {
+	if err := mixedDiagnostic(env, "ip"); err != nil {
+		return fail(env, err)
+	}
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -120,6 +123,9 @@ type timing struct {
 // delay test, or with --download, measures how fast it downloads. --all tests
 // every protocol instead. Neither switches the protocol in use.
 func runSpeed(env Env, options speedOptions) int {
+	if err := mixedDiagnostic(env, "speed"); err != nil {
+		return fail(env, err)
+	}
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)

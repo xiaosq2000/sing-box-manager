@@ -146,6 +146,7 @@ and staging directory as credential-bearing recovery data. Keep them until
 recovery finishes. Completed maintenance removes its user staging directory,
 not root `.prev-` generations. Update hints contain no configuration or secret.
 
+AI diagnostics support mixed mode only. TUN refuses these checks before requests.
 AI diagnostics use no browser cookies, API keys, or account credentials.
 `sbc ip --ai --allow-direct-ai` permits requests through the active route and can
 expose the local network's public IP. Do not use this check to claim that an

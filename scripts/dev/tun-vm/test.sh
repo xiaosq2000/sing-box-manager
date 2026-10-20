@@ -125,8 +125,8 @@ assert_selection() {
 	sudo python3 -c 'import json; t=json.load(open("/etc/sbc/tun-control/transaction.json")); c=json.load(open("/etc/sbc/tun/config.json")); assert c["experimental"]["cache_file"]["cache_id"]=="sbc-tun-"+t["id"]'
 }
 set_mode() {
-	curl -fsS --max-time 5 -X PATCH -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
-		-d "{\"mode\":\"$1\"}" "http://127.0.0.1:$port/configs" >/dev/null
+	sbc route "$1"
+	[ "$(sbc route | cut -d ' ' -f 1)" = "$1" ]
 	sudo resolvectl flush-caches
 }
 assert_path() {
@@ -139,7 +139,14 @@ assert_path() {
 		return 1
 	}
 }
-step "five modes: distinct DNS paths and direct/proxy branches"
+root_digest() {
+	sudo sh -c '{ find /etc/sbc/tun /usr/local/lib/sbc-tun -type f -exec sha256sum {} +; sha256sum /etc/systemd/system/sbc-tun.service; }' | LC_ALL=C sort | sha256sum
+}
+step "native CLI switches five modes without restarting capture"
+switch_generation=$(generation)
+switch_pid=$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)
+switch_files=$(runtime_digest)
+switch_root=$(root_digest)
 for mode in direct ai-only china-direct gfw-proxy global; do
 	set_mode "$mode"
 	expected_dns=198.18.0.10
@@ -173,11 +180,32 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 	esac
 	assert_path portal.fixture.test direct
 done
+step "native CLI switches protocols and rejects mixed diagnostics"
+sbc route gfw
+[ "$(sbc route | cut -d ' ' -f 1)" = gfw-proxy ]
+sudo resolvectl flush-caches
+sbc protocol trojan
+[ "$(sbc protocol | cut -d ' ' -f 1)" = trojan ]
+assert_path gfw.fixture.test proxy
+sbc protocol naive
+[ "$(sbc protocol | cut -d ' ' -f 1)" = naive ]
+assert_path gfw.fixture.test proxy-alt
+sbc protocol trojan
+assert_path gfw.fixture.test proxy
+sbc protocol naive
+assert_path gfw.fixture.test proxy-alt
+sbc status | grep 'protocol: naive'
+absent sbc route not-a-route
+absent sbc protocol not-a-protocol
+absent sbc ip
+absent sbc ip --ai
+absent sbc speed
+absent sbc speed --download
+[ "$(generation)" = "$switch_generation" ]
+[ "$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)" = "$switch_pid" ]
+[ "$(runtime_digest)" = "$switch_files" ]
+[ "$(root_digest)" = "$switch_root" ]
 step "signed maintenance: candidate rejection must not stop the active generation"
-set_mode gfw-proxy
-# Change the active API selection. Native route/protocol CLI switching has its
-# own acceptance scope; this case checks preservation across maintenance.
-curl -fsS --max-time 5 -X PUT -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' -d '{"name":"naive"}' "http://127.0.0.1:$port/proxies/proxy" >/dev/null
 assert_path ordinary.fixture.test direct
 before=$(generation)
 before_pid=$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)
@@ -286,6 +314,12 @@ absent sbc tun off
 [ "$(phase)" = dirty ]
 /usr/bin/systemctl is-active --quiet sbc-tun.service
 test -e /etc/sbc/tun-control/blocked
+absent sbc route
+absent sbc route global
+absent sbc protocol
+absent sbc protocol trojan
+absent sbc ip
+absent sbc speed
 absent sbc on
 sudo rm /run/sbc-fixture-fail-stop
 sbc tun off

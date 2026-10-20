@@ -84,7 +84,9 @@ Chrome's language preferences without changing the system locale. See
 
 On native Linux, `sbc tun on` runs a root-owned TUN service instead of mixed
 mode. It needs systemd, `/dev/net/tun`, and sudo, and it refuses remote SSH
-sessions. See [Linux TUN](docs/README_SBC.md#linux-tun).
+sessions. `sbc route` and `sbc protocol` control active TUN without restarting
+capture. IP and speed diagnostics explicitly refuse TUN mode.
+See [Linux TUN](docs/README_SBC.md#linux-tun).
 
 `sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
 It requires `control_plane.enabled` and `control_plane.secret_key`.

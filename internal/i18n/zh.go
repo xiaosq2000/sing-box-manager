@@ -4,6 +4,9 @@ package i18n
 // keeps the English message's values in the same order, so the same arguments
 // fill it. Names of programs and commands stay as they are.
 var zh = map[string]string{
+	"TUN commands need a committed active generation. Run 'sbc tun off' to repair dirty state.":                     "TUN 命令需要已提交且运行中的代。请运行 'sbc tun off' 修复异常状态。",
+	"The active TUN has no valid saved API state for this user. Run 'sbc tun off' as its owner.":                    "当前用户没有活动 TUN 的有效 API 状态。请以所有者身份运行 'sbc tun off'。",
+	"sbc %s is not available in TUN mode yet. No network check was sent.":                                           "sbc %s 暂不支持 TUN 模式。未发送网络检查请求。",
 	"tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'":                                              "tun:      状态异常。无法确认流量捕获状态。请运行 'sbc tun off'",
 	"TUN commit failed. Recovery is pending. Run 'sbc tun off'":                                                     "TUN 提交失败，恢复尚未完成。请运行 'sbc tun off'",
 	"TUN commit failed. The TUN was stopped and the mixed proxy remains off":                                        "TUN 提交失败。TUN 已停止，混合代理保持关闭",
@@ -434,7 +437,6 @@ var zh = map[string]string{
 	"the TUN config has no TUN inbound tag":                                                                                            "TUN 配置缺少 TUN 入站标签",
 	"the TUN service did not become active":                                                                                            "TUN 服务未进入运行状态",
 	"the TUN service process is not stable":                                                                                            "TUN 服务进程不稳定",
-	"api:      state unavailable; run 'sbc tun on' again":                                                                              "api:      状态不可用；请重新运行 'sbc tun on'",
 	"api:      TUN API is not reachable; run 'sbc tun off' and 'sbc tun on' again":                                                     "api:      无法连接 TUN API；请运行 'sbc tun off'，再运行 'sbc tun on'",
 	"capture:  TUN; run 'sbc tun off' to stop it":                                                                                      "capture:  TUN；运行 'sbc tun off' 可停止",
 	"Linux TUN capture is active; run 'sbc tun off' before upgrading the client":                                                       "Linux TUN 捕获正在运行；升级客户端前请先运行 'sbc tun off'",

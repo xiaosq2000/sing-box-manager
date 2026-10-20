@@ -34,9 +34,10 @@ and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 Choose checks for the files and behavior being changed. The commands below are
 available tools, not a sequence required for every edit.
 
-Both CI workflows accept PRs against `main` and `feat/m1b-tun-core`.
-The core branch permits a separate maintenance PR with automated checks.
-Push events run these workflows only on `main`.
+Both CI workflows accept PRs against `main`, `feat/m1b-tun-core` and
+`feat/m1b-tun-maintenance`. These branches permit separate maintenance and
+native TUN CLI PRs with automated checks. Push events run these workflows only
+on `main`.
 
 | Change              | Useful checks                                                                                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -232,6 +233,13 @@ stop or changed transaction identity retains recovery data. Automatic workers
 check signed source fingerprints and update hints without changing runtime files
 or invoking sudo. No TUN recovery test uses mixed restart or rollback hooks.
 
+TUN runtime fixtures use separate owner and mixed API endpoints. They check
+query-only calls, route aliases, protocol changes, invalid choices, operation
+locks, missing or invalid owner state, and unavailable APIs. Pending, dirty or
+inconsistent capture metadata blocks runtime access. No TUN failure falls back
+to the answering mixed endpoint. IP and speed fixtures refuse TUN before config
+access or network requests, including explicit AI and download flags.
+
 `sbc` passes every message through `internal/i18n`, whose catalog holds the Chinese,
 keyed by the English. Its test reads the source and fails when a message has no
 translation, when a translation formats different values, or when the catalog keeps
@@ -284,13 +292,17 @@ The proxy-only target is unreachable directly. SOCKS forwards only allowlisted
 fixture destinations. TLS uses an ephemeral test CA inside the guest only.
 Reserved `.test` names reach the resolver, unlike locally rejected `.invalid`
 names. Distinct DNS answers and nonce-bearing responses distinguish direct and
-proxy paths in all five modes. Checks cover stop failure, recovery after a dead proxy,
+proxy paths in all five modes. The suite drives route and protocol changes through
+the native CLI, including a route alias and round-trip selector changes.
+Generation, process ID and installed files stay unchanged across switching.
+Distinct responses prove both selector paths. Invalid choices and mixed-only
+diagnostics fail explicitly. Checks cover stop failure, recovery after a dead proxy,
 `direct` with an unused dead proxy, and controller death after service startup.
 Controller-death cases observe timer recovery before explicit test cleanup.
 
 Maintenance acceptance checks signature rejection without changing the live
 process, a signed client-only upgrade, rule-snapshot refresh, and check-only
-workers. It preserves an API-selected route and alternate selector across root
+workers. It preserves a CLI-selected route and alternate selector across root
 publication. Distinct SOCKS responses prove the selected path. The alternate
 selector uses the `naive` tag but not the Naive transport. After both maintenance
 controllers die, the test observes shutdown before explicit user-file recovery.
@@ -318,14 +330,15 @@ pixi run go test ./internal/tun ./internal/cli ./internal/api ./internal/service
 Each VM run retains its disk, generated assets, guest-only packet trace and
 serial log under the image cache's `runs/` directory. These contain synthetic private keys and credentials.
 Do not upload them wholesale. The script prints the run directory and failure
-markers. Native route/protocol CLI switching, hosted installation, native
+markers. Native TUN IP and speed diagnostics, hosted installation, native
 scheduling, engine-version transitions, reboot, Docker, `SO_BINDTODEVICE` and
 non-SOCKS tunnel protocols are outside this VM suite.
 
 Core acceptance passes locally with sing-box 1.14.3 and the Noble fixture under
 KVM and TCG. The [GitHub CI run](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39415310872)
 also passes under TCG. Maintenance acceptance passes locally under KVM and TCG
-with sing-box 1.14.3 and the Noble fixture. This does not complete M1b acceptance.
+with sing-box 1.14.3 and the Noble fixture. Native route/protocol CLI switching
+also passes locally under KVM and TCG. This does not complete M1b acceptance.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
@@ -449,7 +462,11 @@ destinations.
 DNS, HTTP, and proxy servers. They check every rendered client profile on every
 platform it is rendered for, since the desktop configs differ by platform in the
 system resolver that `ai-only` and `direct` use, plus desktop startup with failed rule
-updates, and DNS persistence and expiry. Routing fixtures cover all five desktop
+updates, and DNS persistence and expiry. The SOCKS stand-in validates protocol frames
+before recording a target, so unrelated HTTP probes cannot create false proxy
+traffic. Engine fixtures wait for the current process's startup message, not
+only its first TCP listener. Earlier log entries cannot establish readiness.
+Routing fixtures cover all five desktop
 strategies and the three legacy alias modes, direct exceptions with the proxy
 unavailable, and mobile FakeIP bypass. `direct` tests verify system DNS and direct
 AI connections with the remote proxy both available and unavailable.

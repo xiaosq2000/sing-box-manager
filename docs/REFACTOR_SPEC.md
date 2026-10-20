@@ -219,8 +219,10 @@ current location.
    journal, and `scripts/dev/test-tun-vm.sh`. The `e2e-tun` job passes controlled
    native QEMU acceptance under TCG on GitHub Actions. Controlled maintenance
    passes locally under KVM and TCG for client-only upgrades and rule refreshes.
-   Native CLI switching, engine-version transitions, install/uninstall, reboot,
-   Docker and bound-socket acceptance remain incomplete. M1b is not complete.
+   Native route/protocol CLI switching passes locally under KVM and TCG without
+   restarting capture. TUN IP/speed diagnostics, engine-version transitions,
+   install/uninstall, reboot, Docker and bound-socket acceptance remain incomplete.
+   M1b is not complete.
    Do not restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
@@ -522,8 +524,9 @@ Routing:
   exclude private ranges.
 - Keep the five Clash modes and the protocol selector through the local API.
   `sbc tun on` generates the API port and secret and writes them to the owner's
-  state (0600) and the root config (0640 `root:sbc-tun`), so `sbc route`,
-  `sbc protocol`, `sbc ip` and `sbc speed` keep working without sudo.
+  state (0600) and the root config (0640 `root:sbc-tun`). `sbc route` and
+  `sbc protocol` use that API without sudo. TUN `ip` and `speed` diagnostics
+  remain unimplemented and explicitly refuse requests.
 - Accept activation only when a representative request works under the current
   mode. Never switch modes for verification. Resolve with the system resolver,
   match the new TUN connection by its source and destination socket, and obtain
@@ -572,6 +575,19 @@ DNS:
 - Verify with `auto_redirect` and `dns_mode: hijack` that DNS from applications
   and from systemd-resolved is captured and answered.
 
+Runtime commands:
+
+- Query and switch routes and protocols through the committed active TUN API
+  using the owner's saved state. Use the operation lock for mutations.
+  Do not restart capture or rewrite installed files for a switch.
+- Reject pending, dirty or inconsistent metadata, invalid owner state and
+  unavailable APIs. Never fall back to mixed mode after a TUN error.
+  Status uses the same owner-state checks. Offline lists and completion remain
+  based on the installed configuration.
+- IP and speed diagnostics explicitly refuse TUN before network requests,
+  including AI checks and download tests. Native diagnostics need separate
+  capture and privacy acceptance.
+
 Maintenance:
 
 - While TUN is active, automatic refresh and upgrade jobs only check updates.
@@ -603,12 +619,13 @@ product-rendered routing, a guest router namespace, distinct DNS answers, and a
 proxy-only target that cannot succeed by direct access. It includes native stop
 failure, failed activation, an unused dead proxy under `direct`, and controller
 death after startup. Maintenance fixtures check signed candidate rejection,
-a client upgrade, changed rule snapshots, preserved API selections and
+a client upgrade, changed rule snapshots, preserved CLI selections and
 check-only workers. They observe independent timer recovery after both
 maintenance controllers die, before restoring user files. Alternate selector
-transports remain SOCKS fixtures, not real Naive acceptance. Native CLI switching,
-engine-version upgrades, installation, reboot, Docker and `SO_BINDTODEVICE`
-acceptance remain separate work. Keep `scripts/lib/ui.sh` while the server scripts use it.
+transports remain SOCKS fixtures, not real Naive acceptance. CLI switches cover
+five modes, a route alias and both selector paths without changing generation,
+PID or installed files. TUN diagnostics, engine-version upgrades, installation,
+reboot, Docker and `SO_BINDTODEVICE` acceptance remain separate work. Keep `scripts/lib/ui.sh` while the server scripts use it.
 
 ### M2: Client CLI for Windows
 

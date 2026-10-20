@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -112,6 +113,32 @@ def test_document_fingerprint_exception_is_exact_and_path_scoped() -> None:
         "0123456789abcdef",
     ):
         assert not re.fullmatch(value_pattern, value)
+
+
+@pytest.mark.parametrize("workflow", ["ci.yml", "sbc.yml"])
+def test_stacked_pr_workflows_keep_read_only_hosted_checks(workflow: str) -> None:
+    # BaseLoader preserves the Actions 'on' key instead of YAML 1.1 booleans.
+    config = yaml.load(
+        (ROOT / ".github/workflows" / workflow).read_text(), Loader=yaml.BaseLoader
+    )
+    assert set(config["on"]) == {"push", "pull_request"}
+    assert config["on"]["push"]["branches"] == ["main"]
+    assert config["on"]["pull_request"]["branches"] == [
+        "main",
+        "feat/m1b-tun-core",
+        "feat/m1b-tun-maintenance",
+    ]
+    assert config["permissions"] == {"contents": "read"}
+    for job in config["jobs"].values():
+        runner = job["runs-on"]
+        if runner == "${{ matrix.os }}":
+            assert set(job["strategy"]["matrix"]["os"]) <= {
+                "ubuntu-latest",
+                "macos-latest",
+                "windows-latest",
+            }
+        else:
+            assert runner in {"ubuntu-latest", "macos-latest", "windows-latest"}
 
 
 def test_public_index_contains_no_operational_files() -> None:
