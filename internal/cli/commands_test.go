@@ -222,6 +222,7 @@ type fakeDesktop struct {
 	privacyCalls      []bool
 	privacyCleanups   int
 	privacyErr        error
+	privacyOptedOut   bool
 	remainingPolicies []string
 }
 
@@ -248,6 +249,7 @@ func (f *fakeDesktop) Off() error {
 
 func (f *fakeDesktop) SetWebRTC(enabled bool) error {
 	f.privacyCalls = append(f.privacyCalls, enabled)
+	f.privacyOptedOut = !enabled
 	return f.privacyErr
 }
 
@@ -258,6 +260,10 @@ func (f *fakeDesktop) CleanupWebRTC() error {
 
 func (f *fakeDesktop) RemainingWebRTC() ([]string, error) {
 	return f.remainingPolicies, nil
+}
+
+func (f *fakeDesktop) WebRTCOptedOut() (bool, error) {
+	return f.privacyOptedOut, f.privacyErr
 }
 
 func (h *harness) useDesktop() *fakeDesktop {

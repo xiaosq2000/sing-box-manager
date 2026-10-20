@@ -133,41 +133,6 @@ func switchDesktop(env Env, layout paths.Layout, local singbox.Local, on bool) e
 	return nil
 }
 
-// runWebRTC is separate from proxy switching so an explicit opt-out persists.
-// It can also clean browser settings after an interrupted installation.
-func runWebRTC(env Env, args []string) int {
-	privacy, err := env.Privacy()
-	if err != nil {
-		return fail(env, err)
-	}
-	if err := privacy.SetWebRTC(args[0] == "on"); err != nil {
-		return fail(env, err)
-	}
-	if args[0] == "on" {
-		if env.OS == "darwin" {
-			fmt.Fprintln(env.Stdout, i18n.T("Safari WebRTC protection is not managed by sbc."))
-		}
-		fmt.Fprintln(env.Stdout, i18n.T("WebRTC protection is configured and stays enabled across proxy toggles. Restart open browsers to apply the changes."))
-		return 0
-	}
-	if err := reportRemainingWebRTC(env, privacy); err != nil {
-		return fail(env, err)
-	}
-	fmt.Fprintln(env.Stdout, i18n.T("Managed WebRTC settings were removed and the four Firefox WebRTC preferences were reset. Automatic setup is off. Use 'sbc webrtc on' to enable it again. Restart open browsers to apply the changes."))
-	return 0
-}
-
-func reportRemainingWebRTC(env Env, privacy desktop.BrowserPrivacy) error {
-	remaining, err := privacy.RemainingWebRTC()
-	if err != nil {
-		return err
-	}
-	if len(remaining) != 0 {
-		fmt.Fprintf(env.Stdout, i18n.T("Browser settings from another source were preserved:\n  %s\nThese settings can keep WebRTC protection enabled. sbc does not remove administrator or externally changed settings.\n"), strings.Join(remaining, "\n  "))
-	}
-	return nil
-}
-
 func runDocker(env Env, action string, yes bool) int {
 	layout, err := env.Layout()
 	if err != nil {

@@ -19,10 +19,6 @@ func regionFor(env Env, layout paths.Layout) *region.Manager {
 	return region.New(layout, os.Getenv)
 }
 
-func runPrivacy(env Env) int {
-	return printRegionStatus(env)
-}
-
 func runPrivacyRegion(env Env, args []string, timezone, language bool) int {
 	if env.OS != "linux" {
 		return fail(env, i18n.New("region matching is available on Linux only"))
@@ -262,7 +258,6 @@ func printRegionStatus(env Env) int {
 	if status.Mode.Language {
 		warnLCAll(env, status.LCAll)
 	}
-	fmt.Fprintln(env.Stdout, i18n.T("WebRTC protection is controlled by 'sbc webrtc on|off'."))
 	return 0
 }
 

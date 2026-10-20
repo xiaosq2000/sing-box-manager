@@ -143,7 +143,7 @@ func TestPrivacyStatusShowsTheTargetAndFiles(t *testing.T) {
 	}
 	env, out, errOut := regionTestEnv(t, layout, manager)
 
-	if code := Run(env, []string{"privacy"}); code != 0 {
+	if code := Run(env, []string{"privacy", "region"}); code != 0 {
 		t.Fatalf("code %d, stderr %q", code, errOut.String())
 	}
 	text := out.String()

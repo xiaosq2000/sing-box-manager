@@ -174,7 +174,6 @@ control-plane = [
   "internal/routes/",
   "internal/desktop/",
   "internal/winsettings/",
-  "internal/browserprivacy/",
   "internal/powershell/",
   "internal/paths/",
   "internal/service/",
@@ -199,7 +198,6 @@ control-plane = [
 "docs/WEBRTC.md" = [
   "internal/browserprivacy/",
   "internal/desktop/",
-  "internal/winsettings/",
   "internal/cli/",
   "internal/paths/",
   "internal/e2e/",

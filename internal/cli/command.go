@@ -144,7 +144,6 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	}{
 		{"env [on|off]", i18n.T("Print shell proxy variables. Print PowerShell commands on Windows"), "shell", 0, runEnv},
 		{"desktop [on|off]", i18n.T("Show or switch the desktop proxy (GNOME, macOS, Windows)"), "shell", 0, runDesktop},
-		{"webrtc on|off", i18n.T("Enable or remove persistent WebRTC protection. May request approval"), "privacy", 1, runWebRTC},
 	} {
 		cmd := add(entry.use, entry.description, entry.group, choiceArgs(entry.minimum, "on", "off"), func(args []string) int {
 			if entry.use == "desktop [on|off]" && len(args) != 0 {
@@ -157,9 +156,20 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		})
 		cmd.ValidArgsFunction = fixedChoices("on", "off")
 	}
-	privacy := add("privacy", i18n.T("Show or change region matching"), "privacy", argumentRange(0, 0), func([]string) int {
+	privacy := add("privacy", i18n.T("Show or change browser and region privacy settings"), "privacy", argumentRange(0, 0), func([]string) int {
 		return runPrivacy(env)
 	})
+	browser := &cobra.Command{
+		Use:   "browser [on|off|status]",
+		Short: i18n.T("Show or change Chrome WebRTC protection (Linux)"),
+		Args:  choiceArgs(0, "on", "off", "status"),
+		Run: func(_ *cobra.Command, args []string) {
+			*exit = runPrivacyBrowser(env, args)
+		},
+	}
+	browser.Flags().BoolP("help", "h", false, i18n.T("Show help for this command"))
+	browser.ValidArgsFunction = fixedChoices("on", "off", "status")
+	privacy.AddCommand(browser)
 	var regionTimezone, regionLanguage bool
 	region := &cobra.Command{
 		Use:   "region [on|off|status]",

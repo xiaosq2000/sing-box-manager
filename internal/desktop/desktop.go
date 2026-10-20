@@ -85,24 +85,19 @@ var ErrUnsupported = i18n.New("sbc sets the desktop proxy in GNOME on Linux, on 
 func New(goos string, getenv func(string) string, run Runner) (Desktop, error) {
 	switch goos {
 	case "windows":
-		privacy, err := newPrivacy(goos, run)
-		if err != nil {
-			return nil, err
-		}
-		return &Windows{Registry: winsettings.PowerShell{}, Privacy: privacy}, nil
+		return &Windows{Registry: winsettings.PowerShell{}}, nil
 	case "linux":
 		if !isGNOME(getenv) {
 			return nil, ErrUnsupported
 		}
-		privacy, err := newPrivacy("linux", run)
+		privacy, err := newChromePrivacy("linux", run)
 		return &GNOME{Run: run, Privacy: privacy}, err
 	case "darwin":
 		service, err := activeService(run)
 		if err != nil {
 			return nil, err
 		}
-		privacy, err := newPrivacy("darwin", run)
-		return &MacOS{Service: service, Run: run, Privacy: privacy}, err
+		return &MacOS{Service: service, Run: run}, nil
 	default:
 		return nil, ErrUnsupported
 	}
@@ -201,7 +196,6 @@ func (g *GNOME) Off() error {
 // MacOS changes the proxies of one network service through networksetup,
 // which needs administrator rights to change them.
 type MacOS struct {
-	Privacy WebRTCSettings
 	Service string
 	Run     Runner
 }
@@ -270,11 +264,6 @@ func (m *MacOS) State(port int) (State, error) {
 }
 
 func (m *MacOS) On(port int) error {
-	if m.Privacy != nil {
-		if err := m.Privacy.Ensure(); err != nil {
-			return err
-		}
-	}
 	value := strconv.Itoa(port)
 	for _, setter := range []string{"-setwebproxy", "-setsecurewebproxy", "-setsocksfirewallproxy"} {
 		if _, err := m.Run("sudo", "networksetup", setter, m.Service, Host, value); err != nil {

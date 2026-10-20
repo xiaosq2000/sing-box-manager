@@ -31,10 +31,13 @@ func (w *Manager) optedOut() (bool, error) {
 		return false, i18n.Errorf("could not read the WebRTC mode state: %w", err)
 	}
 	if strings.TrimSpace(string(data)) != "off" {
-		return false, i18n.New("the WebRTC mode state is invalid; use 'sbc webrtc on' or 'sbc webrtc off'")
+		return false, i18n.New("the WebRTC mode state is invalid; use 'sbc privacy browser on' or 'sbc privacy browser off'")
 	}
 	return true, nil
 }
+
+// OptedOut reports whether the user disabled automatic browser protection.
+func (w *Manager) OptedOut() (bool, error) { return w.optedOut() }
 
 // Ensure defaults to enabled, but never reverses an explicit opt-out.
 func (w *Manager) Ensure() error {
@@ -69,7 +72,7 @@ func (w *Manager) Set(enabled bool) error {
 		return err
 	}
 	if err := w.Remove(); err != nil {
-		return i18n.Errorf("automatic WebRTC setup is now off, but cleanup failed; retry 'sbc webrtc off' or uninstall: %w", err)
+		return i18n.Errorf("automatic WebRTC setup is now off, but cleanup failed; retry 'sbc privacy browser off' or uninstall: %w", err)
 	}
 	return nil
 }

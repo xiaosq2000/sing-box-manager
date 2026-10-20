@@ -11,68 +11,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
-
-// checkWindowsWebRTC runs only inside the disposable Windows lifecycle.
-// Both browsers must enforce policies repaired by sbc, without policy flags.
-func checkWindowsWebRTC(t *testing.T, sbc string) {
-	t.Helper()
-	if runtime.GOOS != "windows" || os.Getenv("SBC_E2E") != "1" {
-		t.Fatal("browser WebRTC checks require the disposable Windows lifecycle")
-	}
-	for _, browser := range []struct{ name, executable, directory, key, policy string }{
-		{"Chrome", "chrome.exe", "Google/Chrome/Application", winsettings.ChromePolicyKey, winsettings.WebRtcPolicyName},
-		{"Edge", "msedge.exe", "Microsoft/Edge/Application", winsettings.EdgePolicyKey, winsettings.EdgeWebRtcPolicyName},
-	} {
-		t.Run(browser.name, func(t *testing.T) {
-			executable := windowsBrowser(t, browser.executable, browser.directory)
-			registry := winsettings.PowerShell{}
-			// The proxy stays on while its browser policy is missing.
-			if err := registry.Apply(browser.key, map[string]winsettings.Value{browser.policy: {}}, ""); err != nil {
-				t.Fatal(err)
-			}
-			values, err := registry.Read(browser.key, []string{browser.policy})
-			if err != nil || len(values) != 0 {
-				t.Fatalf("could not remove browser policy for the positive control: %v", err)
-			}
-			expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
-			checkBrowserSTUN(t, executable, false)
-			run(t, nil, sbc, "on")
-			expect(t, run(t, nil, sbc, "desktop"), "on (Windows)")
-			checkWindowsBrowserPolicies(t, true)
-			// A fresh browser also satisfies Edge's restart requirement.
-			checkBrowserSTUN(t, executable, true)
-		})
-	}
-}
-
-func windowsBrowser(t *testing.T, executable, directory string) string {
-	t.Helper()
-	if path, err := exec.LookPath(executable); err == nil {
-		return path
-	}
-	for _, variable := range []string{"ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"} {
-		if root := os.Getenv(variable); root != "" {
-			path := filepath.Join(root, filepath.FromSlash(directory), executable)
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				return path
-			}
-		}
-	}
-	t.Fatalf("the disposable Windows runner needs %s for the WebRTC regression check", executable)
-	return ""
-}
 
 const stunCookie = uint32(0x2112a442)
 const stunFixtureIP = "203.0.113.42"

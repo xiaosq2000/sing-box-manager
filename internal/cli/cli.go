@@ -516,17 +516,17 @@ func runUninstall(env Env, yes bool) int {
 		}
 		disableDesktop = err == nil && state == desktop.On
 	}
-	privacy, err := env.Privacy()
-	if err != nil {
-		return fail(env, err)
-	}
-	if err := privacy.CleanupWebRTC(); err != nil {
-		return fail(env, i18n.Errorf("WebRTC cleanup failed; sbc is still installed. Retry 'sbc webrtc off' or uninstall: %w", err))
-	}
-	if err := reportRemainingWebRTC(env, privacy); err != nil {
-		return fail(env, err)
-	}
 	if env.OS == "linux" {
+		privacy, err := env.Privacy()
+		if err != nil {
+			return fail(env, err)
+		}
+		if err := privacy.CleanupWebRTC(); err != nil {
+			return fail(env, i18n.Errorf("Chrome WebRTC cleanup failed; sbc is still installed. Retry 'sbc privacy browser off' or uninstall: %w", err))
+		}
+		if err := reportRemainingWebRTC(env, privacy); err != nil {
+			return fail(env, err)
+		}
 		result, err := regionFor(env, layout).Remove()
 		if err != nil {
 			return fail(env, i18n.Errorf("region cleanup failed; sbc is still installed. Retry 'sbc privacy region off' or uninstall: %w", err))

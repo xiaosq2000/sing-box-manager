@@ -2,12 +2,8 @@ package desktop
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/xiaosq2000/sing-box-manager/internal/browserprivacy"
 )
 
 // fakeGSettings keeps keys the way gsettings prints them.
@@ -116,53 +112,6 @@ func TestGNOMEOnSwitchesTheModeLastAndOffKeepsTheHosts(t *testing.T) {
 	}
 }
 
-func TestUnixDesktopReportsFirefoxErrors(t *testing.T) {
-	for _, goos := range []string{"linux", "darwin"} {
-		t.Run(goos, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
-			base := firefoxDataDirs(goos)[0]
-			broken := filepath.Join(base, "Profiles", "a-broken", "user.js")
-			healthy := filepath.Join(base, "Profiles", "b-healthy", "user.js")
-			if err := os.MkdirAll(broken, 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.MkdirAll(filepath.Dir(healthy), 0700); err != nil {
-				t.Fatal(err)
-			}
-			privacy := &unixPrivacy{goos: goos}
-			privacy.Manager = browserprivacy.Manager{StateFile: filepath.Join(t.TempDir(), "mode"), Lock: func() (func(), error) { return func() {}, nil }, Enable: privacy.enable, Remove: privacy.remove}
-			var desk Desktop
-			if goos == "linux" {
-				desk = &GNOME{Run: newGSettings(map[string]string{}).run, Privacy: privacy}
-			} else {
-				desk = &MacOS{Service: "Wi-Fi", Run: (&fakeMac{proxies: map[string]string{}}).run, Privacy: privacy}
-			}
-			if err := desk.On(2080); err == nil || !strings.Contains(err.Error(), broken) {
-				t.Errorf("desktop on lost Firefox error: %v", err)
-			}
-			data, err := os.ReadFile(healthy)
-			if err != nil || !strings.Contains(string(data), firefoxMarker) {
-				t.Fatalf("desktop on skipped healthy profile: %s, %v", data, err)
-			}
-			if err := desk.Off(); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(healthy); err != nil {
-				t.Fatal("proxy shutdown removed protection")
-			}
-			if err := privacy.Cleanup(); err == nil || !strings.Contains(err.Error(), broken) {
-				t.Fatalf("cleanup lost Firefox error: %v", err)
-			}
-			if _, err := os.Stat(healthy); !os.IsNotExist(err) {
-				t.Fatalf("desktop off skipped healthy profile: %v", err)
-			}
-			if state, err := desk.State(2080); err != nil || state != Off {
-				t.Fatalf("Firefox failure prevented proxy cleanup: %v, %v", state, err)
-			}
-		})
-	}
-}
-
 // fakeMac answers route, networksetup and defaults the way macOS prints them.
 type fakeMac struct {
 	proxies  map[string]string // getter -> "server port", empty when disabled
@@ -252,5 +201,73 @@ func TestMacOSStateAndChanges(t *testing.T) {
 	}
 	if strings.Join(mac.calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(mac.calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+type fakeWebRTC struct {
+	enabled, optedOut bool
+	ensures, cleanups int
+	err               error
+}
+
+func (p *fakeWebRTC) Ensure() error {
+	p.ensures++
+	if p.err != nil {
+		return p.err
+	}
+	if !p.optedOut {
+		p.enabled = true
+	}
+	return nil
+}
+
+func (p *fakeWebRTC) Set(enabled bool) error {
+	if p.err != nil {
+		return p.err
+	}
+	p.enabled, p.optedOut = enabled, !enabled
+	return nil
+}
+
+func (p *fakeWebRTC) Cleanup() error {
+	p.cleanups++
+	if p.err != nil {
+		return p.err
+	}
+	p.enabled = false
+	return nil
+}
+
+func (p *fakeWebRTC) Remaining() ([]string, error) { return nil, p.err }
+func (p *fakeWebRTC) OptedOut() (bool, error)      { return p.optedOut, p.err }
+
+func TestGNOMEDesktopKeepsChromeProtectionAcrossProxyToggles(t *testing.T) {
+	privacy := &fakeWebRTC{}
+	desk := &GNOME{Run: newGSettings(map[string]string{}).run, Privacy: privacy}
+	if err := desk.On(1080); err != nil {
+		t.Fatal(err)
+	}
+	if !privacy.enabled || privacy.ensures != 1 {
+		t.Fatal("desktop on did not ensure Chrome protection")
+	}
+	if err := desk.Off(); err != nil {
+		t.Fatal(err)
+	}
+	if !privacy.enabled || privacy.cleanups != 0 {
+		t.Fatal("desktop off changed Chrome protection")
+	}
+	privacy.Set(false)
+	if err := desk.On(1080); err != nil {
+		t.Fatal(err)
+	}
+	if privacy.enabled {
+		t.Fatal("desktop on reversed the explicit opt-out")
+	}
+	privacy.Set(true)
+	if err := desk.On(1080); err != nil {
+		t.Fatal(err)
+	}
+	if !privacy.enabled {
+		t.Fatal("explicit enable did not survive desktop on")
 	}
 }

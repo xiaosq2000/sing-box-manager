@@ -86,27 +86,28 @@ The CLI rejects unknown flags and extra arguments before performing an action.
 Use `refresh` for configuration and `upgrade` for binaries. The public `update`
 command is removed. Other commands retain their syntax and meaning.
 
-| Command                                       | Purpose                                                         |
-| --------------------------------------------- | --------------------------------------------------------------- |
-| `sbc install`                                 | Read a subscription link from stdin and install the client      |
-| `sbc init bash`, `sbc init zsh`               | Print shell integration code                                    |
-| `sbc link`, `sbc link set`                    | Show the masked link, or replace it from stdin                  |
-| `sbc on`, `sbc off`                           | Switch shell and opted-in desktop proxies                       |
-| `sbc env`, `sbc env off`                      | Print proxy variables for scripts or the current shell          |
-| `sbc desktop [on\|off]`                       | Show or switch desktop proxy settings                           |
-| `sbc privacy`, `sbc privacy region [on\|off]` | Show or match the node's client time zone and language (Linux)  |
-| `sbc webrtc on`, `sbc webrtc off`             | Manage persistent [browser protection](WEBRTC.md)               |
-| `sbc docker [on\|off] [--yes]`                | Show or switch the Linux Docker daemon's proxy                  |
-| `sbc route [name]`, `sbc protocol [name]`     | Show or switch a choice without restarting sing-box             |
-| `sbc route --list`                            | List installed route strategies and their meanings              |
-| `sbc port [number]`                           | Show or change the local proxy port                             |
-| `sbc status`, `sbc ip`, `sbc speed`           | Show status, exit location, or latency                          |
-| `sbc start`, `sbc stop`, `sbc restart`        | Control the service                                             |
-| `sbc run`                                     | Run sing-box in the foreground                                  |
-| `sbc refresh`, `sbc upgrade`                  | Refresh configuration, or install signed binary updates         |
-| `sbc uninstall [--yes]`                       | Clean browser settings, stop the service, and remove the client |
-| `sbc completion bash\|zsh\|powershell`        | Print a completion script                                       |
-| `sbc version`, `sbc --version`                | Print the build version                                         |
+| Command                                   | Purpose                                                         |
+| ----------------------------------------- | --------------------------------------------------------------- |
+| `sbc install`                             | Read a subscription link from stdin and install the client      |
+| `sbc init bash`, `sbc init zsh`           | Print shell integration code                                    |
+| `sbc link`, `sbc link set`                | Show the masked link, or replace it from stdin                  |
+| `sbc on`, `sbc off`                       | Switch shell and opted-in desktop proxies                       |
+| `sbc env`, `sbc env off`                  | Print proxy variables for scripts or the current shell          |
+| `sbc desktop [on\|off]`                   | Show or switch desktop proxy settings                           |
+| `sbc privacy`                             | Show browser and region privacy choices                         |
+| `sbc privacy browser [on\|off]`           | Show or change Chrome WebRTC protection (Linux)                 |
+| `sbc privacy region [on\|off]`            | Show or match the node's client time zone and language (Linux)  |
+| `sbc docker [on\|off] [--yes]`            | Show or switch the Linux Docker daemon's proxy                  |
+| `sbc route [name]`, `sbc protocol [name]` | Show or switch a choice without restarting sing-box             |
+| `sbc route --list`                        | List installed route strategies and their meanings              |
+| `sbc port [number]`                       | Show or change the local proxy port                             |
+| `sbc status`, `sbc ip`, `sbc speed`       | Show status, exit location, or latency                          |
+| `sbc start`, `sbc stop`, `sbc restart`    | Control the service                                             |
+| `sbc run`                                 | Run sing-box in the foreground                                  |
+| `sbc refresh`, `sbc upgrade`              | Refresh configuration, or install signed binary updates         |
+| `sbc uninstall [--yes]`                   | Clean browser settings, stop the service, and remove the client |
+| `sbc completion bash\|zsh\|powershell`    | Print a completion script                                       |
+| `sbc version`, `sbc --version`            | Print the build version                                         |
 
 `on` and `off` differ from `start` and `stop`. `off` leaves sing-box running.
 Desktop settings follow proxy toggles only after `sbc desktop on`.
@@ -114,6 +115,16 @@ Docker changes require confirmation or `--yes` because they restart Docker.
 
 Subscription links are credentials. Pass them through the installer prompt or
 stdin, not command arguments. `sbc link set` also reads from stdin.
+
+## Chrome WebRTC protection
+
+`sbc privacy browser on|off` manages the mandatory
+`WebRtcIPHandling=disable_non_proxied_udp` policy for Google Chrome on Linux.
+It is off until enabled and works without a subscription or a running proxy.
+Only Chrome is managed; Chromium, Edge, Brave, Firefox, macOS and Windows are
+not. `sbc privacy` summarizes this choice. See
+[WebRTC protection](WEBRTC.md) for ownership, cleanup, limits and manual
+cleanup after the scope change.
 
 ## Region matching
 

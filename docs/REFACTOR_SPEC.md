@@ -429,17 +429,11 @@ Client:
   header of the last refresh.
 - `sbc` lives in a directory of its own, which `sbc init` puts on PATH.
 - `sbc desktop on` points the GNOME or macOS proxy settings at `sbc`.
-  WebRTC protection persists across proxy toggles on Linux, macOS and Windows.
-  `sbc webrtc off` removes owned settings, cleans exact legacy Linux policy files,
-  resets the four Firefox WebRTC profile preferences regardless of origin and
-  disables automatic setup.
-  Firefox cleanup requires a closed profile; active-profile failures retain
-  ownership for retry. `sbc webrtc on` enables protection again, independently of
-  desktop detection.
-  Browser policies use native mandatory settings. Firefox uses managed profile
-  preferences. Safari is not managed. See [WebRTC protection](WEBRTC.md) for
-  platform scope, ownership, restart requirements and manual cleanup.
-  Firefox setup and cleanup continue through healthy profiles and report failures.
+  WebRTC leak protection is Linux Chrome only. `sbc privacy browser on|off`
+  writes or removes the mandatory Chrome `WebRtcIPHandling` policy and records
+  an opt-out. See [WebRTC protection](WEBRTC.md) for ownership, restart
+  requirements, limits and manual cleanup after the cross-platform scope was
+  removed.
   `sbc docker on` writes the Docker daemon's systemd drop-in on Linux and restarts
   Docker after confirmation, or with `--yes`. Desktop and Docker integration refuse
   authenticated local proxies. Desktop settings cannot hold the password, and all
@@ -574,9 +568,7 @@ network. Keep `scripts/lib/ui.sh` while the server scripts use it.
 
 The same `sbc`, with the three parts that touch the operating system swapped.
 Everything that goes through sing-box's API is unchanged. The installer, proxy
-service and ordinary commands run unelevated. A registry-only WebRTC helper requests
-administrator approval for protected browser policies and targets the original
-user's hive, not the administrator's `HKCU`.
+service and ordinary commands run unelevated.
 
 | Piece         | Linux and macOS                          | Windows                                                                                                                                                                                                                                                                                                      |
 | ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -598,25 +590,12 @@ Pull requests, in order:
 1. Done. Windows basics: paths, the zip, the tasks, `sbc run`, uninstall; `sbm release`
    builds `sbc/windows-amd64/sbc`; the end-to-end test runs on a Windows runner.
 2. Done. Native Windows validation runs in CI. `desktop on|off` through
-   HKCU and WinINet (including WebRTC leak prevention policies for Chrome,
-   Edge, Brave, and Firefox preferences), `on|off` through persistent user
-   environment variables, and the user PATH entry. `sbc env` prints PowerShell
-   commands for the current session. Port changes and uninstall preserve foreign
-   settings; desktop proxy use remains opt-in. WebRTC protection persists across
-   proxy toggles. `sbc webrtc off` removes owned settings and opts out of automatic
-   setup; `sbc webrtc on` enables it again. Setup verifies policy writes.
-   Edge uses `WebRtcLocalhostIpHandling` and requires a browser restart. Migration
-   removes an owned obsolete `WebRtcIPHandling` value without claiming manual policies.
-   A per-user lock serializes mode state, policy changes and profile changes across
-   concurrent setup and cleanup commands. Uninstall removes owned policies. It stops
-   on cleanup failure before deleting the client. `sbc` preserves pre-existing policies.
-   Firefox cleanup resets the four supported preferences in both `prefs.js` and
-   `user.js`, including orphaned values and pre-existing user choices. It deletes
-   obsolete snapshots without restoring them, refuses active profiles that need
-   changes, and keeps cleanup available for retry. Unrelated preferences and
-   administrator policies remain untouched. The Windows guide gives manual reset
-   steps only for policies outside this scope. Fixture tests cover permission failures,
-   ownership and retries. Native unelevated UAC validation is still pending.
+   HKCU and WinINet, `on|off` through persistent user environment variables,
+   and the user PATH entry. `sbc env` prints PowerShell commands for the current
+   session. Port changes and uninstall preserve foreign settings; desktop proxy
+   use remains opt-in. Uninstall stops on cleanup failure before deleting the
+   client. WebRTC protection is now Linux Chrome only and is not part of this
+   milestone; see [WebRTC protection](WEBRTC.md).
 3. Done. `/install.ps1` downloads `sbc` and migrates the PowerShell client:
    exchange its saved machine token for a link, keep port, route and protocol,
    check the new proxy before removing the old tasks and module, then hand over
