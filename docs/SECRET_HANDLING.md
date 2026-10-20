@@ -98,6 +98,7 @@ Important distinctions:
 - `deployment.direct_domain_suffixes` defaults to `[]`; each explicit domain covers its apex and subdomains for direct routing and DNS. Names are lowercased, optional outer dots removed, and duplicates removed. URLs, wildcards, IP suffixes, and malformed names are rejected. Parent domains are never inferred from the host
 - `deployment.ip` is the client connection target rendered into outbound `server`
 - `deployment.client_region` is optional, non-secret client-facing time zone and language metadata. It is sent only in the authenticated subscription envelope; leave it unset to disable region matching
+- `/var/lib/sbc/region` is the root-owned system-scope record. It holds only non-secret time zone and locale values. `sbc` writes it with mode 0644 so unprivileged status can read it; the backup directory is mode 0700
 - `deployment.hysteria2_port` is the rendered Hysteria2 server and client port
 - `deployment.naive_port` is the rendered Naive server and client port
 - `deployment.tls.enabled` controls whether rendered protocol configs keep TLS enabled

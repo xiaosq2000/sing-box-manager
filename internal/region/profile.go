@@ -17,20 +17,54 @@ type Profile struct {
 	Language string `json:"language"`
 }
 
+// Pending names an action that automatic refresh could not take because it
+// would need root. Only the system scope uses it.
+const (
+	PendingApply  = "apply"
+	PendingRemove = "remove"
+)
+
 // State is the profile the portal last sent, with the node it belongs to.
 type State struct {
 	Node    string  `json:"node"`
 	Profile Profile `json:"profile"`
+	Pending string  `json:"pending,omitempty"`
 }
 
-// Mode says which parts of the profile the user enabled independently.
+// Scope says where sbc applies the profile. An empty scope is the user
+// scope, which keeps region-mode files written by older clients readable.
+type Scope string
+
+const (
+	ScopeUser   Scope = "user"
+	ScopeSystem Scope = "system"
+)
+
+// Valid reports whether the scope is one sbc knows.
+func (s Scope) Valid() bool { return s == "" || s == ScopeUser || s == ScopeSystem }
+
+// Mode says which parts of the profile the user enabled independently, and
+// whether they apply to this account or to the whole system.
 type Mode struct {
-	Timezone bool `json:"timezone"`
-	Language bool `json:"language"`
+	Timezone bool  `json:"timezone"`
+	Language bool  `json:"language"`
+	Scope    Scope `json:"scope,omitempty"`
 }
 
 // Any reports whether at least one component is enabled.
 func (m Mode) Any() bool { return m.Timezone || m.Language }
+
+// EffectiveScope returns the saved scope, with the historical user scope for
+// a mode file that predates the scope field.
+func (m Mode) EffectiveScope() Scope {
+	if m.Scope == "" {
+		return ScopeUser
+	}
+	return m.Scope
+}
+
+// System reports whether the mode applies to the whole system.
+func (m Mode) System() bool { return m.EffectiveScope() == ScopeSystem }
 
 var (
 	timezonePattern = regexp.MustCompile(`^[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$`)
@@ -52,6 +86,18 @@ func (p Profile) Normalize() (Profile, error) {
 }
 
 func validateTimezoneName(value string) error {
+	if err := validateTimezoneSyntax(value); err != nil {
+		return err
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return i18n.Errorf("time zone %q is not a valid IANA name", value)
+	}
+	return nil
+}
+
+// validateTimezoneSyntax checks the name without requiring its zoneinfo file.
+// Cleanup uses it so a removed tzdata package does not trap the saved state.
+func validateTimezoneSyntax(value string) error {
 	if value == "" || value == "Local" || value == "localtime" {
 		return i18n.Errorf("time zone %q is not a valid IANA name", value)
 	}
@@ -65,9 +111,6 @@ func validateTimezoneName(value string) error {
 		if part == "" || part == "." || part == ".." {
 			return i18n.Errorf("time zone %q is not a valid IANA name", value)
 		}
-	}
-	if _, err := time.LoadLocation(value); err != nil {
-		return i18n.Errorf("time zone %q is not a valid IANA name", value)
 	}
 	return nil
 }
@@ -115,6 +158,18 @@ func localeAvailable(locale string, available []string) bool {
 		}
 	}
 	return false
+}
+
+// CheckLocale reports whether a BCP 47 language has a generated locale.
+func CheckLocale(language string, available []string) error {
+	locale, err := Locale(language)
+	if err != nil {
+		return err
+	}
+	if !localeAvailable(locale, available) {
+		return missingLocale(locale)
+	}
+	return nil
 }
 
 func missingLocale(locale string) error {

@@ -63,6 +63,9 @@ type Env struct {
 	Privacy func() (desktop.BrowserPrivacy, error)
 	// Region manages the user-scoped time zone and language choice.
 	Region func(layout paths.Layout) *region.Manager
+	// SystemRegion names the fixed system locations for system-scope region
+	// settings. Tests replace it with a temporary tree.
+	SystemRegion func() region.SystemPaths
 	// Docker returns the Docker daemon's proxy drop-in.
 	Docker func() (*docker.Daemon, error)
 	// Sites are the pages 'sbc ip' asks and 'sbc speed --download' fetches.
@@ -110,6 +113,7 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 		Region: func(layout paths.Layout) *region.Manager {
 			return region.New(layout, os.Getenv)
 		},
+		SystemRegion: region.DefaultSystemPaths,
 		Docker: func() (*docker.Daemon, error) {
 			return docker.New(runtime.GOOS, docker.Exec)
 		},
@@ -492,8 +496,14 @@ func runUninstall(env Env, yes bool) int {
 			return fail(env, i18n.New("the Docker daemon uses the proxy; run 'sbc docker off' first, which restarts Docker"))
 		}
 	}
+	regionManager := regionFor(env, layout)
+	systemRegion := env.OS == "linux" && region.SystemStateExists(systemRegionPaths(env))
 	if !yes {
-		fmt.Fprint(env.Stderr, i18n.T("Stop sing-box and remove sbc, its config and its subscription link? [y/N] "))
+		message := i18n.T("Stop sing-box and remove sbc, its config and its subscription link? [y/N] ")
+		if systemRegion {
+			message = i18n.T("Stop sing-box, restore the system time zone and language, and remove sbc, its config and its subscription link? [y/N] ")
+		}
+		fmt.Fprint(env.Stderr, message)
 		answer, _ := bufio.NewReader(env.Stdin).ReadString('\n')
 		answer = strings.TrimPrefix(strings.TrimSpace(answer), "\ufeff")
 		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
@@ -527,7 +537,19 @@ func runUninstall(env Env, yes bool) int {
 		if err := reportRemainingWebRTC(env, privacy); err != nil {
 			return fail(env, err)
 		}
-		result, err := regionFor(env, layout).Remove()
+		if systemRegion {
+			if env.Sudo == nil {
+				return fail(env, i18n.New("sudo is not available in this environment"))
+			}
+			self, err := env.Self()
+			if err != nil {
+				return fail(env, err)
+			}
+			if err := env.Sudo(self, []string{"_region-system-off"}); err != nil {
+				return fail(env, i18n.Errorf("system region cleanup failed; sbc is still installed. Retry 'sbc privacy region off --system' or uninstall: %w", err))
+			}
+		}
+		result, err := regionManager.Remove()
 		if err != nil {
 			return fail(env, i18n.Errorf("region cleanup failed; sbc is still installed. Retry 'sbc privacy region off' or uninstall: %w", err))
 		}

@@ -622,8 +622,9 @@ The JSON response holds:
 
 `nodes[].region` carries `deployment.client_region` when it is set.
 `timezone` is an IANA name and `language` is BCP 47 with a region, such as
-`zh-CN`. `sbc privacy region` applies it on Linux. Clients that predate the
-field ignore it, and a node without it reports the target as unavailable.
+`zh-CN`. `sbc privacy region` applies it on Linux, either to one account or,
+with `--system`, to the whole machine. Clients that predate the field ignore it,
+and a node without it reports the target as unavailable.
 
 Responses carry an `ETag`, and a matching `If-None-Match` gets `304`.
 `subscription-userinfo` reports this billing cycle's upload and download bytes when

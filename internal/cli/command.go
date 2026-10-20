@@ -170,10 +170,10 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	browser.Flags().BoolP("help", "h", false, i18n.T("Show help for this command"))
 	browser.ValidArgsFunction = fixedChoices("on", "off", "status")
 	privacy.AddCommand(browser)
-	var regionTimezone, regionLanguage bool
+	var regionTimezone, regionLanguage, regionSystem, regionYes bool
 	region := &cobra.Command{
 		Use:   "region [on|off|status]",
-		Short: i18n.T("Match the desktop time zone and language to the node (Linux)"),
+		Short: i18n.T("Match the time zone and language to the node (Linux)"),
 		Args:  choiceArgs(0, "on", "off", "status"),
 		Run: func(_ *cobra.Command, args []string) {
 			action := ""
@@ -182,18 +182,37 @@ func newCommand(env Env, exit *int) *cobra.Command {
 			}
 			if action == "on" || action == "off" {
 				*exit = withOperation(env, func(env Env) int {
-					return runPrivacyRegion(env, args, regionTimezone, regionLanguage)
+					return runPrivacyRegion(env, args, regionTimezone, regionLanguage, regionSystem, regionYes)
 				})
 				return
 			}
-			*exit = runPrivacyRegion(env, args, regionTimezone, regionLanguage)
+			*exit = runPrivacyRegion(env, args, regionTimezone, regionLanguage, regionSystem, regionYes)
 		},
 	}
 	region.Flags().BoolVar(&regionTimezone, "timezone", false, i18n.T("Change only the time zone"))
 	region.Flags().BoolVar(&regionLanguage, "language", false, i18n.T("Change only the language"))
+	region.Flags().BoolVar(&regionSystem, "system", false, i18n.T("Change the system time zone and language for all users"))
+	region.Flags().BoolVar(&regionYes, "yes", false, i18n.T("Proceed without confirmation"))
 	region.Flags().BoolP("help", "h", false, i18n.T("Show help for this command"))
 	region.ValidArgsFunction = fixedChoices("on", "off", "status")
 	privacy.AddCommand(region)
+	var systemTimezoneValue, systemLanguageValue string
+	var systemTimezone, systemLanguage bool
+	systemOn := add("_region-system-on", "", "privacy", argumentRange(0, 0), func([]string) int {
+		return runRegionSystemOn(env, systemTimezoneValue, systemLanguageValue, systemTimezone, systemLanguage)
+	})
+	systemOn.Hidden = true
+	systemOn.Flags().StringVar(&systemTimezoneValue, "timezone-value", "", "")
+	systemOn.Flags().StringVar(&systemLanguageValue, "language-value", "", "")
+	systemOn.Flags().BoolVar(&systemTimezone, "timezone", false, "")
+	systemOn.Flags().BoolVar(&systemLanguage, "language", false, "")
+	var systemOffTimezone, systemOffLanguage bool
+	systemOff := add("_region-system-off", "", "privacy", argumentRange(0, 0), func([]string) int {
+		return runRegionSystemOff(env, systemOffTimezone, systemOffLanguage)
+	})
+	systemOff.Hidden = true
+	systemOff.Flags().BoolVar(&systemOffTimezone, "timezone", false, "")
+	systemOff.Flags().BoolVar(&systemOffLanguage, "language", false, "")
 	var dockerYes bool
 	docker := add("docker [on|off]", i18n.T("Show or switch the Docker daemon's proxy (Linux). Restarts Docker"), "shell", choiceArgs(0, "on", "off"), func(args []string) int {
 		action := ""
