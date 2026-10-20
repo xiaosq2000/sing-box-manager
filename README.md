@@ -76,8 +76,9 @@ Manage them in Django Admin, not in the inventory.
 
 `deployment.client_region` optionally sets the time zone and language clients
 present for the node; see
-[the client guide](docs/README_SBC.md#region-matching). It affects only clients
-that opt in with `sbc privacy region on`.
+[the client guide](docs/README_SBC.md#region-matching). Clients opt in with
+`sbc privacy region on` for one account or `sbc privacy region on --system` for
+the whole machine.
 
 `sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
 It requires `control_plane.enabled` and `control_plane.secret_key`.

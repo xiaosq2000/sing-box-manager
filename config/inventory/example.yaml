@@ -74,7 +74,8 @@ deployment:
   ip: 8.8.8.8
   # Optional. The time zone and language clients present while they use this
   # node. This is a client-facing choice, not the node's own system settings.
-  # timezone is an IANA name; language is BCP 47 with a region.
+  # timezone is an IANA name; language is BCP 47 with a region. Clients apply
+  # it to one account, or to the whole machine with --system.
   client_region:
     timezone: Asia/Shanghai
     language: zh-CN
