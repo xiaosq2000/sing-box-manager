@@ -323,6 +323,10 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		})
 	}
 	add("run", i18n.T("Run sing-box in the foreground without a service manager"), "proxy", argumentRange(0, 0), func([]string) int { return runSingBox(env) })
+	lang := add("lang [en|zh|auto]", i18n.T("Show or set the CLI language"), "help", choiceArgs(0, "en", "zh", "auto"), func(args []string) int {
+		return runLang(env, args)
+	})
+	lang.ValidArgsFunction = fixedChoices("en", "zh", "auto")
 	add("version", i18n.T("Print the sbc build version"), "help", argumentRange(0, 0), func([]string) int {
 		fmt.Fprintf(env.Stdout, "sbc %s\n", env.Version)
 		return 0

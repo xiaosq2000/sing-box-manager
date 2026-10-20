@@ -36,6 +36,30 @@ func TestChineseFollowsSBCLangThenTheLocale(t *testing.T) {
 	}
 }
 
+func TestResolvePrefersSBCLangThenTheSavedChoiceThenTheLocale(t *testing.T) {
+	cases := []struct {
+		env    map[string]string
+		saved  string
+		want   bool
+		source Source
+	}{
+		{map[string]string{"SBC_LANG": "zh", "LANG": "en_US.UTF-8"}, "en", true, SourceEnvironment},
+		{map[string]string{"SBC_LANG": "en", "LANG": "zh_CN.UTF-8"}, "zh", false, SourceEnvironment},
+		{map[string]string{"LANG": "zh_CN.UTF-8"}, "en", false, SourceSetting},
+		{map[string]string{"LANG": "en_US.UTF-8"}, "zh", true, SourceSetting},
+		{map[string]string{"LANG": "zh_CN.UTF-8"}, "auto", true, SourceLocale},
+		{map[string]string{"LANG": "zh_CN.UTF-8"}, "", true, SourceLocale},
+		{map[string]string{"LC_ALL": "en_US.UTF-8", "LANG": "zh_CN.UTF-8"}, "", false, SourceLocale},
+		{map[string]string{}, "", false, SourceDefault},
+	}
+	for _, c := range cases {
+		got, source := Resolve(func(name string) string { return c.env[name] }, c.saved)
+		if got != c.want || source != c.source {
+			t.Errorf("%v with saved %q: got %v from %s, want %v from %s", c.env, c.saved, got, source, c.want, c.source)
+		}
+	}
+}
+
 func TestAMessageWithoutATranslationStaysInEnglish(t *testing.T) {
 	SetChinese(true)
 	defer SetChinese(false)

@@ -640,8 +640,9 @@ else. The envelope's `latest.sbc` names the `sbc` version the release carries.
 `GET /install.sh` serves the POSIX installer for `sbc`, run as
 `curl -fsSL https://<portal>/install.sh | sh`. It reads the link from the terminal,
 downloads `sbc` for the machine, and runs `sbc install`, which succeeds only once a
-page loads through the new proxy. `-p NAME` picks the protocol. Like `sbc`, it
-speaks Simplified Chinese under a `zh_CN` or `zh_SG` locale, or with `SBC_LANG=zh`.
+page loads through the new proxy. `-p NAME` picks the protocol. It speaks
+Simplified Chinese under a `zh_CN` or `zh_SG` locale, or with `SBC_LANG=zh`. It
+does not read the language choice saved by `sbc lang`.
 
 The repository maintains `sbc`, not the legacy Bash client. The hosted installer
 still migrates an installed Bash client through its own uninstaller and desktop

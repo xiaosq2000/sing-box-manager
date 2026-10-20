@@ -1,6 +1,6 @@
 # Sing-box VPN Client for Windows
 
-Checked on 2026-10-19.
+Checked on 2026-10-20.
 
 `sbc` is the Sing-box client CLI for Windows. It runs unelevated, manages background
 services via Windows Task Scheduler, and configures user and desktop proxy settings.
@@ -58,6 +58,7 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc desktop off`                 | Clear Windows system proxy settings                                            |
 | `sbc env`                         | Print PowerShell commands to apply proxy settings to the current session       |
 | `sbc env off`                     | Print PowerShell commands to clear proxy settings from the current session     |
+| `sbc lang [en\|zh\|auto]`         | Show or set the language of sbc messages                                       |
 | `sbc route <strategy>`            | Switch route strategy without restarting; `--list` shows names and meanings    |
 | `sbc protocol <name>`             | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting   |
 | `sbc port <number>`               | Move local proxy listen port and update associated settings                    |
@@ -98,7 +99,8 @@ sbc env off | Invoke-Expression
 
 Use `sbc <command> --help` or `sbc help <command>` for command details.
 Help does not require an installation and does not perform the command's action.
-The CLI rejects unknown flags and extra arguments.
+The CLI rejects unknown flags and extra arguments. `sbc lang en|zh|auto` selects
+the message language; `SBC_LANG` overrides the saved choice.
 
 Load completion in the current PowerShell session:
 
@@ -184,6 +186,7 @@ Client files and binaries reside in `%LOCALAPPDATA%\sbc`:
 | `cli\`                                 | `sbc.exe` CLI executable (on user `PATH`)        |
 | `bin\`                                 | sing-box executable and runtime libraries        |
 | `config.json`, `subscription`          | Cached configuration and subscription credential |
+| `language`                             | Saved CLI language choice                        |
 | `maintenance.json`                     | Automatic policies and recent action results     |
 | `sbc.version`                          | Installed client build                           |
 | `upgrade-recovery.json`, `.upgrade-*\` | Pending upgrade recovery record and backups      |

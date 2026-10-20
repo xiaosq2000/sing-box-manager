@@ -92,6 +92,10 @@ func (l Layout) DesktopFile() string { return filepath.Join(l.Config, "desktop")
 // WebRTCFile records an explicit opt-out from browser policy setup.
 func (l Layout) WebRTCFile() string { return filepath.Join(l.Config, "webrtc-mode") }
 
+// LanguageFile holds the CLI language choice. Its absence means automatic
+// selection from SBC_LANG and the locale.
+func (l Layout) LanguageFile() string { return filepath.Join(l.Config, "language") }
+
 // UpgradeHint exists while a newer sbc or sing-box is available.
 func (l Layout) UpgradeHint() string { return filepath.Join(l.Config, "upgrade-available") }
 

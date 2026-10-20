@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-19.
+Checked on 2026-10-20.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -127,6 +127,9 @@ with normal DNS expiry. See the
 with separate 6h intervals. Use `sbc refresh auto off` or `sbc upgrade auto off` to
 disable either policy. See [automatic maintenance](docs/README_SBC.md#automatic-maintenance)
 for intervals, saved preferences, and migration from older clients.
+
+`sbc lang` saves the language of `sbc` messages as `en`, `zh`, or `auto`;
+`SBC_LANG` overrides it. See [CLI language](docs/README_SBC.md#cli-language).
 
 `sbm release` can also read a repo-root `.env` for local operator secrets such as
 `SOPS_AGE_KEY` and `GITHUB_TOKEN`; the secret-handling doc covers the tradeoffs.

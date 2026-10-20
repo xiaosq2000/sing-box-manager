@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Checked on 2026-10-18.
+Checked on 2026-10-20.
 
 This repo builds `sing-box` releases, serves authenticated downloads, and deploys
 the code and an already-built release directory to a VPS. Use Pixi and Python 3.12.
@@ -28,6 +28,7 @@ surrounding context.
 | Changing                                        | Read                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CLI or settings                                 | [README.md](README.md)                                                                                                                                                                                                                                                                                |
+| CLI message language                            | [README_SBC.md](docs/README_SBC.md#cli-language), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                                                                                                               |
 | Inventory, credentials, TLS, config rendering   | [SECRET_HANDLING.md](docs/SECRET_HANDLING.md)                                                                                                                                                                                                                                                         |
 | Official iOS/Android import links and QR codes  | [README_MOBILE.md](docs/README_MOBILE.md), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md), [SECRET_HANDLING.md](docs/SECRET_HANDLING.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                  |
 | Release, portal, client configs, traffic stats  | [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md), [CONTROL_PLANE.md](docs/CONTROL_PLANE.md)                                                                                                                                                                                                        |

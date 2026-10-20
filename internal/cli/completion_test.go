@@ -53,6 +53,7 @@ func TestCompletionFixedChoicesAndFlagsNeedNoInstallation(t *testing.T) {
 	for _, entry := range []struct{ args, want []string }{
 		{[]string{"pro"}, []string{"protocol"}},
 		{[]string{"env", ""}, []string{"on", "off"}},
+		{[]string{"lang", ""}, []string{"en", "zh", "auto"}},
 		{[]string{"privacy", "browser", "o"}, []string{"on", "off"}},
 		{[]string{"privacy", "region", "o"}, []string{"on", "off"}},
 		{[]string{"refresh", ""}, []string{"auto", "interval"}},
