@@ -77,6 +77,17 @@ jobs:
           locked: true
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Restore test build cache
+        id: build-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+            .cache/sing-box-manager/server-binary
+          key: ${{ runner.os }}-test-build-v1-${{ hashFiles('pixi.lock') }}-${{ hashFiles('go.sum', 'sing_box_manager/traffic_stats.py', 'config/inventory/example.yaml', 'cmd/**/*.go', 'internal/**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-test-build-v1-${{ hashFiles('pixi.lock') }}-
       # Fetch both pinned builds; real-binary tests must not skip in CI.
       - run: pixi run fetch-sing-box
         env:
@@ -95,6 +106,15 @@ jobs:
           go build -ldflags "-X main.version=ci" -o "$RUNNER_TEMP/sbc" ./cmd/sbc
           test "$("$RUNNER_TEMP/sbc" version)" = "sbc ci"
         shell: pixi run bash -e {0}
+      - name: Save test build cache
+        if: github.event_name == 'push' && github.ref_name == 'main' && steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+            .cache/sing-box-manager/server-binary
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
   control-plane:
     runs-on: ubuntu-latest

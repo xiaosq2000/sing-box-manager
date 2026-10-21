@@ -39,6 +39,24 @@ Both CI workflows accept PRs against `main`, `feat/m1b-tun-core` and
 native TUN CLI PRs with automated checks. Push events run these workflows only
 on `main`.
 
+The TUN job runs `core` and `lifecycle` in parallel on separate disposable
+runners. CI grants its runner user access to `/dev/kvm` when that device exists.
+`scripts/dev/tun-vm/select-accel.py` checks KVM startup with the acceptance
+machine's CPU, memory and vCPU settings. A successful QMP response selects KVM.
+An unavailable KVM selects TCG before acceptance starts. The job summary records
+the selected accelerator. Each suite runs in full. A failed suite does not retry
+with another accelerator. CI does not require TCG coverage on a runner with KVM.
+
+The Python test job caches Go modules, Go build results and the custom server
+binary cache. The TUN jobs cache Go modules and Go build results. Cache keys
+include the Pixi lockfile and build inputs. Only successful pushes to `main` save
+these caches. PR jobs can restore them but cannot save them. Cached custom server
+binaries still require the build-recipe key and SHA-256 check. No VM disks,
+generated credentials or acceptance artifacts enter these caches.
+
+Check these workflow contracts and the accelerator probe with
+`pixi run test tests/test_ci_workflows.py tests/test_public_repository.py`.
+
 | Change              | Useful checks                                                                                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                                         |
@@ -274,8 +292,8 @@ run-specific success marker. The host's services and network stay unchanged.
 `scripts/dev/fetch-tun-image.sh` downloads and verifies the default Ubuntu cloud
 image. `tests/test_tun_vm.py` checks the fixture DNS/SOCKS allowlist and the
 prepared config without starting a VM. `tests/test_tun_lifecycle.py` checks
-host refusal, archive hashes, socket matching, reboot markers and checkpoint identity. The `e2e-tun` CI job installs QEMU,
-fetches sing-box and the image, and runs the acceptance script on a disposable
+host refusal, archive hashes, socket matching, reboot markers and checkpoint identity. Each `e2e-tun` matrix job installs QEMU,
+fetches sing-box and the image, and runs one complete suite on its own disposable
 Ubuntu runner. The script needs `qemu-system-x86_64`, `qemu-img`, `curl`,
 `openssl`, `python3`, OpenBSD `nc` and the sing-box binary from `pixi run fetch-sing-box`. Set
 `SBC_TUN_E2E_IMAGE` to a prepared Noble cloud image; the default is
@@ -368,7 +386,8 @@ that service waits for multi-user, which also waits for this controller.
 Every boot needs a current run-specific marker, and the guest checks distinct
 kernel boot IDs and unchanged files. Contradictory, premature or stale success
 markers fail. Per-boot serial logs, packet traces and reviewed-field JSON evidence
-stay under the run directory. The `e2e-tun` CI job runs both suites under TCG.
+stay under the run directory. The `e2e-tun` CI matrix runs both suites in parallel
+with the accelerator selected by the startup probe.
 
 A guest-only wrapper shortens the real systemd timer to 15 seconds and pauses
 the start command after the service starts. No production skip flag is used.

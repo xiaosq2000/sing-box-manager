@@ -23,6 +23,7 @@ harness = [
   ".gitignore",
   "config/.gitignore",
   "tests/test_public_repository.py",
+  "tests/test_ci_workflows.py",
   "tests/test_shell_compat.py",
   "tests/test_powershell_compat.py",
   "tests/test_sing_box_114.py",
