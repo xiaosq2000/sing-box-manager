@@ -202,6 +202,7 @@ func newHarness(t *testing.T) *harness {
 		return errors.New("fixture rejected sudo")
 	}
 	isolateBrowserLanguage(t, &h.env, h.layout)
+	isolateBrowserGeolocation(t, &h.env, h.layout)
 	h.env.Privacy = func() (desktop.BrowserPrivacy, error) { return &fakeDesktop{}, nil }
 	h.env.Desktop = func() (desktop.Desktop, error) { return nil, desktop.ErrUnsupported }
 	h.env.Docker = func() (*docker.Daemon, error) { return nil, docker.ErrUnsupported }

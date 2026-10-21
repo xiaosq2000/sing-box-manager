@@ -81,6 +81,9 @@ present for the node; see
 the whole machine. `sbc privacy browser language on` separately matches Linux
 Chrome's language preferences without changing the system locale. See
 [Chrome language matching](docs/README_SBC.md#chrome-language-matching).
+`sbc privacy browser geolocation on` separately blocks website location requests
+with a system-wide Linux Chrome policy. IP-based location estimates remain
+possible. See [geolocation blocking](docs/README_SBC.md#chrome-geolocation-blocking).
 
 On native Linux, `sbc tun on` runs a root-owned TUN service instead of mixed
 mode. It needs systemd, `/dev/net/tun`, and sudo, and it refuses remote SSH
@@ -162,7 +165,7 @@ or check out config state with git.
 - [`docs/VPS_DEPLOYMENT.md`](docs/VPS_DEPLOYMENT.md): primary end-to-end VPS deployment guide
 - [`docs/RELEASE_AND_PORTAL.md`](docs/RELEASE_AND_PORTAL.md): build releases, run the portal, and download client packages
 - [`docs/README_SBC.md`](docs/README_SBC.md): client installation, legacy migration, commands, help, and shell completion
-- [`docs/WEBRTC.md`](docs/WEBRTC.md): Linux Chrome WebRTC protection, language matching and recovery
+- [`docs/WEBRTC.md`](docs/WEBRTC.md): Linux Chrome WebRTC protection, geolocation blocking, language matching and recovery
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
 - [`docs/README_MOBILE.md`](docs/README_MOBILE.md): official iOS/Android import links, local QR codes, and device acceptance
 - [`docs/REMOTE_DEPLOYMENT.md`](docs/REMOTE_DEPLOYMENT.md): sync the active release artifacts to a remote host and install them
