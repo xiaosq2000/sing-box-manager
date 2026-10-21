@@ -7,7 +7,6 @@ package probe
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,10 +28,14 @@ type Sites struct {
 	Gemini  string
 	ChatGPT string
 	Claude  string
-	// Abroad answers with the address a foreign site sees, and China with the
-	// address a Chinese site sees.
-	Abroad string
-	China  string
+	// Each IP endpoint serves only the named address family. The local
+	// HTTP proxy, not sbc's connection to loopback, selects the exit family.
+	IPify4   string
+	IPify6   string
+	IdentMe4 string
+	IdentMe6 string
+	// IPDetails is the database's base URL. Lookups append an observed IP.
+	IPDetails string
 	// Download sends as many bytes as its bytes parameter asks for, which
 	// 'sbc speed --download' times.
 	Download string
@@ -41,12 +44,15 @@ type Sites struct {
 // DefaultSites are the sites sbc asks. Cloudflare's speed test sends at most
 // 99,999,999 bytes at a time.
 var DefaultSites = Sites{
-	Gemini:   "https://gemini.google.com/",
-	ChatGPT:  "https://chatgpt.com/cdn-cgi/trace",
-	Claude:   "https://claude.ai/",
-	Abroad:   "https://ipinfo.io/json",
-	China:    "http://cip.cc/",
-	Download: "https://speed.cloudflare.com/__down",
+	Gemini:    "https://gemini.google.com/",
+	ChatGPT:   "https://chatgpt.com/cdn-cgi/trace",
+	Claude:    "https://claude.ai/",
+	IPify4:    "https://api.ipify.org/",
+	IPify6:    "https://api6.ipify.org/",
+	IdentMe4:  "https://4.ident.me/",
+	IdentMe6:  "https://6.ident.me/",
+	IPDetails: "https://ipwho.is/",
+	Download:  "https://speed.cloudflare.com/__down",
 }
 
 // maxPage bounds what sbc reads of a page. Gemini's start page is under 1 MiB.
@@ -120,13 +126,18 @@ func GeminiRegion(client *http.Client, page string) (string, error) {
 	return string(match[1]), nil
 }
 
-// AIClient makes one fresh request per check. It has no cookie jar and never
-// follows redirects, which can change the destination's routing or sign-in state.
-func AIClient(port int, username, password string, timeout time.Duration) *http.Client {
+// IPClient uses a fresh connection for each request. It has no cookie jar
+// and does not follow redirects, which can change the destination's route.
+func IPClient(port int, username, password string, timeout time.Duration) *http.Client {
 	client := Client(port, username, password, timeout)
 	client.Transport.(*http.Transport).DisableKeepAlives = true
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	return client
+}
+
+// AIClient applies the same connection and redirect limits to AI checks.
+func AIClient(port int, username, password string, timeout time.Duration) *http.Client {
+	return IPClient(port, username, password, timeout)
 }
 
 // AI reports public-page reachability, not service availability or account
@@ -174,52 +185,6 @@ func AI(client *http.Client, provider, page string) (string, error) {
 		}
 	}
 	return i18n.T("page reachable, region unknown (not service eligibility)"), nil
-}
-
-// Place is where a site places the visitor.
-type Place struct {
-	IP       string
-	Location string
-}
-
-// String writes the location, then the address, as the bash client's
-// 'proxy check ip' did.
-func (p Place) String() string { return join(", ", p.Location, p.IP) }
-
-// IPInfo asks ipinfo.io, which answers with JSON.
-func IPInfo(client *http.Client, page string) (Place, error) {
-	body, err := get(client, page, "")
-	if err != nil {
-		return Place{}, err
-	}
-	var info struct {
-		IP      string `json:"ip"`
-		City    string `json:"city"`
-		Country string `json:"country"`
-	}
-	if err := json.Unmarshal(body, &info); err != nil || info.IP == "" {
-		return Place{}, i18n.New("the site gave no address")
-	}
-	return Place{IP: info.IP, Location: join(", ", info.City, info.Country)}, nil
-}
-
-// CIP asks cip.cc, which answers in lines such as "IP	: 192.0.2.1" when the
-// client says it is curl, and with a web page otherwise.
-func CIP(client *http.Client, page string) (Place, error) {
-	body, err := get(client, page, "curl/8")
-	if err != nil {
-		return Place{}, err
-	}
-	fields := map[string]string{}
-	for _, line := range strings.Split(string(body), "\n") {
-		if key, value, ok := strings.Cut(line, ":"); ok {
-			fields[strings.TrimSpace(key)] = strings.Join(strings.Fields(value), " ")
-		}
-	}
-	if fields["IP"] == "" {
-		return Place{}, i18n.New("the site gave no address")
-	}
-	return Place{IP: fields["IP"], Location: join(" ", fields["地址"], fields["运营商"])}, nil
 }
 
 // Download fetches page and returns how many bytes arrived and how long they
@@ -278,15 +243,4 @@ func Download(client *http.Client, page string, limit time.Duration) (int64, tim
 		return 0, 0, i18n.New("the site sent nothing")
 	}
 	return received, max(time.Since(start), time.Millisecond), nil
-}
-
-// join joins the parts that are not empty.
-func join(separator string, parts ...string) string {
-	var kept []string
-	for _, part := range parts {
-		if part != "" {
-			kept = append(kept, part)
-		}
-	}
-	return strings.Join(kept, separator)
 }

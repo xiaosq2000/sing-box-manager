@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Milestones preserve current access until the planned
@@ -409,8 +409,13 @@ Client:
   and leave sing-box running, so an agent that runs `sbc off` keeps its own
   connection. `start` and `stop` control the service. `refresh` refreshes the config
   now, and `link set` replaces the subscription URL.
-- `sbc ip` asks ipinfo.io and cip.cc through the active route. `--ai` adds
-  unauthenticated Gemini, ChatGPT and Claude checks through the proxy-only
+- `sbc ip` asks IPify and ident.me for IPv4 through the active route.
+  `--dual-stack` adds IPv6 through family-specific endpoints. Source rows remain
+  separate. Each distinct observed IP gets one ipwho.is lookup for location, ASN
+  and organization estimates. Missing fields stay unknown. Detail failures retain
+  the IP and do not fail the command. Probe failures return nonzero. Requests use
+  HTTPS, have a 5-second timeout and never retry or follow redirects.
+  `--ai` adds unauthenticated Gemini, ChatGPT and Claude checks through the proxy-only
   diagnostic inlet. It skips `direct` unless `--allow-direct-ai` is supplied.
   That override uses the active route and permits exposure of the direct IP.
   Checks follow no redirects and use no account credentials or automatic retries.

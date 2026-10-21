@@ -133,6 +133,8 @@ control-plane = [
   "internal/cli/tun_maintenance.go",
   "internal/cli/runtime_api.go",
   "internal/install/",
+  "internal/probe/",
+  "internal/cli/checks.go",
   "sing_box_manager/models.py",
   "sing_box_manager/settings.py",
   "config/inventory/",

@@ -305,7 +305,11 @@ func TestTUNRejectsMixedDiagnosticsBeforeAnyNetworkOrConfigAccess(t *testing.T) 
 		{Status: "dirty", Phase: "pending"}, {Status: "dirty", Phase: "dirty"},
 		{Status: "off", Phase: "pending"}, {Status: "off", Phase: "active"}, {Status: "unknown"},
 	} {
-		for _, command := range [][]string{{"ip"}, {"ip", "--ai"}, {"ip", "--ai", "--allow-direct-ai"}, {"speed"}, {"speed", "--all"}, {"speed", "--download", "50"}} {
+		for _, command := range [][]string{
+			{"ip"}, {"ip", "--dual-stack"}, {"ip", "--ai"}, {"ip", "--ai", "--allow-direct-ai"},
+			{"ip", "--dual-stack", "--ai"}, {"ip", "--dual-stack", "--ai", "--allow-direct-ai"},
+			{"speed"}, {"speed", "--all"}, {"speed", "--download", "50"},
+		} {
 			t.Run(capture.Status+"-"+capture.Phase+"-"+strings.Join(command, "-"), func(t *testing.T) {
 				f := newRuntimeFixture(t)
 				f.capture = capture

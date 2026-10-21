@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -146,7 +146,14 @@ and staging directory as credential-bearing recovery data. Keep them until
 recovery finishes. Completed maintenance removes its user staging directory,
 not root `.prev-` generations. Update hints contain no configuration or secret.
 
-AI diagnostics support mixed mode only. TUN refuses these checks before requests.
+IP and AI diagnostics support mixed mode only. TUN refuses these checks before requests.
+IP diagnostics send each observed exit IP to ipwho.is over HTTPS for location and
+ASN estimates. Probe and detail requests follow the active route, which can be
+direct. The probe sources can therefore see the local network's public IP. The
+database also receives the explicit observed IP in the lookup path. Diagnostics
+use no account credentials or persistent result cache. Keep real diagnostic output
+out of committed fixtures.
+
 AI diagnostics use no browser cookies, API keys, or account credentials.
 `sbc ip --ai --allow-direct-ai` permits requests through the active route and can
 expose the local network's public IP. Do not use this check to claim that an
