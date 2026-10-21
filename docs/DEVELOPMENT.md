@@ -316,8 +316,10 @@ A capture-first activation probe does not establish hostname-based routing.
 Native domain-route checks need an application TLS flow with SNI. Obtain operator
 permission before sending TLS ahead of capture verification. Match the new
 connection ID, source/destination tuple, TUN inbound, hostname and expected chain
-before sending HTTP on that socket. Keep system TLS verification. Do not follow
-redirects, retry directly, or infer routing from HTTP status or exit location.
+before sending HTTP on that socket. Load the system TLS context before opening
+TCP, so certificate loading does not consume the engine's sniff timeout.
+Keep system TLS verification. Do not follow redirects, retry directly, or infer
+routing from HTTP status or exit location.
 These checks do not enable TUN `ip` or `speed` diagnostics.
 
 Checks cover stop failure, recovery after a dead proxy,

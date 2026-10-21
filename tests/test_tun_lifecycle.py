@@ -216,6 +216,26 @@ def test_resume_rejects_changed_identity_before_mutation(
         module.resumed(state)
 
 
+def test_tls_context_is_ready_before_tcp_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load("lifecycle")
+    calls = []
+    monkeypatch.setattr(module, "api", lambda _: {"connections": []})
+    monkeypatch.setattr(
+        module.ssl, "create_default_context", lambda: calls.append("tls") or object()
+    )
+
+    def connect(*_args, **_kwargs):
+        calls.append("tcp")
+        raise OSError("fixture stops before network access")
+
+    monkeypatch.setattr(module.socket, "create_connection", connect)
+    with pytest.raises(OSError, match="fixture stops"):
+        module.probe("gfw.fixture.test", "proxy-alt")
+    assert calls == ["tls", "tcp"]
+
+
 def test_checkpoint_round_trip(tmp_path: Path) -> None:
     save = load("lifecycle").save
     path = tmp_path / "state.json"

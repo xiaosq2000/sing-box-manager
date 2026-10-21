@@ -323,12 +323,12 @@ def probe(host: str, expected: str) -> None:
     print(f"=== socket proof: {host} via {expected} ===", flush=True)
     previous = {c["id"] for c in api("/connections")["connections"]}
     nonce = uuid.uuid4().hex
+    # Loading system CAs after connect can consume the engine's sniff timeout.
+    context = ssl.create_default_context()
     with socket.create_connection((host, 443), timeout=10) as connection:
         source_ip, source_port = connection.getsockname()
         target_ip, target_port = connection.getpeername()
-        with ssl.create_default_context().wrap_socket(
-            connection, server_hostname=host
-        ) as tls:
+        with context.wrap_socket(connection, server_hostname=host) as tls:
 
             def captured() -> bool:
                 for item in api("/connections")["connections"]:
@@ -342,7 +342,44 @@ def probe(host: str, expected: str) -> None:
                         return True
                 return False
 
-            wait_for(captured, seconds=10)
+            try:
+                wait_for(captured, seconds=10)
+            except RuntimeError:
+                fields = (
+                    "type",
+                    "network",
+                    "sourceIP",
+                    "sourcePort",
+                    "destinationIP",
+                    "destinationPort",
+                    "host",
+                )
+                observed = [
+                    {
+                        "id": item["id"],
+                        "metadata": {k: item["metadata"].get(k) for k in fields},
+                        "chains": item["chains"],
+                    }
+                    for item in api("/connections")["connections"]
+                    if item["id"] not in previous
+                ]
+                print(
+                    json.dumps(
+                        {
+                            "expected_socket": [
+                                source_ip,
+                                source_port,
+                                target_ip,
+                                target_port,
+                                host,
+                                expected,
+                            ],
+                            "observed": observed[:10],
+                        }
+                    ),
+                    flush=True,
+                )
+                raise
             tls.sendall(
                 f"GET /{nonce} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode()
             )
