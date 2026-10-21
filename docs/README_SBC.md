@@ -159,32 +159,33 @@ The CLI rejects unknown flags and extra arguments before performing an action.
 Use `refresh` for configuration and `upgrade` for binaries. The public `update`
 command is removed. Other commands retain their syntax and meaning.
 
-| Command                                   | Purpose                                                         |
-| ----------------------------------------- | --------------------------------------------------------------- |
-| `sbc install`                             | Read a subscription link from stdin and install the client      |
-| `sbc init bash`, `sbc init zsh`           | Print shell integration code                                    |
-| `sbc link`, `sbc link set`                | Show the masked link, or replace it from stdin                  |
-| `sbc on`, `sbc off`                       | Switch shell and opted-in desktop proxies                       |
-| `sbc env`, `sbc env off`                  | Print proxy variables for scripts or the current shell          |
-| `sbc desktop [on\|off]`                   | Show or switch desktop proxy settings                           |
-| `sbc privacy`                             | Show browser and region privacy choices                         |
-| `sbc privacy browser [on\|off]`           | Show or change both Chrome privacy components (Linux)           |
-| `sbc privacy browser webrtc [on\|off]`    | Show or change Chrome WebRTC protection (Linux)                 |
-| `sbc privacy browser language [on\|off]`  | Show or match Chrome language preferences to the node (Linux)   |
-| `sbc privacy region [on\|off]`            | Show or match the node's client time zone and language (Linux)  |
-| `sbc tun on`, `sbc tun off`               | Enable or disable Linux TUN capture                             |
-| `sbc lang [en\|zh\|auto]`                 | Show or set the language of sbc messages                        |
-| `sbc docker [on\|off] [--yes]`            | Show or switch the Linux Docker daemon's proxy                  |
-| `sbc route [name]`, `sbc protocol [name]` | Show or switch a choice without restarting sing-box             |
-| `sbc route --list`                        | List installed route strategies and their meanings              |
-| `sbc port [number]`                       | Show or change the local proxy port                             |
-| `sbc status`, `sbc ip`, `sbc speed`       | Show status, exit location, or latency                          |
-| `sbc start`, `sbc stop`, `sbc restart`    | Control the service                                             |
-| `sbc run`                                 | Run sing-box in the foreground                                  |
-| `sbc refresh`, `sbc upgrade`              | Refresh configuration, or install signed binary updates         |
-| `sbc uninstall [--yes]`                   | Clean browser settings, stop the service, and remove the client |
-| `sbc completion bash\|zsh\|powershell`    | Print a completion script                                       |
-| `sbc version`, `sbc --version`            | Print the build version                                         |
+| Command                                     | Purpose                                                           |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| `sbc install`                               | Read a subscription link from stdin and install the client        |
+| `sbc init bash`, `sbc init zsh`             | Print shell integration code                                      |
+| `sbc link`, `sbc link set`                  | Show the masked link, or replace it from stdin                    |
+| `sbc on`, `sbc off`                         | Switch shell and opted-in desktop proxies                         |
+| `sbc env`, `sbc env off`                    | Print proxy variables for scripts or the current shell            |
+| `sbc desktop [on\|off]`                     | Show or switch desktop proxy settings                             |
+| `sbc privacy`                               | Show browser and region privacy choices                           |
+| `sbc privacy browser [on\|off]`             | Show or change all three Chrome privacy components (Linux)        |
+| `sbc privacy browser geolocation [on\|off]` | Show or block website geolocation for all accounts (Linux Chrome) |
+| `sbc privacy browser webrtc [on\|off]`      | Show or change Chrome WebRTC protection (Linux)                   |
+| `sbc privacy browser language [on\|off]`    | Show or match Chrome language preferences to the node (Linux)     |
+| `sbc privacy region [on\|off]`              | Show or match the node's client time zone and language (Linux)    |
+| `sbc tun on`, `sbc tun off`                 | Enable or disable Linux TUN capture                               |
+| `sbc lang [en\|zh\|auto]`                   | Show or set the language of sbc messages                          |
+| `sbc docker [on\|off] [--yes]`              | Show or switch the Linux Docker daemon's proxy                    |
+| `sbc route [name]`, `sbc protocol [name]`   | Show or switch a choice without restarting sing-box               |
+| `sbc route --list`                          | List installed route strategies and their meanings                |
+| `sbc port [number]`                         | Show or change the local proxy port                               |
+| `sbc status`, `sbc ip`, `sbc speed`         | Show status, exit location, or latency                            |
+| `sbc start`, `sbc stop`, `sbc restart`      | Control the service                                               |
+| `sbc run`                                   | Run sing-box in the foreground                                    |
+| `sbc refresh`, `sbc upgrade`                | Refresh configuration, or install signed binary updates           |
+| `sbc uninstall [--yes]`                     | Clean browser settings, stop the service, and remove the client   |
+| `sbc completion bash\|zsh\|powershell`      | Print a completion script                                         |
+| `sbc version`, `sbc --version`              | Print the build version                                           |
 
 `on` and `off` differ from `start` and `stop`. `off` leaves sing-box running.
 Desktop settings follow proxy toggles only after `sbc desktop on`.
@@ -230,6 +231,24 @@ not. `sbc privacy` summarizes this choice. See
 [WebRTC protection](WEBRTC.md) for ownership, cleanup, limits and manual
 cleanup after the scope change.
 
+## Chrome geolocation blocking
+
+`sbc privacy browser geolocation on` blocks website location requests with the
+mandatory `DefaultGeolocationSetting=2` policy. It covers saved site grants and
+new Chrome profiles. It needs no subscription or running proxy. Policy writes
+need sudo and affect every account that uses Linux Chrome's system policy
+directory. Restart Chrome and check `chrome://policy` after a change.
+
+The default is off. Installation, upgrades, refreshes and proxy toggles do not
+enable or repair it. `sbc privacy browser geolocation off` removes only sbc's
+owned policy. It preserves saved website permissions and external policies.
+Failed cleanup prevents uninstall from removing sbc.
+
+The query reports the saved choice, local policy configuration and conflicts.
+Local files do not prove Chrome's effective policy. IP-based location estimates
+remain possible. See [geolocation blocking](WEBRTC.md#website-geolocation-blocking)
+for ownership, conflict checks, cleanup and limits.
+
 ## Chrome language matching
 
 `sbc privacy browser language on` replaces the language list in this account's
@@ -247,10 +266,11 @@ neither the browser UI language nor translation and spell-check settings.
 It preserves external changes. Failed restoration blocks uninstall and keeps
 recovery records for retry.
 
-`sbc privacy browser on|off` attempts both WebRTC and language changes. It reports
-each result and exits nonzero if either fails. Successful components stay applied.
-Use the explicit `webrtc` subcommand for WebRTC-only operations, including scripts
-that need no subscription. An existing WebRTC choice does not enable languages.
+`sbc privacy browser on|off` attempts WebRTC, language and geolocation changes
+independently. It reports each result and exits nonzero if any component fails.
+Successful components stay applied. Use explicit component subcommands for
+scripts. `webrtc` and `geolocation` need no subscription. An existing WebRTC choice
+does not enable language matching or geolocation blocking.
 
 Refresh only updates the target and reports pending application. Proxy toggles,
 refreshes and upgrades never apply browser language changes automatically.

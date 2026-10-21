@@ -62,6 +62,8 @@ type Env struct {
 	Desktop func() (desktop.Desktop, error)
 	// Privacy manages browser settings without a desktop session.
 	Privacy func() (desktop.BrowserPrivacy, error)
+	// BrowserGeolocation manages the independent Chrome location policy.
+	BrowserGeolocation func(paths.Layout) (*desktop.ChromeGeolocation, error)
 	// BrowserLanguage manages Chrome profiles independently of system locales.
 	BrowserLanguage func(paths.Layout) (*browserlanguage.Manager, error)
 	// Region manages the user-scoped time zone and language choice.
@@ -556,6 +558,16 @@ func runUninstall(env Env, yes bool) int {
 		}
 		if err := reportRemainingWebRTC(env, privacy); err != nil {
 			return fail(env, err)
+		}
+		geolocation, err := browserGeolocationFor(env, layout)
+		if err != nil {
+			return fail(env, err)
+		}
+		if err := geolocation.Cleanup(); err != nil {
+			return fail(env, i18n.Errorf("Chrome geolocation cleanup failed. sbc is still installed. Retry 'sbc privacy browser geolocation off' or uninstall: %w", err))
+		}
+		if code := reportRemainingGeolocation(env, geolocation); code != 0 {
+			return code
 		}
 		if systemRegion {
 			if env.Sudo == nil {

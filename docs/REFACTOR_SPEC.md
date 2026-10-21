@@ -447,7 +447,11 @@ Client:
   writes or removes the mandatory Chrome `WebRtcIPHandling` policy and records
   an opt-out. `sbc privacy browser language on|off` separately matches personal
   profiles' language lists to the node and restores owned fields. Chrome must
-  be closed. `sbc privacy browser on|off` attempts both components independently.
+  be closed. `sbc privacy browser geolocation on|off` separately manages the
+  system-wide `DefaultGeolocationSetting=2` policy. It defaults to off and needs
+  explicit activation. Local diagnostics distinguish choice, configuration and
+  policy conflicts. `sbc privacy browser on|off` attempts all three components
+  independently.
   See [Chrome privacy](WEBRTC.md) for ownership, recovery, sync risks and limits.
   `sbc docker on` writes the Docker daemon's systemd drop-in on Linux and restarts
   Docker after confirmation, or with `--yes`. Desktop and Docker integration refuse

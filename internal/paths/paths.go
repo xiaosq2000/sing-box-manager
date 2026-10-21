@@ -92,6 +92,11 @@ func (l Layout) DesktopFile() string { return filepath.Join(l.Config, "desktop")
 // WebRTCFile records an explicit opt-out from browser policy setup.
 func (l Layout) WebRTCFile() string { return filepath.Join(l.Config, "webrtc-mode") }
 
+// BrowserGeolocationFile records the explicit Chrome geolocation choice.
+func (l Layout) BrowserGeolocationFile() string {
+	return filepath.Join(l.Config, "geolocation-mode")
+}
+
 // BrowserLanguageState keeps the Chrome language choice and recovery records.
 func (l Layout) BrowserLanguageState() string {
 	return filepath.Join(l.Config, "browser-language.json")

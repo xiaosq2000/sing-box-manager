@@ -23,7 +23,7 @@ func lockUnixPrivacy(path string) (func(), error) {
 	file := os.NewFile(uintptr(fd), path)
 	if err := syscall.Flock(fd, syscall.LOCK_EX); err != nil {
 		file.Close()
-		return nil, i18n.Errorf("could not lock WebRTC settings: %w", err)
+		return nil, i18n.Errorf("could not lock Chrome privacy settings: %w", err)
 	}
 	return func() { syscall.Flock(fd, syscall.LOCK_UN); file.Close() }, nil
 }

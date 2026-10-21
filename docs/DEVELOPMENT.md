@@ -90,6 +90,17 @@ conflicts, changed values, failed writes and retry. Legacy cleanup fixtures
 change a file or replace it with a symlink before the helper runs, and check
 that the elevated recheck refuses deletion.
 
+Chrome geolocation fixtures execute their separate embedded Linux helper in a
+temporary policy directory, without sudo. They cover the default-off choice,
+explicit repair, matching external policies, conflicting defaults and URL lists,
+read-only diagnostics, ownership, safe cleanup and retry. Helper fixtures change
+policy contents, ownership records or symlinks before elevated-operation
+simulation. CLI fixtures isolate policy directories, test all three composite
+components, preserve the client after cleanup failure, and check Chinese messages.
+No fixture changes host Chrome policy. These tests do not establish effective
+geolocation blocking in a native browser. Verify `chrome://policy` and denied
+website location requests on an authorized disposable Linux runner.
+
 `internal/browserlanguage` fixtures use temporary Chrome roots and policies.
 They cover full list replacement, both preference fields, multiple profiles,
 absent original fields, external edits, policy conflicts, singleton checks,
