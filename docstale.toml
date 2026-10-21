@@ -75,6 +75,8 @@ control-plane = [
 [documents]
 "docs/README_MOBILE.md" = [
   "@control-plane",
+  "sing_box_manager/desktop_config.py",
+  "tests/test_mobile_config.py",
   "sing_box_manager/release/profiles.py",
   "sing_box_manager/release/renderers.py",
 ]
@@ -111,6 +113,7 @@ control-plane = [
   "tests/test_traffic_*.py",
   "tests/test_connection*.py",
   "tests/test_desktop_config.py",
+  "tests/test_mobile_config.py",
   "tests/test_route_rename.py",
   "tests/test_m3_profiles.py",
   "tests/test_m3_runtime.py",

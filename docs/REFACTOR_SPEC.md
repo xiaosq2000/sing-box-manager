@@ -131,7 +131,8 @@ signed manifest are served under the subscription path, so no public page identi
 the host.
 
 Route strategies are `direct`, `ai-only`, `gfw-proxy`, `china-direct` and `global`.
-`ai`, `gfw` and `china` remain aliases for saved selections and existing commands.
+Desktop retains `ai`, `gfw` and `china` aliases for saved selections and commands.
+Mobile offers only the five canonical names in one multi-protocol profile.
 The default is `china-direct`. In M6, proxied AI traffic uses one fixed node to
 avoid automatic egress changes. This does not guarantee provider acceptance.
 
@@ -209,10 +210,12 @@ current location.
 3. **Automatic client maintenance.** Merged as `c19a43c`. Independent refresh and
    signed-upgrade policies, startup serialization, and recovery passed native CI.
    This change has no published client release yet.
-4. **Official mobile import.** Import buttons, local QR codes, and manual URL fallback
-   are implemented. iOS App 1.14.3 passed user testing for Trojan, Hysteria2, and Naive.
-   Android device testing is deferred and does not block this change. See the
-   [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
+4. **Official mobile profiles.** One import button, local QR code and manual URL
+   import provide a unified multi-protocol profile. Mobile shares the five PC route
+   strategies and uses real DNS answers. Per-protocol URLs return `400`.
+   This consolidation does not rotate account tokens or protocol credentials.
+   Unified-profile device acceptance is incomplete on iOS and Android. See the
+   [acceptance boundary](README_MOBILE.md#acceptance-boundary).
 5. **M1b: Linux TUN.** The core is implemented in the client. Environment, routing,
    DNS, privilege, and recovery requirements are defined in [M1b](#m1b-linux-tun).
    The client has route/protocol API access, lifecycle guards, a transaction

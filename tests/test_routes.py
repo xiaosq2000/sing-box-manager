@@ -96,7 +96,10 @@ assert 'format=mobile' in text
 assert '/login' not in text and '/subscription/reset' not in text
 assert client.get(url, query, HTTP_IF_NONE_MATCH=first['ETag']).status_code == 304
 assert client.get(url, {**query, 'os':'darwin'}, HTTP_IF_NONE_MATCH=first['ETag']).status_code == 200
-assert client.get(url, {'format':'mobile', 'protocol':'naive'}).status_code == 200
+mobile = client.get(url, {'format':'mobile'})
+assert mobile.status_code == 200
+assert mobile.json()['outbounds'][0]['outbounds'] == ['trojan', 'hysteria2', 'naive']
+assert client.get(url, {'format':'mobile', 'protocol':'naive'}).status_code == 400
 assert client.get(url, {**query, 'sing-box':'1.13.0'}).status_code == 409
 assert client.get(url, {**query, 'os':'freebsd'}).status_code == 400
 assert client.head(url, query).content == b''
@@ -127,27 +130,33 @@ parser = Elements()
 parser.feed(page.content.decode())
 imports = [a['href'] for tag, a in parser.elements if tag == 'a' and a.get('href', '').startswith('sing-box:')]
 images = [a['src'] for tag, a in parser.elements if tag == 'img' and a.get('class') == 'mobile-qr']
-assert len(imports) == len(images) == 3
-for protocol, uri, image in zip(('trojan', 'hysteria2', 'naive'), imports, images):
-    parts = urlsplit(uri)
-    assert (parts.scheme, parts.netloc) == ('sing-box', 'import-remote-profile')
-    remote = parse_qs(parts.query)['url'][0]
-    assert remote == 'https://testserver' + url + '?format=mobile&protocol=' + protocol
-    assert unquote(parts.fragment).startswith('db_alice - ')
-    decoded = zxingcpp.read_barcode(Image.open(BytesIO(base64.b64decode(image.split(',', 1)[1]))).convert('RGB'))
-    assert decoded is not None and decoded.text == uri
-    response = client.get(remote)
-    assert response.status_code == 200
+assert len(imports) == len(images) == 1
+uri, image = imports[0], images[0]
+parts = urlsplit(uri)
+assert (parts.scheme, parts.netloc) == ('sing-box', 'import-remote-profile')
+remote = parse_qs(parts.query)['url'][0]
+assert remote == 'https://testserver' + url + '?format=mobile'
+assert unquote(parts.fragment) == 'db_alice - sing-box'
+decoded = zxingcpp.read_barcode(Image.open(BytesIO(base64.b64decode(image.split(',', 1)[1]))).convert('RGB'))
+assert decoded is not None and decoded.text == uri
+response = client.get(remote)
+assert response.status_code == 200
+assert response['Cache-Control'] == 'private, no-store'
+assert response['Referrer-Policy'] == 'no-referrer'
+assert 'subscription-userinfo' in response
+assert response.json()['outbounds'][0]['outbounds'] == ['trojan', 'hysteria2', 'naive']
+for protocol in ('trojan', 'hysteria2', 'naive'):
     assert 'synthetic-db_alice-' + protocol in response.content.decode()
-    assert 'synthetic-db_bob' not in response.content.decode()
-    assert client.get(remote, HTTP_IF_NONE_MATCH=response['ETag']).status_code == 304
+assert 'synthetic-db_bob' not in response.content.decode()
+assert client.get(remote, HTTP_IF_NONE_MATCH=response['ETag']).status_code == 304
+assert client.head(remote).content == b''
 inputs = [attrs for tag, attrs in parser.elements if tag == 'input']
-assert len(inputs) == 4 and all('readonly' in attrs for attrs in inputs)
+assert len(inputs) == 2 and all('readonly' in attrs for attrs in inputs)
 assert all(attrs['value'].startswith('https://testserver/sub/') for attrs in inputs)
 buttons = [attrs for tag, attrs in parser.elements if tag == 'button']
 statuses = {attrs['id']: attrs for tag, attrs in parser.elements if attrs.get('role') == 'status'}
-assert len(buttons) == len(statuses) == 4
-assert len({button['data-copy-status'] for button in buttons}) == 4
+assert len(buttons) == len(statuses) == 2
+assert len({button['data-copy-status'] for button in buttons}) == 2
 for button in buttons:
     assert button['data-copy-target'] in {attrs['id'] for attrs in inputs}
     assert statuses[button['data-copy-status']]['aria-live'] == 'polite'
@@ -155,7 +164,8 @@ for button in buttons:
     status_index = next(index for index, (_, attrs) in enumerate(parser.elements) if attrs.get('id') == button['data-copy-status'])
     assert 0 < status_index - button_index <= 2
 assert 'Protocols:' not in page.content.decode()
-assert len([attrs for tag, attrs in parser.elements if tag == 'a' and attrs.get('download')]) == 3
+downloads = [attrs for tag, attrs in parser.elements if tag == 'a' and attrs.get('download')]
+assert len(downloads) == 1 and downloads[0]['href'] == remote
 assert all(attrs['src'].startswith('/static/') for tag, attrs in parser.elements if tag == 'script')
 alice.subscription_counter += 1
 alice.save()
@@ -175,16 +185,33 @@ with patch.object(views.staticfiles_storage, 'exists', side_effect=lambda name: 
 """)
 
 
-def test_mobile_page_omits_disabled_protocols_and_rejects_unknown_hosts(portal_runtime):
+def test_unified_mobile_profile_omits_disabled_protocols_and_rejects_old_links(portal_runtime):
     python(portal_runtime, SETUP + """
 Credential.objects.filter(account=alice).exclude(protocol='trojan').update(enabled=False)
 page = client.get(url + '/')
 assert page.status_code == 200
 text = page.content.decode()
-assert 'mobile-title-trojan' in text
-assert 'mobile-title-naive' not in text and 'mobile-title-hysteria2' not in text
-assert client.get(url, {'format':'mobile', 'protocol':'naive'}).status_code == 400
+assert text.count('class="mobile-qr"') == 1
+assert 'protocol=' not in text and 'mobile-title-trojan' not in text
+profile = client.get(url, {'format': 'mobile'})
+assert profile.status_code == 200
+assert profile.json()['outbounds'][0]['outbounds'] == ['trojan']
+assert profile.json()['outbounds'][0]['default'] == 'trojan'
+assert 'synthetic-db_alice-naive' not in profile.content.decode()
+assert 'synthetic-db_alice-hysteria2' not in profile.content.decode()
+for protocol in ('trojan', 'hysteria2', 'naive', 'unknown', ''):
+    for query in ({'protocol': protocol}, {'format': 'mobile', 'protocol': protocol}):
+        rejected = client.get(url, query)
+        assert rejected.status_code == 400
+        assert 'unified profile' in rejected.json()['detail']
 assert client.get(url + '/', HTTP_HOST='attacker.example.com').status_code == 400
+assert client.get(url, {'format':'mobile'}, HTTP_HOST='attacker.example.com').status_code == 400
+runtime.default_protocol = 'naive'
+with patch.object(views, '_runtime', return_value=runtime):
+    assert client.get(url).json()['outbounds'][0]['default'] == 'trojan'
+Credential.objects.filter(account=alice, protocol='trojan').update(enabled=False)
+assert client.get(url).status_code == 404
+assert client.get(url + '/').status_code == 404
 """)
 
 
@@ -369,7 +396,7 @@ with patch.object(views, '_client_downloads', return_value=downloads):
 
 
 def test_every_installer_alias_serves_the_unchanged_script(portal_runtime):
-    python(portal_runtime, SETUP + '''
+    python(portal_runtime, SETUP + """
 for path in ('/install.sh', '/install/linux.sh', '/install/macos.sh'):
     response = client.get(path)
     assert response.status_code == 200
@@ -379,7 +406,7 @@ for path in ('/install.ps1', '/install/windows.ps1'):
     response = client.get(path)
     assert response.status_code == 200
     assert response.content.decode() == views.INSTALL_SCRIPT.with_suffix('.ps1').read_text(encoding='utf-8-sig')
-''')
+""")
 
 
 def test_vps_info_requires_authentication_and_keeps_the_unavailable_shape(portal_runtime):

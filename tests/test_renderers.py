@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sing_box_manager.release.platforms import MIXED_PROFILE, MOBILE_TUN_PROFILE
+from sing_box_manager.release.platforms import MIXED_PROFILE
 from sing_box_manager.release.profiles import build_server_config, client_base_config
 from sing_box_manager.release.renderers import (
     ADGUARD_RULE_SET_TAG,
@@ -131,31 +131,6 @@ def test_desktop_route_strategies_have_finals_and_common_controls(
 
 def _rule_index(rules: list[dict], predicate) -> int:
     return next(index for index, rule in enumerate(rules) if predicate(rule))
-
-
-@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-def test_mobile_ai_rules_outrank_mode_overrides_and_china_direct(protocol: str) -> None:
-    config = client_base_config(protocol, MOBILE_TUN_PROFILE)
-    rules = config["route"]["rules"]
-    ai_tags = list(AI_RULE_SET_URLS)
-    ai_index = _rule_index(rules, lambda rule: rule.get("rule_set") == ai_tags)
-    assert rules[ai_index]["outbound"] == "proxy"
-    for index, rule in enumerate(rules):
-        if "clash_mode" in rule or rule.get("rule_set") == [
-            "geoip-cn",
-            "geosite-geolocation-cn",
-        ]:
-            assert ai_index < index
-        if rule.get("action") in {"hijack-dns", "reject"}:
-            assert index < ai_index
-    assert config["dns"]["rules"][0] == {"rule_set": ai_tags, "server": "google"}
-    assert config["dns"]["rules"][1]["server"] == "remote"
-    assert (
-        next(s for s in config["dns"]["servers"] if s["tag"] == "google")["detour"]
-        == "proxy"
-    )
-    assert config["route"]["rule_set"][:2] == ai_rule_sets(bundled=False)
-    assert config["route"]["final"] == "proxy"
 
 
 @pytest.mark.parametrize("strategy", ["china", "gfw", "ai", "global"])
@@ -788,7 +763,7 @@ class TestSharedRendererBehavior:
 
 @pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
 @pytest.mark.parametrize(
-    "profile", ["china-direct", "gfw-proxy", "ai-only", "global", "direct", "-tun"]
+    "profile", ["china-direct", "gfw-proxy", "ai-only", "global", "direct"]
 )
 def test_direct_exceptions_survive_every_profile(protocol: str, profile: str) -> None:
     from tests.test_sing_box_114 import render_client
@@ -920,7 +895,7 @@ def test_normalized_host_keeps_matching_tls_name() -> None:
 
 
 @pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-@pytest.mark.parametrize("profile", [MIXED_PROFILE, MOBILE_TUN_PROFILE])
+@pytest.mark.parametrize("profile", [MIXED_PROFILE])
 def test_client_mixed_inbounds_listen_on_loopback_only(protocol: str, profile) -> None:
     """An unauthenticated mixed inbound on a public or LAN address is an open relay."""
     config = client_base_config(protocol, profile)

@@ -15,7 +15,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
-from sing_box_manager.control_plane.mobile import mobile_imports
+from sing_box_manager.control_plane.mobile import mobile_import
 from sing_box_manager.control_plane.models import Account
 from sing_box_manager.control_plane.services import (
     account_protocols,
@@ -144,13 +144,17 @@ def _render_subscription_payload(
 ) -> tuple[dict | None, JsonResponse | None]:
     output_format = request.GET.get("format")
     if output_format in (None, "mobile"):
-        try:
-            profile = build_account_mobile_profile(
-                account, runtime, protocol=request.GET.get("protocol")
+        if "protocol" in request.GET:
+            return None, JsonResponse(
+                {
+                    "detail": (
+                        "Per-protocol mobile profiles are not supported. "
+                        "Import the unified profile from your subscription page."
+                    )
+                },
+                status=400,
             )
-        except ValueError as exc:
-            return None, JsonResponse({"detail": str(exc)}, status=400)
-        return profile, None
+        return build_account_mobile_profile(account, runtime), None
     if output_format != "sbc":
         return None, JsonResponse(
             {"detail": "format must be sbc or mobile"}, status=400
@@ -242,9 +246,7 @@ def subscription_page(request, token: str):
             "account": account,
             "subscription_url": subscription_url,
             "origin": origin,
-            "mobile_profiles": mobile_imports(
-                subscription_url, str(account.username), held
-            ),
+            "mobile_profile": mobile_import(subscription_url, str(account.username)),
             "traffic_timezone": runtime.traffic_stats.timezone,
             **user_usage(runtime, str(account.username)),
         },

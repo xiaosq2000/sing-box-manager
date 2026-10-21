@@ -60,17 +60,13 @@ def test_platform_layout(platform) -> None:
 
 
 @pytest.mark.parametrize("protocol", [protocol.name for protocol in PROTOCOLS])
-@pytest.mark.parametrize("profile", [MIXED_PROFILE, MOBILE_TUN_PROFILE])
+@pytest.mark.parametrize("profile", [MIXED_PROFILE])
 def test_profile_builder_emits_the_correct_inbound(protocol: str, profile) -> None:
     config = client_base_config(protocol, profile)
     inbound = config["inbounds"][0]
     assert config["outbounds"][0]["type"] == protocol
-    if profile == MOBILE_TUN_PROFILE:
-        assert inbound["type"] == "tun"
-        assert "set_system_proxy" not in inbound
-    else:
-        assert inbound["listen"] == "127.0.0.1"
-        assert inbound["set_system_proxy"] is False
+    assert inbound["listen"] == "127.0.0.1"
+    assert inbound["set_system_proxy"] is False
     assert (
         client_config_filename(protocol, profile)
         == f"{protocol}{profile.filename_infix}-client.json"
@@ -96,6 +92,11 @@ def test_legacy_route_filenames(alias: str, canonical: str) -> None:
     assert route_client_config_filename(
         "trojan", alias
     ) == route_client_config_filename("trojan", canonical)
+
+
+def test_per_protocol_mobile_builder_is_not_supported() -> None:
+    with pytest.raises(ValueError, match="Unsupported profile"):
+        client_base_config("trojan", MOBILE_TUN_PROFILE)
 
 
 def test_unknown_route_is_rejected() -> None:

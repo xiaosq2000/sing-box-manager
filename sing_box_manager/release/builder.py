@@ -20,6 +20,7 @@ from sing_box_manager.desktop_config import (
     UserProtocols,
     build_desktop_config,
     build_linux_tun_config,
+    build_mobile_config,
 )
 from sing_box_manager.release.artifacts import build_release_info, write_release_info
 from sing_box_manager.release.client_downloads import (
@@ -51,13 +52,11 @@ from sing_box_manager.release.manifest import (
 )
 from sing_box_manager.release.models import ReleasePlan, ReleaseResult
 from sing_box_manager.release.platforms import (
-    MOBILE_TUN_PROFILE,
     PLATFORMS,
     ROUTE_STRATEGIES,
     Platform,
 )
 from sing_box_manager.release.profiles import (
-    build_client_profile,
     build_server_config,
     client_base_config,
 )
@@ -792,13 +791,14 @@ class ReleaseBuilder:
             ),
             "validation/linux-tun",
         )
-        for protocol in ("trojan", "hysteria2", "naive"):
-            self._check_config(
-                build_client_profile(
-                    inventory.deployment, protocols, protocol, MOBILE_TUN_PROFILE
-                ),
-                f"validation/mobile/{protocol}",
-            )
+        self._check_config(
+            build_mobile_config(
+                inventory.deployment,
+                protocols,
+                default_protocol=self._settings.default_protocol,
+            ),
+            "validation/mobile",
+        )
 
     def _build_custom_server_binary(self) -> Path:
         """Build the traffic-stats server binary from upstream source."""

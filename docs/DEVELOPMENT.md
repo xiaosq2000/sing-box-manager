@@ -448,23 +448,23 @@ cache headers, and refusal to use inventory when PostgreSQL fails.
 ## Mobile import checks
 
 `tests/test_mobile_import.py` decodes locally generated PNG QR images with ZXing.
-It checks the official import URI, Unicode names, selected protocols, and absence
+It checks the unified import URI, Unicode names and absence
 of network access during generation. Node.js fixtures exercise clipboard success,
 denied permission, and manual-copy fallback. Pillow and ZXing are development
 dependencies. Segno generates the images at runtime.
 
-The PostgreSQL route fixtures verify rendered import links, decoded QR contents,
-authenticated JSON, ETag responses, disabled protocols, host checks, and token
-revocation. No test uses an operator subscription or changes a device.
+The PostgreSQL route fixtures verify one import entry, decoded QR contents,
+authenticated multi-protocol JSON, ETag responses, disabled protocols, host checks
+and token revocation. They reject per-protocol mobile URLs. No test uses an operator subscription or changes a device.
 
 ```sh
-pixi run -e control-plane-test test tests/test_mobile_import.py tests/test_routes.py
+pixi run -e control-plane-test test tests/test_mobile_config.py tests/test_mobile_import.py tests/test_routes.py
 ```
 
 These checks do not replace [physical-device acceptance](README_MOBILE.md#acceptance-boundary).
 Record app and embedded core versions separately. Mark unavailable values as unknown.
-iOS device acceptance covers the mobile-import merge gate. Android device checks
-are deferred, not passed. See the acceptance record for tested protocol coverage.
+Unified-profile device acceptance is not complete on iOS or Android. Native app
+controls, refresh, real-DNS domain routing and TUN capture need device checks.
 
 ## sing-box version checks
 
@@ -502,12 +502,15 @@ traffic. Engine fixtures wait for the current process's startup message, not
 only its first TCP listener. Earlier log entries cannot establish readiness.
 Routing fixtures cover all five desktop
 strategies and the three legacy alias modes, direct exceptions with the proxy
-unavailable, and mobile FakeIP bypass. `direct` tests verify system DNS and direct
+unavailable, and mobile real-DNS routing. `direct` tests verify system DNS and direct
 AI connections with the remote proxy both available and unavailable.
 Dedicated Anthropic fixtures test proxy routing and DNS ahead of AdGuard and
 China-direct matches. Desktop fixtures also test failed updates and no direct
-fallback when the proxy is unavailable. Mobile fixtures test AI priority under
-Direct, Global, and Rule modes for every protocol.
+fallback when the proxy is unavailable. `tests/test_mobile_config.py` checks all five canonical modes for every enabled
+protocol, both with and without a working proxy. It compares mobile routing and
+DNS policy with desktop output. It checks distinct selector paths, real DNS
+answers after mode changes, restart persistence, case handling and rejection of
+the removed `Rule` mode. It also checks mobile storage and the five-name list.
 Mobile TUN DNS and routing fixtures use a loopback mixed inlet. They do not
 exercise tunnel interface capture or provide Linux TUN support. Supply the custom Linux server binary built with
 `with_v2ray_api` to include all the single multi-inbound traffic-statistics config:

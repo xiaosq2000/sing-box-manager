@@ -125,6 +125,9 @@ Desktop DNS cache files contain queried domains and answers. They stay in the
 client's private state directory. `sbc` uses one `cache.db` for its route modes and
 protocol selector. Single-route mixed profiles use separate cache files.
 Release packages contain public rule snapshots, never a client's DNS cache.
+A unified mobile profile contains every enabled account protocol's credentials.
+The app manages its DNS cache and rule storage. Mobile profiles open no HTTP
+controller listener.
 
 The Linux TUN service keeps the endpoint- and credential-bearing config in
 `/etc/sbc/tun/config.json` (mode 0640, `root:sbc-tun`), its rule snapshots under
