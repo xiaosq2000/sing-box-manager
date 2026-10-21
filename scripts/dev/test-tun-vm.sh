@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Boot a disposable guest. The host's services and network stay unchanged.
 set -euo pipefail
+umask 077
+suite=${1:-core}
+case "$suite" in core | lifecycle) ;; *)
+	echo "Usage: $0 [core|lifecycle]" >&2
+	exit 2
+	;;
+esac
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ftp_proxy FTP_PROXY socks_proxy SOCKS_PROXY all_proxy ALL_PROXY
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 CACHE=${SBC_TUN_E2E_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/sbc-tun-e2e}
@@ -10,6 +17,7 @@ mkdir -p "$CACHE/runs"
 WORK=$(mktemp -d "$CACHE/runs/run-XXXXXXXX")
 ASSETS=$WORK/assets
 mkdir -m 700 "$ASSETS"
+# shellcheck disable=SC2329 # Called by the EXIT trap.
 cleanup() {
 	if [ -n "${fixture_pid:-}" ]; then kill "$fixture_pid" 2>/dev/null || true; fi
 	if [ -n "${vm_pid:-}" ]; then kill "$vm_pid" 2>/dev/null || true; fi
@@ -66,7 +74,11 @@ for _ in $(seq 50); do
 	sleep 0.1
 done
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 "$ROOT/scripts/dev/tun-vm/prepare.py" "$ASSETS" "$BINARY"
-python3 "$ROOT/scripts/dev/tun-vm/release.py" "$ASSETS"
+if [ "$suite" = lifecycle ]; then
+	python3 "$ROOT/scripts/dev/tun-vm/lifecycle-host.py" "$ASSETS" "$CACHE/engines"
+else
+	python3 "$ROOT/scripts/dev/tun-vm/release.py" "$ASSETS"
+fi
 portal=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["portal"])' "$ASSETS/ports.json")
 socks=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["socks"])' "$ASSETS/ports.json")
 socks_alt=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["socks_alt"])' "$ASSETS/ports.json")
@@ -77,10 +89,10 @@ response=$(curl --noproxy '' --socks5-hostname "127.0.0.1:$socks" --cacert "$ASS
 "$BINARY" check -D "$ASSETS" -c "$ASSETS/tun.json"
 cp "$ROOT/scripts/dev/tun-vm/fixtures.py" "$ASSETS/fixtures.py"
 cp "$ROOT/scripts/dev/tun-vm/test.sh" "$ASSETS/test.sh"
-python3 - "$ASSETS" "$portal" <<'PY'
+python3 - "$ASSETS" "$portal" "$suite" <<'PY'
 import json, secrets, sys
 from pathlib import Path
-assets, port = Path(sys.argv[1]), sys.argv[2]
+assets, port, suite = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 (assets / "run-id").write_text(secrets.token_hex(16))
 config = {
     # Noble cloud images include the required tools. The guest checks them;
@@ -92,6 +104,8 @@ config = {
         ["poweroff"],
     ],
 }
+if suite == "lifecycle":
+    config["runcmd"][1:] = [["python3", "/opt/tun-e2e/lifecycle.py", "bootstrap"]]
 (assets / "user-data").write_text("#cloud-config\n" + json.dumps(config))
 (assets / "meta-data").write_text("instance-id: tun-" + (assets / "run-id").read_text() + "\nlocal-hostname: tun-fixture\n")
 PY
@@ -107,22 +121,44 @@ case "$accel" in kvm | tcg) ;; *)
 	exit 1
 	;;
 esac
-echo "Booting disposable guest ($accel); serial log: $WORK/serial.log"
-# Each guest socket needs its own relay. A fixed TCP chardev is one stream.
-timeout 1800 qemu-system-x86_64 \
-	-machine "accel=$accel" -cpu max -m 2048 -smp 2 \
-	-drive "file=$WORK/disk.qcow2,if=virtio,format=qcow2" \
-	-smbios "type=1,serial=ds=nocloud-net;s=http://10.0.2.100:$portal/" \
-	-netdev "user,id=net0,restrict=on,guestfwd=tcp:10.0.2.100:$portal-cmd:nc -N 127.0.0.1 $portal,guestfwd=tcp:10.0.2.100:$socks-cmd:nc -N 127.0.0.1 $socks,guestfwd=tcp:10.0.2.100:$socks_alt-cmd:nc -N 127.0.0.1 $socks_alt" -device virtio-net-pci,netdev=net0 \
-	-object "filter-dump,id=trace,netdev=net0,file=$WORK/network.pcap" \
-	-display none -serial "file:$WORK/serial.log" -monitor none -no-reboot &
-vm_pid=$!
-status=0
-wait "$vm_pid" || status=$?
-vm_pid=
-if [ "$status" -ne 0 ] || ! grep -E "(^|: )TUN_E2E_RESULT=$(<"$ASSETS/run-id"):PASS[[:space:]]*$" "$WORK/serial.log"; then
-	echo "TUN acceptance failed (QEMU status $status)." >&2
-	grep -E '=== |sbc: |TUN fixture failure|TUN_E2E_RESULT|Error:|Traceback|curl:' "$WORK/serial.log" >&2 || true
-	tail -n 120 "$WORK/serial.log" >&2
-	exit 1
+echo "Booting disposable guest ($accel, $suite); serial log: $WORK/serial.log"
+# A lifecycle run reboots the same disk. Every boot needs its own marker.
+boots=1
+boot_timeout=1800
+if [ "$suite" = lifecycle ]; then
+	boots=4
+	boot_timeout=900
 fi
+for boot in $(seq "$boots"); do
+	serial=$WORK/serial.log
+	if [ "$suite" = lifecycle ]; then serial=$WORK/serial-$boot.log; fi
+	trace=$WORK/network.pcap
+	if [ "$suite" = lifecycle ]; then trace=$WORK/network-$boot.pcap; fi
+	# Each guest socket needs its own relay. A fixed TCP chardev is one stream.
+	timeout "$boot_timeout" qemu-system-x86_64 \
+		-machine "accel=$accel" -cpu max -m 2048 -smp 2 \
+		-drive "file=$WORK/disk.qcow2,if=virtio,format=qcow2" \
+		-smbios "type=1,serial=ds=nocloud-net;s=http://10.0.2.100:$portal/" \
+		-netdev "user,id=net0,restrict=on,guestfwd=tcp:10.0.2.100:$portal-cmd:nc -N 127.0.0.1 $portal,guestfwd=tcp:10.0.2.100:$socks-cmd:nc -N 127.0.0.1 $socks,guestfwd=tcp:10.0.2.100:$socks_alt-cmd:nc -N 127.0.0.1 $socks_alt" -device virtio-net-pci,netdev=net0 \
+		-object "filter-dump,id=trace,netdev=net0,file=$trace" \
+		-display none -serial "file:$serial" -monitor none -no-reboot &
+	vm_pid=$!
+	status=0
+	wait "$vm_pid" || status=$?
+	vm_pid=
+	result=$(python3 "$ROOT/scripts/dev/tun-vm/lifecycle-host.py" result "$serial" "$(<"$ASSETS/run-id")" "$boot" "$boots")
+	if [ "$status" -eq 0 ] && [ "$result" = PASS ]; then
+		grep -E 'TUN_E2E_RESULT=.*:PASS' "$serial"
+		exit 0
+	fi
+	if [ "$status" -eq 0 ] && [ "$result" = REBOOT ]; then
+		grep -E 'TUN_LIFECYCLE_REBOOT=' "$serial"
+		echo "Restarting the same guest disk for the next acceptance phase"
+		continue
+	fi
+	echo "TUN acceptance failed (QEMU status $status, boot $boot)." >&2
+	grep -E '=== |sbc: |TUN fixture failure|TUN_E2E_RESULT|Error:|Traceback|curl:' "$serial" >&2 || true
+	tail -n 120 "$serial" >&2
+	exit 1
+done
+exit 1

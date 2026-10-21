@@ -27,6 +27,7 @@ harness = [
   "tests/test_powershell_compat.py",
   "tests/test_sing_box_114.py",
   "tests/test_tun_vm.py",
+  "tests/test_tun_lifecycle.py",
 ]
 sbc = [
   "go.mod",
@@ -174,6 +175,8 @@ control-plane = [
 "docs/README_SBC.md" = [
   "@sbc",
   "@unix-installer",
+  "scripts/dev/tun-vm/",
+  "tests/test_tun_lifecycle.py",
   "internal/install/",
   "internal/paths/",
   "internal/service/",
@@ -200,6 +203,8 @@ control-plane = [
   ".github/workflows/sbc.yml",
   "scripts/dev/test-tun-vm.sh",
   "scripts/dev/tun-vm/",
+  "tests/test_tun_vm.py",
+  "tests/test_tun_lifecycle.py",
   "@control-plane",
   "scripts/lib/ui.sh",
   "sing_box_manager/release/",

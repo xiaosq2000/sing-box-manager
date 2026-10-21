@@ -9,6 +9,7 @@ No fixture forwards a request to the internet.
 import argparse
 import http.server
 import json
+import re
 import select
 import socket
 import socketserver
@@ -191,6 +192,12 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
                     "rules/" + path.name
                     for path in (assets / "release/rules").glob("*.srs")
                 )
+                allowed.update(
+                    "sing-box/" + path.name
+                    for path in (assets / "release/sing-box").glob(
+                        "sing-box-*-linux-amd64.tar.gz"
+                    )
+                )
                 if prefix != "/sub/" + subscription.name or relative not in allowed:
                     self.send_error(404)
                     return
@@ -198,6 +205,37 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
             super().do_GET()
 
         def do_POST(self) -> None:
+            if self.path == "/fixture/lifecycle-evidence":
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 65536:
+                    self.send_error(400)
+                    return
+                payload = json.loads(self.rfile.read(length))
+                name = payload.get("name", "")
+                if (
+                    not re.fullmatch("[a-z-]+", name)
+                    or payload.get("run_id") != (assets / "run-id").read_text().strip()
+                ):
+                    self.send_error(400)
+                    return
+                directory = assets.parent / "lifecycle-evidence"
+                directory.mkdir(mode=0o700, exist_ok=True)
+                with (directory / (name + ".json")).open("x") as output:
+                    json.dump(payload, output, indent=2)
+                    output.write("\n")
+                self.send_response(204)
+                self.end_headers()
+                return
+            if self.path == "/fixture/release/new":
+                if not (assets / "old-release").is_dir():
+                    self.send_error(404)
+                    return
+                replacement = assets / ".next-release"
+                replacement.symlink_to("new-release", target_is_directory=True)
+                replacement.replace(assets / "release")
+                self.send_response(204)
+                self.end_headers()
+                return
             choices = {
                 "/fixture/sub/good": "good-sub.json",
                 "/fixture/sub/failed": "failed-sub.json",
