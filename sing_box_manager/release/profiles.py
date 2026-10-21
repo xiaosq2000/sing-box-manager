@@ -8,14 +8,11 @@ from sing_box_manager.desktop_config import (
 )
 from sing_box_manager.release.platforms import (
     MIXED_PROFILE,
-    MOBILE_TUN_PROFILE,
     ClientProfile,
 )
 from sing_box_manager.release.renderers import (
-    AI_RULE_SET_URLS,
     _apply_api_service_settings,
     _apply_v2ray_api_settings,
-    ai_rule_sets,
     apply_desktop_route_strategy,
     apply_tls_settings,
     bundled_remote_rule_set,
@@ -35,7 +32,7 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
     """Fresh, secret-free structure shared by the inventory render helpers."""
     if protocol not in SUPPORTED_PROTOCOLS:
         raise ValueError(f"Unsupported protocol: {protocol}")
-    if profile not in (MIXED_PROFILE, MOBILE_TUN_PROFILE):
+    if profile != MIXED_PROFILE:
         raise ValueError(f"Unsupported profile: {profile.name}")
     outbound: dict = {
         "type": protocol,
@@ -60,120 +57,33 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
         "outbounds": [outbound, {"type": "direct", "tag": "direct"}],
         "http_clients": [{"tag": "rule-downloads", "detour": "proxy"}],
     }
-    if profile == MIXED_PROFILE:
-        outbound["domain_resolver"] = {"server": "google"}
-        common.update(
-            {
-                "inbounds": [
-                    {
-                        "type": "mixed",
-                        "listen": "127.0.0.1",
-                        "listen_port": 1080,
-                        "set_system_proxy": False,
-                    }
-                ],
-                "route": {
-                    "rule_set": [
-                        bundled_remote_rule_set(
-                            {
-                                "type": "remote",
-                                "format": "binary",
-                                "tag": tag,
-                                "url": url,
-                            }
-                        )
-                        for tag, url in RULE_SET_URLS.items()
-                    ]
-                },
-            }
-        )
-        return apply_desktop_route_strategy(common, "china", os_name="linux")
+    outbound["domain_resolver"] = {"server": "google"}
     common.update(
         {
-            "dns": {
-                "rules": [
-                    {"rule_set": list(AI_RULE_SET_URLS), "server": "google"},
-                    {"query_type": ["A", "AAAA"], "server": "remote"},
-                ],
-                "servers": [
-                    {
-                        "type": "tls",
-                        "tag": "google",
-                        "server": "8.8.8.8",
-                        "detour": "proxy",
-                    },
-                    {"type": "udp", "tag": "local", "server": "223.5.5.5"},
-                    {
-                        "type": "fakeip",
-                        "tag": "remote",
-                        "inet4_range": "198.18.0.0/15",
-                        "inet6_range": "fc00::/18",
-                    },
-                ],
-            },
             "inbounds": [
                 {
-                    "type": "tun",
-                    "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
-                    "auto_route": True,
-                    "strict_route": True,
+                    "type": "mixed",
+                    "listen": "127.0.0.1",
+                    "listen_port": 1080,
+                    "set_system_proxy": False,
                 }
             ],
             "route": {
-                "default_domain_resolver": {"server": "local"},
-                "default_http_client": "rule-downloads",
-                "final": "proxy",
-                "rule_set": ai_rule_sets(bundled=False)
-                + [
-                    {
-                        "type": "remote",
-                        "format": "binary",
-                        "tag": tag,
-                        "url": url,
-                        "http_client": "rule-downloads",
-                    }
-                    for tag, url in (
-                        (
-                            "geoip-cn",
-                            "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
-                        ),
-                        (
-                            "geosite-geolocation-cn",
-                            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-cn.srs",
-                        ),
+                "rule_set": [
+                    bundled_remote_rule_set(
+                        {
+                            "type": "remote",
+                            "format": "binary",
+                            "tag": tag,
+                            "url": url,
+                        }
                     )
-                ],
-                "rules": [
-                    {"action": "sniff"},
-                    {
-                        "type": "logical",
-                        "mode": "or",
-                        "rules": [{"protocol": "dns"}, {"port": 53}],
-                        "action": "hijack-dns",
-                    },
-                    {"ip_is_private": True, "outbound": "direct"},
-                    {
-                        "type": "logical",
-                        "mode": "or",
-                        "rules": [
-                            {"port": 853},
-                            {"network": "udp", "port": 443},
-                            {"protocol": "stun"},
-                        ],
-                        "action": "reject",
-                    },
-                    {"rule_set": list(AI_RULE_SET_URLS), "outbound": "proxy"},
-                    {"clash_mode": "Direct", "outbound": "direct"},
-                    {"clash_mode": "Global", "outbound": "proxy"},
-                    {
-                        "outbound": "direct",
-                        "rule_set": ["geoip-cn", "geosite-geolocation-cn"],
-                    },
-                ],
+                    for tag, url in RULE_SET_URLS.items()
+                ]
             },
         }
     )
-    return common
+    return apply_desktop_route_strategy(common, "china", os_name="linux")
 
 
 def build_client_profile(

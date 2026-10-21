@@ -722,7 +722,8 @@ assert client.get("/admin/", HTTP_X_FORWARDED_FOR="203.0.113.5").status_code == 
 mobile_resp = public_client.get(f"/sub/{alice_token}")
 assert mobile_resp.status_code == 200
 assert mobile_resp.json()["inbounds"][0]["type"] == "tun"
-assert public_client.get(f"/sub/{alice_token}?protocol=hysteria2").json()["outbounds"][0]["type"] == "hysteria2"
+assert mobile_resp.json()["outbounds"][0]["type"] == "selector"
+assert public_client.get(f"/sub/{alice_token}?protocol=hysteria2").status_code == 400
 assert public_client.get(f"/sub/{alice_token}?protocol=unknown").status_code == 400
 page_resp = public_client.get(f"/sub/{alice_token}/", HTTP_X_FORWARDED_PROTO="https")
 assert page_resp.status_code == 200

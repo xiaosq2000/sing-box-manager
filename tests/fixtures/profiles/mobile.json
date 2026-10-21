@@ -1,0 +1,356 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "google",
+        "server": "8.8.8.8",
+        "detour": "proxy"
+      },
+      {
+        "type": "udp",
+        "tag": "aliyun",
+        "server": "223.5.5.5"
+      },
+      {
+        "tag": "system",
+        "type": "local"
+      }
+    ],
+    "rules": [
+      {
+        "clash_mode": "direct",
+        "server": "system"
+      },
+      {
+        "clash_mode": "ai-only",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "system"
+      },
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "aliyun"
+      },
+      {
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
+      },
+      {
+        "clash_mode": "china-direct",
+        "server": "google"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "server": "aliyun"
+      },
+      {
+        "clash_mode": "ai-only",
+        "server": "system"
+      },
+      {
+        "clash_mode": "global",
+        "server": "google"
+      }
+    ],
+    "final": "google",
+    "optimistic": false
+  },
+  "ntp": {
+    "enabled": true,
+    "server": "time.apple.com",
+    "server_port": 123,
+    "interval": "30m",
+    "detour": "direct"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+      "auto_route": true,
+      "strict_route": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": ["trojan", "hysteria2", "naive"],
+      "default": "trojan",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "trojan",
+      "tag": "trojan",
+      "server": "8.8.8.8",
+      "server_port": 8443,
+      "password": "change-me",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hysteria2",
+      "server": "8.8.8.8",
+      "server_port": 58080,
+      "password": "change-me",
+      "obfs": {
+        "type": "salamander",
+        "password": "change-me-obfs"
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "naive",
+      "tag": "naive",
+      "server": "8.8.8.8",
+      "server_port": 9443,
+      "username": "alice",
+      "password": "change-me",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct",
+      "domain_resolver": {
+        "server": "aliyun"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct-system",
+      "domain_resolver": {
+        "server": "system"
+      }
+    }
+  ],
+  "route": {
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "AdGuard-DNS-Filter",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/filter.txt.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      },
+      {
+        "type": "remote",
+        "tag": "AI-Anthropic",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      },
+      {
+        "type": "remote",
+        "tag": "AI-Geosite",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      },
+      {
+        "type": "remote",
+        "tag": "GFWList",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/gfwlist.txt.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      },
+      {
+        "type": "remote",
+        "tag": "GeoSite-CN",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/accelerated-domains.china.conf.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      },
+      {
+        "type": "remote",
+        "tag": "GeoSite-Apple-CN",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/apple.china.conf.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      },
+      {
+        "type": "remote",
+        "tag": "GeoIP-CN",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "protocol": "dns"
+          },
+          {
+            "port": 53
+          }
+        ],
+        "action": "hijack-dns"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "port": 853
+          },
+          {
+            "network": "udp",
+            "port": 443
+          },
+          {
+            "protocol": "stun"
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "clash_mode": "ai-only",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "direct",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "direct",
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "direct",
+        "rule_set": ["AdGuard-DNS-Filter"],
+        "action": "reject"
+      },
+      {
+        "clash_mode": "direct",
+        "outbound": "direct-system"
+      },
+      {
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "outbound": "proxy"
+      },
+      {
+        "rule_set": ["AdGuard-DNS-Filter"],
+        "action": "reject"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GFWList"],
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoIP-CN"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "china-direct",
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "rule_set": ["GFWList"],
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "ai-only",
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "global",
+        "outbound": "proxy"
+      }
+    ],
+    "final": "proxy",
+    "default_http_client": "rule-downloads"
+  },
+  "http_clients": [
+    {
+      "tag": "rule-downloads",
+      "detour": "proxy"
+    }
+  ],
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "store_dns": true
+    },
+    "clash_api": {
+      "default_mode": "china-direct"
+    }
+  }
+}

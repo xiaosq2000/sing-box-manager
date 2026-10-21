@@ -1,6 +1,6 @@
 # Control-plane guide
 
-Checked on 2026-10-19.
+Checked on 2026-10-21.
 
 The Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
 accounts, proxy user accounts (`Account`), per-protocol credentials (`Credential`),
@@ -182,7 +182,9 @@ it can contain credentials. Database edits remain saved even when node sync fail
 ## User pages and private traffic views
 
 Users open `/sub/<token>/` to read their subscription link, installation commands,
-current usage, and [mobile import buttons, local QR codes, and JSON downloads](README_MOBILE.md).
+current usage, and [a unified mobile import button, local QR code and JSON download](README_MOBILE.md).
+The mobile profile includes all enabled account protocols behind one selector.
+Requests with `protocol=` return `400`. Users must reimport the unified profile.
 They cannot change credentials or reset links there.
 The link grants access. A user who loses it must request it from an operator.
 `traffic_stats.show_user_domains` controls personal domain visibility in both the page and `/api/usage`.

@@ -1,19 +1,20 @@
-"""Build one desktop client config per user, covering every route and protocol.
+"""Build shared desktop and mobile configs with every route and protocol.
 
 Each route is a Clash mode, and each protocol is an outbound behind the `proxy`
 selector, so sbc switches both through sing-box's local API without a restart.
 sing-box keys its DNS cache by server and clears it when the mode changes, so
 the routes share one cache file.
 
-The config carries the modes but no API address. sbc adds the address, a
-secret and the listen port before it starts sing-box, so a config that runs
-unchanged never opens an unauthenticated API.
+Generated configs have no HTTP controller address. sbc adds a loopback address
+and secret before starting a desktop core. Mobile apps use native libbox
+controls and manage their own tunnel and storage.
 """
 
 from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass
+from functools import partial
 
 from sing_box_manager.release.platforms import (
     ROUTE_ALIASES,
@@ -96,6 +97,24 @@ def build_desktop_config(
     """Return the sing-box config for one user's desktop client on `os_name`."""
     if os_name not in SUPPORTED_CLIENT_OS:
         raise ValueError(f"Unsupported client OS: {os_name}")
+    return _build_client_config(
+        deployment,
+        protocols,
+        os_name=os_name,
+        default_protocol=default_protocol,
+        default_route=default_route,
+    )
+
+
+def _build_client_config(
+    deployment: DeploymentConfig,
+    protocols: UserProtocols,
+    *,
+    os_name: str,
+    default_protocol: str,
+    default_route: str,
+) -> dict:
+    """Build the shared selector, routing rules and DNS policy."""
     default_route = canonical_route(default_route)
     if default_route not in ROUTE_STRATEGIES:
         raise ValueError(f"Unsupported route strategy: {default_route}")
@@ -111,7 +130,9 @@ def build_desktop_config(
     exceptions = _direct_exception_matchers(deployment)
     return {
         "log": {"disabled": False, "level": "info", "timestamp": True},
-        "dns": _dns(exceptions, os_name),
+        "dns": _dns(
+            exceptions, system_dns_server(os_name), include_aliases=os_name != "mobile"
+        ),
         # Direct, because the clock has to be right before a TLS proxy connects.
         "ntp": {
             "enabled": True,
@@ -151,13 +172,49 @@ def build_desktop_config(
                 "domain_resolver": {"server": "system"},
             },
         ],
-        "route": _route(exceptions),
+        "route": _route(exceptions, include_aliases=os_name != "mobile"),
         "http_clients": [{"tag": "rule-downloads", "detour": PROXY_TAG}],
         "experimental": {
             "cache_file": {"enabled": True, "store_dns": True, "path": CACHE_FILE},
             "clash_api": {"default_mode": default_route},
         },
     }
+
+
+def build_mobile_config(
+    deployment: DeploymentConfig,
+    protocols: UserProtocols,
+    *,
+    default_protocol: str,
+    default_route: str = "china-direct",
+) -> dict:
+    """Build one multi-protocol TUN profile for the official mobile apps."""
+    config = _build_client_config(
+        deployment,
+        protocols,
+        os_name="mobile",
+        default_protocol=default_protocol,
+        default_route=default_route,
+    )
+    config["inbounds"] = [
+        {
+            "type": "tun",
+            "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+            "auto_route": True,
+            "strict_route": True,
+        }
+    ]
+    # The apps own storage. Mobile profiles receive no desktop rule snapshots.
+    config["experimental"]["cache_file"].pop("path")
+    for rule_set in config["route"]["rule_set"]:
+        rule_set.pop("initial_path", None)
+    # Captured DNS can target a private address. Intercept it before LAN bypass.
+    rules = config["route"]["rules"]
+    hijack = next(
+        i for i, rule in enumerate(rules) if rule.get("action") == "hijack-dns"
+    )
+    rules.insert(1, rules.pop(hijack))
+    return config
 
 
 def build_linux_tun_config(
@@ -324,20 +381,27 @@ def _direct_exception_matchers(deployment: DeploymentConfig) -> dict:
     return matchers
 
 
-def _in_mode(mode: str, rules: list[dict]) -> list[dict]:
-    aliases = [alias for alias, canonical in ROUTE_ALIASES.items() if canonical == mode]
+def _in_mode(
+    mode: str, rules: list[dict], *, include_aliases: bool = True
+) -> list[dict]:
+    aliases = [
+        alias
+        for alias, canonical in ROUTE_ALIASES.items()
+        if include_aliases and canonical == mode
+    ]
     # sing-box requires one string per clash_mode, not an array.
     return [{"clash_mode": name, **rule} for rule in rules for name in (mode, *aliases)]
 
 
-def _dns(exceptions: dict, os_name: str) -> dict:
+def _dns(exceptions: dict, system_server: dict, *, include_aliases: bool) -> dict:
+    in_mode = partial(_in_mode, include_aliases=include_aliases)
     domain_exceptions = {
         key: value for key, value in exceptions.items() if key != "ip_cidr"
     }
     rules = []
     if domain_exceptions:
         rules = [
-            *_in_mode("ai-only", [{**domain_exceptions, "server": "system"}]),
+            *in_mode("ai-only", [{**domain_exceptions, "server": "system"}]),
             {**domain_exceptions, "server": "aliyun"},
         ]
     # Each mode ends with a rule that matches every query, in place of the
@@ -345,7 +409,7 @@ def _dns(exceptions: dict, os_name: str) -> dict:
     rules = [{"clash_mode": "direct", "server": "system"}, *rules]
     rules += [
         {"rule_set": AI_TAGS, "server": "google"},
-        *_in_mode(
+        *in_mode(
             "china-direct",
             [
                 {"rule_set": [GFWLIST_TAG], "server": "google"},
@@ -353,18 +417,18 @@ def _dns(exceptions: dict, os_name: str) -> dict:
                 {"server": "google"},
             ],
         ),
-        *_in_mode(
+        *in_mode(
             "gfw-proxy",
             [{"rule_set": [GFWLIST_TAG], "server": "google"}, {"server": "aliyun"}],
         ),
-        *_in_mode("ai-only", [{"server": "system"}]),
-        *_in_mode("global", [{"server": "google"}]),
+        *in_mode("ai-only", [{"server": "system"}]),
+        *in_mode("global", [{"server": "google"}]),
     ]
     return {
         "servers": [
             {"type": "tls", "tag": "google", "server": "8.8.8.8", "detour": PROXY_TAG},
             {"type": "udp", "tag": "aliyun", "server": "223.5.5.5"},
-            system_dns_server(os_name),
+            system_server,
         ],
         "rules": rules,
         "final": "google",
@@ -372,7 +436,8 @@ def _dns(exceptions: dict, os_name: str) -> dict:
     }
 
 
-def _route(exceptions: dict) -> dict:
+def _route(exceptions: dict, *, include_aliases: bool) -> dict:
+    in_mode = partial(_in_mode, include_aliases=include_aliases)
     rules = [
         {"action": "sniff"},
         {"ip_is_private": True, "outbound": DIRECT_TAG},
@@ -392,7 +457,7 @@ def _route(exceptions: dict) -> dict:
             ],
             "action": "reject",
         },
-        *_in_mode("ai-only", [{**exceptions, "outbound": DIRECT_SYSTEM_TAG}]),
+        *in_mode("ai-only", [{**exceptions, "outbound": DIRECT_SYSTEM_TAG}]),
         {"clash_mode": "direct", **exceptions, "outbound": DIRECT_SYSTEM_TAG},
         {**exceptions, "outbound": DIRECT_TAG},
         # Ahead of the AdGuard reject: the filter blocks feature-flag and
@@ -406,7 +471,7 @@ def _route(exceptions: dict) -> dict:
         {"clash_mode": "direct", "outbound": DIRECT_SYSTEM_TAG},
         {"rule_set": AI_TAGS, "outbound": PROXY_TAG},
         {"rule_set": [ADGUARD_RULE_SET_TAG], "action": "reject"},
-        *_in_mode(
+        *in_mode(
             "china-direct",
             [
                 {"rule_set": [GFWLIST_TAG], "outbound": PROXY_TAG},
@@ -415,15 +480,15 @@ def _route(exceptions: dict) -> dict:
                 {"outbound": PROXY_TAG},
             ],
         ),
-        *_in_mode(
+        *in_mode(
             "gfw-proxy",
             [
                 {"rule_set": [GFWLIST_TAG], "outbound": PROXY_TAG},
                 {"outbound": DIRECT_TAG},
             ],
         ),
-        *_in_mode("ai-only", [{"outbound": DIRECT_SYSTEM_TAG}]),
-        *_in_mode("global", [{"outbound": PROXY_TAG}]),
+        *in_mode("ai-only", [{"outbound": DIRECT_SYSTEM_TAG}]),
+        *in_mode("global", [{"outbound": PROXY_TAG}]),
     ]
     return {
         "rule_set": [

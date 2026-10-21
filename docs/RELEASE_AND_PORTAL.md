@@ -1,6 +1,6 @@
 # Release Build and Portal Usage
 
-Checked on 2026-10-19.
+Checked on 2026-10-21.
 
 This guide covers the local operator workflow for:
 
@@ -160,35 +160,38 @@ platforms, and `sbm gc` treats them like the server binary.
 Existing releases remain readable. The shared store and `sbm gc` retain support
 for old manifest references until those releases are deliberately removed.
 
-The subscription page offers a current mobile profile for each enabled protocol. The config `sbc` fetches offers `direct`, `ai-only`,
-`gfw-proxy`, `china-direct` and `global` as modes. `ai`, `gfw` and `china` remain
-alias modes so stored selections survive refreshes. The default is `china-direct`.
+The subscription page offers one unified mobile profile. It contains all enabled
+account protocols behind the `proxy` selector. Mobile and `sbc` offer `direct`,
+`ai-only`, `gfw-proxy`, `china-direct` and `global` as modes. Desktop retains
+`ai`, `gfw` and `china` aliases. Mobile shows only canonical names.
+The default is `china-direct`.
 See [route strategies](README_SBC.md#route-strategies) for their meanings.
-Every desktop route uses two community AI rule sets:
+Every desktop and mobile route uses two community AI rule sets:
 `AI-Anthropic` for Anthropic and `AI-Geosite` for other AI vendors, including OpenAI.
 Both ship as validated snapshots, so the first start does not require a successful
 rule download. Both refresh daily through the proxy.
 
-Routing and DNS use the same AI sets. In desktop proxy strategies, AI matches
+Routing and DNS use the same AI sets. In desktop and mobile proxy strategies, AI matches
 precede AdGuard rejection and China-direct rules. `direct` sends AI traffic and
 DNS directly through the system resolver, without a proxy override. Listed AI
 hosts still precede AdGuard rejection. This order permits community-listed AI
-hosts that AdGuard also blocks. Android uses the same AI sets before mode overrides
-and China-direct routing, with proxied Google DNS before FakeIP. Android downloads
-the sets into GUI-managed storage instead of receiving desktop snapshots.
+hosts that AdGuard also blocks. Mobile uses the same policy and rule sources,
+with real DNS answers instead of FakeIP. Mobile downloads rule files into
+GUI-managed storage instead of receiving desktop snapshots. First-start rule
+downloads need a working selected proxy protocol.
 
 `china-direct` proxies unknown destinations and sends recognized China destinations
 directly. `gfw-proxy` proxies GFWList and AI destinations and sends other destinations
 directly. `ai-only` proxies listed AI destinations and sends the rest directly.
 `global` proxies traffic except LAN and configured direct exceptions.
-`direct` retains traffic restrictions but sends all allowed destinations directly. The Android mobile profile retains its FakeIP and China-direct rules.
+`direct` retains traffic restrictions but sends all allowed destinations directly. Mobile uses platform local DNS where desktop uses system DNS.
 
-Desktop profiles retain Dreista's narrow China-domain, Apple-China, GFWList,
+Desktop and mobile profiles use Dreista's narrow China-domain, Apple-China, GFWList,
 and AdGuard sets. MetaCubeX's `sing/geo/geoip/cn.srs` supplies one combined
 China IPv4/IPv6 set. Domain rules precede IP matching without resolving unknown
 hostnames merely to test GeoIP. GFWList and AI matches precede China-direct rules.
-These five binaries plus the two AI sets form the seven bundled remote snapshots.
-All remote desktop sets refresh daily through the proxy.
+These five binaries plus the two AI sets form seven shared rule sources.
+Desktop bundles snapshots. All remote sets refresh daily through the proxy.
 
 ### Community AI rules
 
@@ -220,8 +223,8 @@ and explicit `deployment.direct_domain_suffixes`. Suffixes include the apex and
 subdomains, without inferring parent domains from the host. IP-valued hosts get
 an exact IP exception. Exceptions precede AI, AdGuard, Clash overrides and
 geographic rules; DNS interception and transport restrictions remain in effect.
-Matching DNS rules precede mobile FakeIP and use direct Aliyun, or the system
-resolver for desktop `ai-only` and `direct`. Direct outbounds use the same resolver, including in `global`.
+Matching DNS rules use direct Aliyun, or platform local DNS for `ai-only` and
+`direct`. Mobile has no FakeIP server. Direct outbounds use the same resolver, including in `global`.
 Desktop configs are rendered per platform. The system resolver used by `ai-only`
 and `direct` is the one setting that differs between them: Linux names systemd-resolved's stub
 address, while macOS and Windows use sing-box's `local` transport. That
@@ -534,8 +537,8 @@ Users absent from that source do not enter the per-user query.
 ## Download a Release
 
 Open `/sub/<token>/` with the link provided by an operator.
-Use `sbc` on Linux, macOS and Windows. Use a remote profile or download the current
-protocol JSON on Android and iOS. Public password login, `/files`, and `/download`
+Use `sbc` on Linux, macOS and Windows. Import the unified remote profile on Android
+and iOS, or download its static JSON. Public password login, `/files`, and `/download`
 are retired. Existing installed clients retain their proxy credentials.
 
 ## One-Liner Install
@@ -636,6 +639,13 @@ client older than the pinned minor release, 1.14.0 for
 1.14.3, gets `409` with `sing_box_minimum`. An unknown token, or a user without a
 protocol, gets `404`. Without `format`, the endpoint serves a mobile profile.
 Unsupported formats or invalid `sbc` platform/version parameters get `400`.
+
+`GET /sub/<token>?format=mobile` returns one TUN config with all enabled protocols
+behind the `proxy` selector. The app chooses a protocol independently of the route.
+The profile has no HTTP controller listener. Mobile requests with `protocol=`,
+including an empty value, get `400`. Per-protocol configs and import entries are
+not supported. Reimport the unified profile from the subscription page.
+See [mobile profiles](README_MOBILE.md) for DNS behavior and device acceptance.
 
 `GET /sub/<token>/files/<path>` serves a file the release's client manifest lists, such
 as `manifest.json` or `sbc/linux-amd64/sbc`, to a valid link, and `404` for anything

@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from sing_box_manager.desktop_config import UserProtocols, build_mobile_config
+from sing_box_manager.release import renderers
 from sing_box_manager.settings import (
     DeploymentConfig,
     Hysteria2Inventory,
@@ -30,12 +32,10 @@ from sing_box_manager.settings import (
     NaiveInventory,
     NaiveUser,
     TlsConfig,
+    TrafficStatsSettings,
     TrojanInventory,
     TrojanUser,
 )
-from sing_box_manager.desktop_config import UserProtocols
-from sing_box_manager.release import renderers
-from sing_box_manager.settings import TrafficStatsSettings
 from tests.fetch_sing_box import TEST_BINARY, pinned_version
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,22 +111,18 @@ def deployment(tmp_path_factory: pytest.TempPathFactory) -> DeploymentConfig:
 
 
 def render_client(protocol: str, profile: str, deployment: DeploymentConfig) -> dict:
-    from sing_box_manager.release.platforms import MIXED_PROFILE, MOBILE_TUN_PROFILE
+    from sing_box_manager.release.platforms import MIXED_PROFILE
     from sing_box_manager.release.profiles import build_client_profile
 
-    return build_client_profile(
-        deployment,
-        UserProtocols(
-            trojan=TrojanUser(username="alice", password="fixture"),
-            hysteria2=Hysteria2User(username="alice", password="fixture"),
-            naive=NaiveUser(username="alice", password="fixture"),
-            hysteria2_settings=Hysteria2Inventory(
-                obfs_password="fixture-obfs", users=[]
-            ),
-        ),
-        protocol,
-        MOBILE_TUN_PROFILE if profile else MIXED_PROFILE,
+    protocols = UserProtocols(
+        trojan=TrojanUser(username="alice", password="fixture"),
+        hysteria2=Hysteria2User(username="alice", password="fixture"),
+        naive=NaiveUser(username="alice", password="fixture"),
+        hysteria2_settings=Hysteria2Inventory(obfs_password="fixture-obfs", users=[]),
     )
+    if profile:
+        return build_mobile_config(deployment, protocols, default_protocol=protocol)
+    return build_client_profile(deployment, protocols, protocol, MIXED_PROFILE)
 
 
 @pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
@@ -488,7 +484,12 @@ def use_routing_fixtures(
 
 
 def assert_desktop_routing(
-    port: int, strategy: str, fixtures: RoutingFixtures, *, proxy_available: bool
+    port: int,
+    strategy: str,
+    fixtures: RoutingFixtures,
+    *,
+    proxy_available: bool,
+    expect_updates: bool = True,
 ) -> None:
     """Check what one route sends direct, through the proxy, and to which DNS."""
     proxy, direct, dns, google_dns = (
@@ -569,47 +570,11 @@ def assert_desktop_routing(
         )
         assert "direct.fixture.invalid" not in proxy.targets
         assert direct.connections > 0
-    deadline = time.monotonic() + 2
-    while not fixtures.updates.requests and time.monotonic() < deadline:
-        time.sleep(0.02)
-    assert fixtures.updates.requests > 0
-
-
-@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-@pytest.mark.parametrize("mode", ["Direct", "Global", "Rule"])
-def test_mobile_anthropic_routing_and_dns_override_china_and_modes(
-    tmp_path: Path,
-    binary: Path,
-    deployment: DeploymentConfig,
-    protocol: str,
-    mode: str,
-) -> None:
-    config = render_client(protocol, "-tun", deployment)
-    # Test the mobile rules with a mixed inlet, not a real TUN interface.
-    config["inbounds"] = [{"type": "mixed"}]
-    config["experimental"] = {"clash_api": {"default_mode": mode}}
-    with routing_fixtures() as fixtures:
-        config["outbounds"][0] = {
-            "type": "socks",
-            "tag": "proxy",
-            "server": "127.0.0.1",
-            "server_port": fixtures.proxy.server_address[1],
-        }
-        # All AI DNS queries resolve to a China-IP fixture answer. The domain
-        # priority must still proxy traffic rather than use the GeoIP bypass.
-        fixtures.google_dns.answer = "203.0.113.10"
-        use_routing_fixtures(config, tmp_path, binary, fixtures)
-        port = config["inbounds"][0]["listen_port"]
-        with _running(binary, tmp_path, config):
-            for host in ANTHROPIC_FIXTURE_HOSTS:
-                assert _query_dns(fixtures.dns_port, host) == "203.0.113.10"
-                assert b"proxied" in _connect(
-                    port, host, fixtures.direct.server_address[1]
-                )
-                assert host in fixtures.proxy.targets
-            assert fixtures.google_dns.queries == len(ANTHROPIC_FIXTURE_HOSTS)
-            assert fixtures.dns.queries == 0
-            assert fixtures.direct.connections == 0
+    if expect_updates:
+        deadline = time.monotonic() + 2
+        while not fixtures.updates.requests and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert fixtures.updates.requests > 0
 
 
 @pytest.mark.parametrize("proxy_available", [True, False])
@@ -785,71 +750,3 @@ def test_single_server_config_accepts_v114(
             if naive_roster == "enabled"
             else ["trojan:alice"]
         )
-
-
-@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
-@pytest.mark.parametrize("profile", ["-tun"])
-def test_tun_exception_dns_and_access_without_proxy(
-    tmp_path: Path,
-    binary: Path,
-    deployment: DeploymentConfig,
-    protocol: str,
-    profile: str,
-) -> None:
-    deployment = deployment.model_copy(
-        update={"direct_domain_suffixes": ["portal.fixture.invalid"]}
-    )
-    config = render_client(protocol, profile, deployment)
-    # Exercise the TUN profile's routing and DNS through a loopback mixed inlet;
-    # actual interface capture remains a disposable-VM integration check.
-    dns_port = _port()
-    config["inbounds"] = [
-        {"type": "mixed", "listen": "127.0.0.1", "listen_port": _port()},
-        {
-            "type": "direct",
-            "tag": "dns-fixture",
-            "listen": "127.0.0.1",
-            "listen_port": dns_port,
-            "network": "udp",
-        },
-    ]
-    config["route"]["rules"].insert(
-        0, {"inbound": "dns-fixture", "action": "hijack-dns"}
-    )
-    config["route"].pop("auto_detect_interface", None)
-    config.pop("experimental", None)
-    config["ntp"]["enabled"] = False
-    config["outbounds"][0] = {
-        "type": "socks",
-        "tag": "proxy",
-        "server": "127.0.0.1",
-        "server_port": _port(),
-    }
-    for rule in config["route"].get("rule_set", []):
-        tag = rule["tag"]
-        rule.clear()
-        rule.update(
-            type="inline", tag=tag, rules=[{"domain": ["unused.fixture.invalid"]}]
-        )
-    with _server(_DNSHandler, udp=True) as dns, _server(_DirectHandler) as direct:
-        for server in config["dns"]["servers"]:
-            if server["tag"] != "aliyun":
-                continue
-            server.update(server="127.0.0.1", server_port=dns.server_address[1])
-        with _running(binary, tmp_path, config):
-            for host in (
-                "vpn.example.com",
-                "portal.fixture.invalid",
-                "a.b.portal.fixture.invalid",
-            ):
-                assert _query_dns(dns_port, host) == "127.0.0.1"
-                assert b"direct" in _connect(
-                    config["inbounds"][0]["listen_port"], host, direct.server_address[1]
-                )
-            if profile == "-tun":
-                for host in (
-                    "evilportal.fixture.invalid",
-                    "portal.fixture.invalid.evil",
-                    "sub.vpn.example.com",
-                ):
-                    assert _query_dns(dns_port, host).startswith("198.18.")

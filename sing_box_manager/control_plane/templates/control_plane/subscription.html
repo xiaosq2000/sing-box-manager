@@ -24,25 +24,24 @@
         <pre>&amp; ([scriptblock]::Create((irm '{{ origin }}/install.ps1')))</pre>
         <p>按提示粘贴订阅链接。安装器也支持从旧版客户端迁移。</p>
         <h3>Android / iOS</h3>
-        <p>安装官方 sing-box 应用后，选择一个协议添加远程配置。同一台手机可点“在 sing-box 中打开”；另一台设备可扫描二维码。</p>
-        <p>如果浏览器不能打开应用，请在应用中添加远程配置并粘贴对应链接。iOS 可用系统相机扫码，Android 可用应用内扫码。</p>
+        <p>安装官方 sing-box 应用后，只需导入一份远程配置。连接后可在应用中分别选择协议和分流策略。同一台手机可点“在 sing-box 中打开”；另一台设备可扫描二维码。</p>
+        <p>如果浏览器不能打开应用，请在应用中添加远程配置并粘贴下方链接。iOS 可用系统相机扫码，Android 可用应用内扫码。</p>
         <p>二维码同样是凭据。请勿转发截图或上传到在线扫码网站。二维码由本服务生成，不使用第三方服务。</p>
         <div class="mobile-profiles">
-          {% for profile in mobile_profiles %}
-          <section class="mobile-profile" aria-labelledby="mobile-title-{{ profile.protocol }}">
-            <h4 id="mobile-title-{{ profile.protocol }}">{{ profile.label }}</h4>
-            <p><a class="button-link" href="{{ profile.import_uri }}" rel="noreferrer">在 sing-box 中打开</a></p>
-            <img class="mobile-qr" src="{{ profile.qr }}" alt="导入 {{ profile.label }} 远程配置的二维码" loading="lazy" />
-            <label for="mobile-url-{{ profile.protocol }}">{{ profile.label }} 远程配置链接</label>
-            <input id="mobile-url-{{ profile.protocol }}" class="subscription-url" type="url" value="{{ profile.url }}" readonly spellcheck="false" autocomplete="off" />
+          <section class="mobile-profile" aria-labelledby="mobile-title">
+            <h4 id="mobile-title">统一配置</h4>
+            <p><a class="button-link" href="{{ mobile_profile.import_uri }}" rel="noreferrer">在 sing-box 中打开</a></p>
+            <img class="mobile-qr" src="{{ mobile_profile.qr }}" alt="导入 sing-box 统一远程配置的二维码" loading="lazy" />
+            <label for="mobile-url">远程配置链接</label>
+            <input id="mobile-url" class="subscription-url" type="url" value="{{ mobile_profile.url }}" readonly spellcheck="false" autocomplete="off" />
             <p class="mobile-actions">
-              <button type="button" data-copy-target="mobile-url-{{ profile.protocol }}" data-copy-status="mobile-copy-status-{{ profile.protocol }}" hidden>复制链接</button>
-              <a href="{{ profile.url }}" download="{{ profile.protocol }}-client.json">下载 JSON</a>
+              <button type="button" data-copy-target="mobile-url" data-copy-status="mobile-copy-status" hidden>复制链接</button>
+              <a href="{{ mobile_profile.url }}" download="sing-box-mobile.json">下载 JSON</a>
             </p>
-            <p id="mobile-copy-status-{{ profile.protocol }}" role="status" aria-live="polite"></p>
+            <p id="mobile-copy-status" role="status" aria-live="polite"></p>
           </section>
-          {% endfor %}
         </div>
+        <p>旧的按协议订阅链接不再支持，请重新导入上方统一配置。默认分流策略为 china-direct；direct 会将 AI 流量及其 DNS 直接发送。</p>
         <p>下载的 JSON 是当前配置的副本，不会自动更新。优先使用远程配置；自动更新设置由移动应用管理。</p>
       </section>
       {% timezone traffic_timezone %} {% include 'control_plane/usage.html' %}

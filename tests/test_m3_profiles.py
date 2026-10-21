@@ -7,14 +7,13 @@ from pathlib import Path
 import pytest
 
 from sing_box_manager import connection_stats, traffic_stats
-from sing_box_manager.desktop_config import build_desktop_config
+from sing_box_manager.desktop_config import build_desktop_config, build_mobile_config
 from sing_box_manager.proto import sing_box_api_pb2 as pb
-from sing_box_manager.release.profiles import build_client_profile, build_server_config
 from sing_box_manager.release.platforms import (
-    MOBILE_TUN_PROFILE,
     MIXED_PROFILE,
     ROUTE_STRATEGIES,
 )
+from sing_box_manager.release.profiles import build_client_profile, build_server_config
 from sing_box_manager.release.renderers import apply_desktop_route_strategy
 from sing_box_manager.release.validation import check_config
 from sing_box_manager.settings import Settings, TrafficStatsSettings, load_settings
@@ -54,10 +53,10 @@ def golden_profiles() -> dict[str, dict]:
         )
         for os_name in ("linux", "darwin", "windows")
     }
+    configs["mobile"] = build_mobile_config(
+        inventory.deployment, protocols, default_protocol="trojan"
+    )
     for protocol in ("trojan", "hysteria2", "naive"):
-        configs[f"mobile-{protocol}"] = build_client_profile(
-            inventory.deployment, protocols, protocol, MOBILE_TUN_PROFILE
-        )
         for route in ROUTE_STRATEGIES:
             base = build_client_profile(
                 inventory.deployment, protocols, protocol, MIXED_PROFILE

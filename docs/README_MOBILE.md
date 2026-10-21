@@ -1,96 +1,90 @@
 # Official sing-box mobile apps
 
-Checked on 2026-10-19.
+Checked on 2026-10-21.
 
-The subscription page provides remote-profile import buttons, QR codes, copyable
-URLs, and JSON downloads for enabled protocols. Use the latest official stable
-iOS or Android app. Older app versions are not a compatibility target.
-Android device compatibility is not yet verified. See the
-[acceptance record](#acceptance-boundary) for tested coverage.
+Use the latest official stable iOS or Android app. Each account receives one
+remote profile with all its enabled protocols. The app selects the protocol and
+routing strategy independently. Older app versions are not a compatibility target.
+Unified-profile device acceptance is not complete on either platform.
 
 ## Import a remote profile
 
 1. Install the official [iOS](https://sing-box.sagernet.org/clients/apple/)
    or [Android](https://sing-box.sagernet.org/clients/android/) app.
 2. Open the subscription page supplied by an operator.
-3. Choose one protocol.
-4. On the same phone, select **在 sing-box 中打开**. Confirm the remote-profile
-   import in the app.
-5. From another screen, scan the protocol's QR code. Use the iOS system camera
-   or the Android app's scanner.
-6. If the browser does not open the app, copy the protocol URL. Add a remote
-   profile in the app and paste that URL.
-7. Download or refresh the profile before starting the connection. Review the
+3. Select **在 sing-box 中打开** on the phone. Confirm the remote-profile import.
+4. Alternatively, scan the page's QR code from another screen. Use the iOS
+   system camera or the Android app's scanner.
+5. If the browser cannot open the app, copy the remote-profile URL into the app.
+6. Download or refresh the profile before starting the connection. Review the
    app's automatic refresh setting.
+7. Start the profile. Select an enabled protocol from the `proxy` outbound group.
+8. Select a routing strategy. The default is `china-direct`.
 
-Steps 4–6 are alternative import methods. The browser's copy button needs clipboard
-permission. If copying fails, the page selects the URL for manual copying.
-Each copy button displays feedback beside its own URL. The URL remains visible
-when JavaScript is unavailable.
+Steps 3–5 are alternative import methods. Clipboard failure selects the URL for
+manual copying. The URL remains visible without JavaScript.
 
-**下载 JSON** saves the current configuration as a local file. This file does not
-receive subscription updates. Remote profiles are preferred.
+**下载 JSON** saves a static configuration. It does not receive subscription
+updates. Prefer the remote profile. App refresh settings are independent of the
+`sbc` scheduler on Linux, macOS and Windows.
 
-Mobile refresh settings belong to the mobile app. They are independent of the
-`sbc` scheduler on Linux, macOS, and Windows.
+## Strategies and protocols
 
-## iPhone acceptance procedure
+| Strategy       | Behavior                                                                                |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `direct`       | Direct all allowed traffic, including AI. Use platform local DNS.                       |
+| `ai-only`      | Proxy community-listed AI destinations. Direct the rest.                                |
+| `gfw-proxy`    | Proxy GFWList and AI destinations. Direct the rest.                                     |
+| `china-direct` | Direct recognized China destinations. Proxy the rest. AI and GFW matches take priority. |
+| `global`       | Proxy allowed traffic except LAN and configured direct exceptions.                      |
 
-Use an authorized private subscription. Install the latest stable app through the
-[official Apple client page](https://sing-box.sagernet.org/clients/apple/).
-Do not use a TestFlight build for stable-app acceptance.
+Mobile and PC configs share routing rules, rule sources and DNS policy. Mobile
+shows only these five names, without PC aliases. All modes retain AdGuard,
+DNS interception, configured direct exceptions and the transport restrictions.
+AI matches precede AdGuard. In `direct`, allowed AI traffic and its DNS go direct.
+This mode can expose the local network's public IP to AI services.
 
-Before testing, record the iPhone model, iOS version, app version, and embedded core
-version. App and core versions are different values. Record an unavailable value
-as unknown, not as the repository's core version.
+DNS returns real answers, not FakeIP addresses. The local resolver uses the
+mobile platform interface, not Linux's `127.0.0.53`. The app manages rule storage.
+Seven remote rule sets update daily through the selected proxy protocol. Mobile
+has no bundled snapshots, so first-start rule downloads need a working proxy.
+`direct` does not disable rule downloads through the proxy.
 
-1. Disable another VPN temporarily. Keep its profile for recovery.
-2. Open the test subscription page in Safari.
-3. Start with Trojan if the account provides it.
-4. Select **在 sing-box 中打开**. Confirm import and check the remote URL and protocol.
-5. Start the profile. Allow the iOS VPN configuration prompt.
-6. Open a known reachable HTTPS page. Check the app's connection status and traffic.
-7. Open an IP-check page through a proxy route. Confirm the expected proxy exit.
-8. Stop the profile. Refresh it in the app. Record the refresh result or timestamp.
-9. Start it again and repeat the connection check.
-10. Test a second import using the iPhone Camera and the QR on another screen.
-11. Test a third import by copying the protocol URL into a new remote profile.
-12. Repeat refresh and connection checks for each import method.
+The `proxy` selector contains only enabled account protocols. Its default uses
+`default_protocol`, or the account's first enabled protocol. Changing the selector
+needs no core restart and interrupts existing inbound connections. A route change
+clears the core DNS cache but does not promise to close existing connections.
+The core cache retains mode and protocol choices across restarts. Native app
+refresh and persistence still need device acceptance.
 
-Use separate names for the three test profiles. Only one profile needs to run at
-any time. Test other enabled protocols separately. Record protocol-specific
-failures rather than attributing every connection failure to import.
+The Clash-compatible API supports `GET /proxies/proxy` and
+`PUT /proxies/proxy` with `{"name":"hysteria2"}`. Route selection uses
+`PATCH /configs` with `{"mode":"china-direct"}`. Mobile apps can use native
+libbox controls instead. The profile opens no HTTP controller listener.
 
-For the manual method, use `/sub/<token>?format=mobile&protocol=trojan`.
-Do not use the browser page `/sub/<token>/` or a downloaded static JSON file.
-Check that the copy result appears beside the selected URL on the phone.
-An IP result proves the selected test route, not that every app uses the tunnel.
+### Replace a per-protocol profile
 
-The test page must contain the code under review. If the server does not have
-these changes, manual remote-URL tests can check the existing configuration
-endpoint, but cannot accept the new import button, QR, or clipboard behavior.
-Use an authorized private preview or request separate deployment approval.
-Do not expose credentials through a public preview or third-party tunnel.
+Per-protocol mobile profiles are not supported. Requests with `protocol=`,
+including an empty value, return `400`. Open the subscription page and import
+its unified profile. Disable the old profile. Keep it until the new profile
+passes connection checks. This change does not rotate protocol credentials.
 
-Record each result as pass, fail, or not tested. Include the tested commit, date,
-network type, protocol, import method, and a redacted error for failures.
-Do not include tokens, QR images, full profiles, or private screenshots in the
-public result. This mobile-import change uses iOS device acceptance as its merge
-gate. Android device testing is deferred because no device is available. This
-exception permits merging the change; it does not establish Android compatibility.
+The core accepts `Direct` and `Global` case-insensitively. A cached `Rule`
+selection is not offered and falls back to `china-direct`. No compatibility
+entry appears in the new mode list.
 
 ## Credentials and revocation
 
-- URLs, import links, and QR codes are credentials. Do not share screenshots or
+- URLs, import links and QR codes are credentials. Do not share screenshots or
   upload them to online QR readers.
-- The service generates PNG QR images locally with Segno. It does not contact a
-  QR provider. No third-party script or image service receives the subscription.
+- Segno generates QR images locally. No QR provider or third-party script
+  receives the subscription.
 - Each QR encodes an import URI, not a full configuration or browser-page URL.
-- The page and configuration responses retain `private, no-store` and `no-referrer`.
-- Account disablement, portal disablement, and subscription counter changes reject
+- Page and configuration responses retain `private, no-store` and `no-referrer`.
+- Account disablement, portal disablement and subscription counter changes reject
   the affected URLs. A copied QR grants no account-management permission.
-- A downloaded profile contains protocol credentials. Link rotation alone does
-  not revoke an already downloaded profile's protocol access.
+- Downloaded profiles contain protocol credentials. Link rotation alone does not
+  revoke protocol access from a downloaded profile.
 
 ## Import URI contract
 
@@ -100,52 +94,55 @@ The official libbox format stores the profile name in the fragment:
 sing-box://import-remote-profile?url=<percent-encoded-remote-url>#<percent-encoded-name>
 ```
 
-The remote URL uses the existing authenticated configuration endpoint:
+The unified remote URL has no protocol parameter:
 
 ```text
-https://vpn.example.com/sub/<token>?format=mobile&protocol=trojan
+https://vpn.example.com/sub/<token>?format=mobile
 ```
 
-The link has no trailing slash before the query. `/sub/<token>/` is the browser
-page, not the configuration. The protocol query retains the user's selection.
-The API's existing ETag and usage headers remain available.
+The name is `<username> - sing-box`. The link has no trailing slash before the
+query. `/sub/<token>/` is the browser page, not the configuration. The JSON
+response retains ETag and usage headers. Without `format`, the endpoint returns
+the same unified mobile profile.
 
 Source references:
 
-| Component                 | Checked source                                                                                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core stable release       | [sing-box v1.14.3, `remote_profile.go`](https://github.com/SagerNet/sing-box/blob/v1.14.3/experimental/libbox/remote_profile.go)                                                                                                  |
-| Apple stable URL handler  | [`0b84ea47`, `SFI/MainView.swift`](https://github.com/SagerNet/sing-box-for-apple/blob/0b84ea472fbc9e1a7e11992b1f2daadbe2d30556/SFI/MainView.swift)                                                                               |
-| Android stable QR handler | [`092aefd1`, `ProfileImportHandler.kt`](https://github.com/SagerNet/sing-box-for-android/blob/092aefd125420a9862a461093b6ce6be65b9afa6/app/src/main/java/io/nekohasekai/sfa/compose/screen/configuration/ProfileImportHandler.kt) |
+| Component          | Checked source                                                                                                                                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core               | [sing-box v1.14.3, `remote_profile.go`](https://github.com/SagerNet/sing-box/blob/v1.14.3/experimental/libbox/remote_profile.go)                                                                                                  |
+| Apple URL handler  | [`0b84ea47`, `MainView.swift`](https://github.com/SagerNet/sing-box-for-apple/blob/0b84ea472fbc9e1a7e11992b1f2daadbe2d30556/SFI/MainView.swift)                                                                                   |
+| Android QR handler | [`092aefd1`, `ProfileImportHandler.kt`](https://github.com/SagerNet/sing-box-for-android/blob/092aefd125420a9862a461093b6ce6be65b9afa6/app/src/main/java/io/nekohasekai/sfa/compose/screen/configuration/ProfileImportHandler.kt) |
 
-Application version numbers and core version numbers are separate. These source
-references do not establish which build an app store supplies to a device.
+These references establish the URI format, not device behavior. App and embedded
+core versions are separate values.
 
 ## Acceptance boundary
 
-Fixture checks decode generated PNG images with ZXing. They verify the URI,
-profile name, selected protocol, authenticated JSON response, ETag, and revocation.
-Clipboard tests cover success, denied permission, and an unavailable clipboard API.
+Fixture tests decode QR images with ZXing and exercise clipboard fallback.
+PostgreSQL tests check one import entry, enabled protocols, credentials, ETag,
+usage headers, host validation and revocation. Core tests check all five modes,
+selector paths, DNS changes, proxy failures and restart persistence with local
+stand-ins. They use a mixed inlet instead of native TUN capture.
 
-**iOS functional acceptance passed by user report. Android device acceptance is
-deferred and does not block this change.** Source inspection and QR decoding do
-not prove device behavior. Keep Android results unverified until a device test.
+| Platform | Unified import | Five modes | Protocol switching | Refresh and restart |
+| -------- | -------------- | ---------- | ------------------ | ------------------- |
+| iOS      | Not tested     | Not tested | Not tested         | Not tested          |
+| Android  | Not tested     | Not tested | Not tested         | Not tested          |
 
-| Platform | App version | Embedded core | Import button | QR scan    | Manual URL | Refresh and connection |
-| -------- | ----------- | ------------- | ------------- | ---------- | ---------- | ---------------------- |
-| iOS      | 1.14.3      | Unknown       | Pass          | Pass       | Pass       | Pass                   |
-| Android  | Not tested  | Not tested    | Not tested    | Not tested | Not tested | Not tested             |
+For device acceptance, record the device, OS, app version, embedded core version,
+network, tested commit and date. Mark unavailable values as unknown.
 
-The user tested portal source `8a39dd5` on 2026-10-19. Trojan, Hysteria2, and Naive
-each passed button import, Camera QR import, profile refresh, and connection.
-Manual URL import and nearby clipboard feedback also passed. Their per-protocol
-coverage was not recorded.
+1. Use an authorized private test subscription containing the code under review.
+2. Check button import, QR import and manual URL import separately.
+3. Check connectivity with each enabled protocol and all five strategies.
+4. Check actual TUN domain routing with real DNS answers, including AI and GFW
+   priority over China classification. Check IPv4 and IPv6 where available.
+5. Check that `direct` sends AI traffic and DNS directly without needing the proxy
+   for application traffic after rule files are available.
+6. Check protocol switching, DNS changes after mode switching, refresh and restart.
+7. Check that disabled protocols disappear after refresh and cannot remain selected.
 
-The iPhone model, iOS version, embedded core version, and network type were not
-supplied. The app version does not establish the embedded core version. Android
-import buttons, QR codes, and manual URL fallback remain available but unverified
-on a physical Android device.
-
-Use a private test account or authorized subscription. Keep its links, QR images,
-configuration, and screenshots outside public Git. Do not deploy or publish a
-release merely to complete these checks without authorization.
+An exit IP proves only the tested route. Do not infer whole-device capture from it.
+Keep subscriptions, QR images, full configs and private screenshots outside public
+Git. Use a private preview or request deployment authorization. These checks do
+not authorize a release or deploy.
