@@ -128,6 +128,8 @@ control-plane = [
   "@control-plane",
   "internal/tun/",
   "internal/cli/tun.go",
+  "internal/probe/",
+  "internal/cli/checks.go",
   "sing_box_manager/models.py",
   "sing_box_manager/settings.py",
   "config/inventory/",

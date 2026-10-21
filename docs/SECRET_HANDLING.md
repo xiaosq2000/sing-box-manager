@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -137,6 +137,13 @@ Publication retains superseded generations. Do not upload or remove them as
 routine log cleanup. The transaction journal under `/etc/sbc/tun-control` has no
 API secret and is not writable by the engine. The TUN DNS cache lives in
 `/var/lib/sbc-tun` and is writable only by the `sbc-tun` service user.
+
+IP diagnostics send each observed exit IP to ipwho.is over HTTPS for location and
+ASN estimates. Probe and detail requests follow the active route, which can be
+direct. The probe sources can therefore see the local network's public IP. The
+database also receives the explicit observed IP in the lookup path. Diagnostics
+use no account credentials or persistent result cache. Keep real diagnostic output
+out of committed fixtures.
 
 AI diagnostics use no browser cookies, API keys, or account credentials.
 `sbc ip --ai --allow-direct-ai` permits requests through the active route and can

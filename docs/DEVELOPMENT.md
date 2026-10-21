@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -157,7 +157,14 @@ path and the uninstall restore. The directory fixture covers macOS path aliases
 on Linux too.
 
 Route alias fixtures cover old and new installed configs. Provider checks use
-loopback stand-ins only, never live provider requests. Completion fixtures read only a scratch config and use no running proxy.
+loopback stand-ins only, never live provider requests. IP fixtures cover both source
+rows, IPv4-only defaults, explicit dual-stack, address-family validation, duplicate
+IP lookup suppression, mismatched database responses, unknown fields, bounded
+responses, terminal-control removal, HTTP denials, redirects, rate limits, timeouts,
+and no direct retry. CLI fixtures check nonfatal detail failures, partial IPv6
+results, proxy authentication, unchanged route and protocol, Chinese output, and
+combination with the existing AI checks. No IP test needs native IPv6 connectivity.
+Completion fixtures read only a scratch config and use no running proxy.
 Native completion tests build a temporary `sbc` and use isolated homes and profiles.
 Bash tests cover bare-shell fallback, split equals signs, cursor position, and
 interactive-only activation. The macOS job also tests `/bin/bash` for Bash 3.2.

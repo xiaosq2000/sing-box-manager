@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"text/tabwriter"
 	"time"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/api"
@@ -18,6 +19,7 @@ import (
 type ipOptions struct {
 	ai            bool
 	allowDirectAI bool
+	dualStack     bool
 }
 
 // runIP checks general exit IPs through the active route. AI checks are opt-in
@@ -35,21 +37,13 @@ func runIP(env Env, options ipOptions) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	web := probe.Client(local.ListenPort, local.Username, local.Password, 10*time.Second)
-	checks := []struct {
+	web := probe.IPClient(local.ListenPort, local.Username, local.Password, 5*time.Second)
+	var checks []struct {
 		line string
 		ask  func() (string, error)
-	}{
-		{i18n.T("abroad:   %s\n"), func() (string, error) {
-			place, err := probe.IPInfo(web, env.Sites.Abroad)
-			return place.String(), err
-		}},
-		{i18n.T("china:    %s\n"), func() (string, error) {
-			place, err := probe.CIP(web, env.Sites.China)
-			return place.String(), err
-		}},
 	}
 	fmt.Fprintf(env.Stdout, i18n.T("route:    %s\n"), route)
+	fmt.Fprintln(env.Stdout, i18n.T("IP checks follow the active route. Each source can see a different exit."))
 	if options.ai {
 		port := local.ListenPort
 		skipped := ""
@@ -89,17 +83,65 @@ func runIP(env Env, options ipOptions) int {
 	answers := make([]string, len(checks))
 	errs := make([]error, len(checks))
 	var wait sync.WaitGroup
+	var exits []probe.IPResult
+	wait.Go(func() { exits = probe.CheckIPs(web, env.Sites, options.dualStack) })
 	for index, check := range checks {
 		wait.Go(func() { answers[index], errs[index] = check.ask() })
 	}
 	wait.Wait()
-	code := 0
+	code := showIPs(env, exits)
 	for index, check := range checks {
 		answer := answers[index]
 		if errs[index] != nil {
 			answer, code = fmt.Sprintf(i18n.T("failed: %v"), errs[index]), 1
 		}
 		fmt.Fprintf(env.Stdout, check.line, answer)
+	}
+	return code
+}
+
+// showIPs retains source rows even when a probe or its database lookup fails.
+// Database failures do not change the exit status of successful IP probes.
+func showIPs(env Env, results []probe.IPResult) int {
+	fmt.Fprintf(env.Stdout, i18n.T("IP details: %s (database estimates)\n"), probe.IPDetailsSource)
+	table := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprint(table, i18n.T("Source\tFamily\tExit IP\tLocation\tASN / organization\n"))
+	unknown := i18n.T("unknown")
+	known := func(value string) string {
+		if value == "" {
+			return unknown
+		}
+		return value
+	}
+	for _, result := range results {
+		address := result.IP
+		if result.Err != nil {
+			address = i18n.T("failed")
+		}
+		asn := unknown
+		if result.Details.ASN != 0 {
+			asn = fmt.Sprintf("AS%d", result.Details.ASN)
+		}
+		fmt.Fprintf(table, "%s\tIPv%d\t%s\t%s\t%s / %s\n", result.Source, result.Family, address,
+			known(result.Details.Location()), asn, known(result.Details.Organization))
+	}
+	table.Flush()
+	code := 0
+	ipv6Failed := false
+	reported := map[string]bool{}
+	for _, result := range results {
+		if result.Err != nil {
+			fmt.Fprintf(env.Stdout, "%s IPv%d: %s\n", result.Source, result.Family, fmt.Sprintf(i18n.T("failed: %v"), result.Err))
+			code = 1
+			ipv6Failed = ipv6Failed || result.Family == 6
+		}
+		if result.DetailsErr != nil && !reported[result.IP] {
+			fmt.Fprintf(env.Stdout, "%s (%s): %s\n", probe.IPDetailsSource, result.IP, fmt.Sprintf(i18n.T("failed: %v"), result.DetailsErr))
+			reported[result.IP] = true
+		}
+	}
+	if ipv6Failed {
+		fmt.Fprintln(env.Stdout, i18n.T("An IPv6 check failure does not prove that IPv6 is unavailable."))
 	}
 	return code
 }
