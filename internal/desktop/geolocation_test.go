@@ -283,7 +283,8 @@ func TestChromeGeolocationDoesNotSaveOnAfterSetupFailure(t *testing.T) {
 				case "new conflict":
 					writeGeolocationFixture(t, filepath.Join(p.PolicyDir, "external.json"), `{"GeolocationAllowedForUrls":["*"]}`)
 				case "choice write":
-					if err := os.Mkdir(p.StateFile, 0o700); err != nil {
+					// Do not depend on the platform lock to create parent directories.
+					if err := os.MkdirAll(p.StateFile, 0o700); err != nil {
 						t.Fatal(err)
 					}
 				}
