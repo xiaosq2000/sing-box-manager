@@ -54,8 +54,9 @@ accepts a server config and a client config that use it.
 
 The current system is one Django/PostgreSQL control plane and one sing-box node,
 with systemd-triggered config sync and SQLite traffic history.
-The Linux TUN core is implemented. M1b acceptance is incomplete. Device
-management, a node agent, and multiple nodes are the planned scope.
+Linux TUN meets the agreed M1b acceptance scope. Device management, a node
+agent, and multiple nodes are the planned scope. Extended TUN network
+compatibility and diagnostics remain separate work.
 The diagram describes that target, not deployed functionality. Detailed schemas and
 interfaces need review in their implementation PRs. Quotas, public registration,
 plans, and payments remain outside this delivery sequence.
@@ -178,18 +179,18 @@ current location.
 
 ## Milestones
 
-| Milestone | Name                                       | Status                                  |
-| --------- | ------------------------------------------ | --------------------------------------- |
-| M0        | Security fixes                             | Done                                    |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                    |
-| M1b       | Linux TUN in the client CLI                | Core implemented; acceptance incomplete |
-| M2        | Client CLI for Windows                     | Done                                    |
-| M3        | Configs in code, one server process        | Done                                    |
-| M4b       | Control plane, devices and subscriptions   | Core deployed; devices planned          |
-| M5        | Node agent                                 | Planned after device management         |
-| M6        | Multiple nodes                             | Planned after the node agent            |
-| M7        | Invitation self-service and reusable plans | Deferred pending need                   |
-| M8        | Paid plans                                 | Deferred pending need                   |
+| Milestone | Name                                       | Status                                   |
+| --------- | ------------------------------------------ | ---------------------------------------- |
+| M0        | Security fixes                             | Done                                     |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                     |
+| M1b       | Linux TUN in the client CLI                | Done within the defined acceptance scope |
+| M2        | Client CLI for Windows                     | Done                                     |
+| M3        | Configs in code, one server process        | Done                                     |
+| M4b       | Control plane, devices and subscriptions   | Core deployed; devices planned           |
+| M5        | Node agent                                 | Planned after device management          |
+| M6        | Multiple nodes                             | Planned after the node agent             |
+| M7        | Invitation self-service and reusable plans | Deferred pending need                    |
+| M8        | Paid plans                                 | Deferred pending need                    |
 
 ### Delivery order
 
@@ -213,17 +214,15 @@ current location.
    are implemented. iOS App 1.14.3 passed user testing for Trojan, Hysteria2, and Naive.
    Android device testing is deferred and does not block this change. See the
    [acceptance record](README_MOBILE.md#acceptance-boundary) for exact coverage.
-5. **M1b: Linux TUN.** The core is implemented in the client. Environment, routing,
-   DNS, privilege, and recovery requirements are defined in [M1b](#m1b-linux-tun).
-   The client has route/protocol API access, lifecycle guards, a transaction
-   journal, and `scripts/dev/test-tun-vm.sh`. The `e2e-tun` job passes controlled
-   native QEMU acceptance under TCG on GitHub Actions. Controlled maintenance
-   passes locally under KVM and TCG for client-only upgrades and rule refreshes.
-   Native route/protocol CLI switching passes locally under KVM and TCG without
-   restarting capture. TUN IP/speed diagnostics, engine-version transitions,
-   install/uninstall, reboot, Docker and bound-socket acceptance remain incomplete.
-   M1b is not complete.
-   Do not restore the legacy Bash client.
+5. **M1b: Linux TUN.** Complete within the [defined acceptance scope](#m1b-acceptance-scope).
+   Workstation console checks cover activation with a private umask, five route
+   modes, real Trojan/Hysteria2/Naive traffic, refresh and check-only workers.
+   Isolated QEMU checks cover installation, native timer triggers, a signed
+   engine upgrade from 1.14.2 to 1.14.3, committed/pending/dirty state across
+   reboot, explicit recovery and uninstall. Both KVM and TCG pass locally.
+   Product client code needs no further change for these lifecycle checks.
+   No new client release or server deployment is implied. Do not restore the
+   legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
 7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
@@ -528,8 +527,8 @@ Routing:
   `auto_detect_interface: true` and interface `sbc-tun0`. Do not set
   `route.default_mark` or a dial `routing_mark`; `auto_redirect` conflicts with them.
 - Require nftables support. Verify it under the unit's capability set before
-  publishing, and refuse when it is missing. Check Docker bridge networking and
-  `SO_BINDTODEVICE` traffic against the documented behavior.
+  publishing, and refuse when it is missing. Docker bridge networking and
+  `SO_BINDTODEVICE` traffic remain outside the validated compatibility scope.
 - Use `172.19.0.1/30` and `fdfe:dcba:9876::1/126`, and refuse activation when a
   foreign interface or route claims them.
 - Capture every destination. Send `ip_is_private` traffic to `direct`; do not
@@ -636,8 +635,30 @@ check-only workers. They observe independent timer recovery after both
 maintenance controllers die, before restoring user files. Alternate selector
 transports remain SOCKS fixtures, not real Naive acceptance. CLI switches cover
 five modes, a route alias and both selector paths without changing generation,
-PID or installed files. TUN diagnostics, engine-version upgrades, installation,
-reboot, Docker and `SO_BINDTODEVICE` acceptance remain separate work. Keep `scripts/lib/ui.sh` while the server scripts use it.
+PID or installed files. Keep `scripts/lib/ui.sh` while the server scripts use it.
+
+##### M1b acceptance scope
+
+M1b closes on functional console acceptance plus the three lifecycle gates below.
+The lifecycle suite uses `scripts/dev/test-tun-vm.sh lifecycle` and the same
+isolated QEMU network and product configuration renderer as the core suite.
+It boots the same disk four times and checks distinct kernel boot IDs.
+
+| Gate                        | Required evidence                                                                                                                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reboot and recovery         | A committed generation starts without changing files or selections. Pending and dirty generations refuse startup and retain the mixed block. Explicit `tun off` confirms cleanup and permits mixed use.                                                                          |
+| Real engine upgrade         | Signed official 1.14.2 and 1.14.3 archives have pinned hashes. Root and owner binaries, libraries and version receipts agree after upgrade. Current selections and captured traffic work.                                                                                        |
+| Installation and scheduling | The hosted Unix installer installs into a fresh guest. Real user timers report an available update without sudo or runtime changes. Active TUN blocks install/uninstall. After explicit shutdown, uninstall removes user files and schedules while retaining root recovery data. |
+
+The VM uses ephemeral signing trust in test builds only. It does not change
+production trust or contact the operator portal. Its alternate protocol selector
+is a SOCKS fixture, not another real-protocol acceptance claim.
+
+TUN IP/speed diagnostics remain explicitly unsupported. End-to-end IPv6,
+Docker bridge and interface-bound traffic are unvalidated compatibility areas,
+not M1b completion gates. Document these limits rather than treating missing
+tests as passes. Physical workstation reboot, production timer migration and a
+published client release are not implied by isolated lifecycle acceptance.
 
 ### M2: Client CLI for Windows
 

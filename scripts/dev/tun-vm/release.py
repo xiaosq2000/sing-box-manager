@@ -10,8 +10,15 @@ import subprocess
 from pathlib import Path
 
 
-def sign_release(assets: Path, choice: str = "good") -> None:
-    release = assets / "release"
+def sign_release(
+    assets: Path,
+    choice: str = "good",
+    *,
+    release: Path | None = None,
+    sbc_version: str = "tun-e2e-new",
+    engine_version: str | None = None,
+) -> None:
+    release = release or assets / "release"
     rules = release / "rules"
     rules.mkdir(parents=True, exist_ok=True)
     source = assets / ("changed-rules" if choice == "changed" else "rules")
@@ -34,8 +41,9 @@ def sign_release(assets: Path, choice: str = "good") -> None:
         json.dumps(
             {
                 "version": 1,
-                "sbc": "tun-e2e-new",
-                "sing_box": (assets / "sing-box.version").read_text().strip(),
+                "sbc": sbc_version,
+                "sing_box": engine_version
+                or (assets / "sing-box.version").read_text().strip(),
                 "files": files,
             },
             sort_keys=True,

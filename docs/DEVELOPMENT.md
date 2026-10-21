@@ -273,7 +273,8 @@ SOCKS, TLS, DNS and HTTP fixtures from the host and accepts only the guest's
 run-specific success marker. The host's services and network stay unchanged.
 `scripts/dev/fetch-tun-image.sh` downloads and verifies the default Ubuntu cloud
 image. `tests/test_tun_vm.py` checks the fixture DNS/SOCKS allowlist and the
-prepared config without starting a VM. The `e2e-tun` CI job installs QEMU,
+prepared config without starting a VM. `tests/test_tun_lifecycle.py` checks
+host refusal, archive hashes, socket matching, reboot markers and checkpoint identity. The `e2e-tun` CI job installs QEMU,
 fetches sing-box and the image, and runs the acceptance script on a disposable
 Ubuntu runner. The script needs `qemu-system-x86_64`, `qemu-img`, `curl`,
 `openssl`, `python3`, OpenBSD `nc` and the sing-box binary from `pixi run fetch-sing-box`. Set
@@ -285,6 +286,7 @@ on a KVM host.
 ```sh
 bash scripts/dev/fetch-tun-image.sh
 pixi run bash scripts/dev/test-tun-vm.sh
+pixi run bash scripts/dev/test-tun-vm.sh lifecycle
 ```
 
 The guest disk has a sparse virtual size of 12 GiB. This permits repeated
@@ -335,9 +337,36 @@ superseded files.
 
 A build overlay adds an ephemeral signing key to disposable test binaries only.
 Production trust keys and signature checks stay unchanged. The private signing
-key remains outside the guest archive. The guest uses fixture files rather than
-the hosted installer or native scheduler. Client-only upgrade acceptance does
-not establish an engine-version transition.
+key remains outside the guest archive. The core guest uses fixture files rather
+than the hosted installer or native scheduler. Its client-only upgrade does not
+establish an engine-version transition.
+
+The lifecycle suite installs through the hosted Unix installer in a fresh guest.
+It verifies pinned official 1.14.2 and 1.14.3 archives and serves two signed test
+releases. Set `SBC_TUN_E2E_OLD_ARCHIVE` and `SBC_TUN_E2E_NEW_ARCHIVE` to reuse local
+archives. Otherwise, it downloads them without proxy variables into the image
+cache's `engines/` directory. Hash mismatch aborts acceptance.
+
+The suite sets the guest's maintenance intervals to one minute through the
+product CLI. Real user timers must trigger successful check-only workers and
+produce an update hint. PID, generation and installed files must stay unchanged.
+A guest manager PATH trap rejects and records any worker sudo attempt. Manual
+upgrade then replaces both owner and root engine files and checks their hashes,
+version receipts, current selections and captured HTTPS traffic.
+
+The same disk boots four times. A committed generation starts automatically.
+Pending and dirty records come from paused commit and failed-stop operations,
+not forged journals. They refuse startup after reboot without transient recovery
+and keep mixed mode blocked. Explicit `tun off` confirms resource cleanup.
+The suite then starts mixed mode and uninstalls the user client and schedules.
+Root generations, the helper and the disabled TUN unit remain.
+
+Fixture topology starts before TUN. The controller must not wait for cloud-final:
+that service waits for multi-user, which also waits for this controller.
+Every boot needs a current run-specific marker, and the guest checks distinct
+kernel boot IDs and unchanged files. Contradictory, premature or stale success
+markers fail. Per-boot serial logs, packet traces and reviewed-field JSON evidence
+stay under the run directory. The `e2e-tun` CI job runs both suites under TCG.
 
 A guest-only wrapper shortens the real systemd timer to 15 seconds and pauses
 the start command after the service starts. No production skip flag is used.
@@ -351,28 +380,32 @@ The guest runs with user and root `umask 0077`. A guest-only sudoers entry sets
 the elevated mask, and the script checks its effective value. It checks directory
 modes and ownership after activation and maintenance. Public metadata remains
 readable without sudo. Config, rule and state access stays restricted. These checks do not change
-host sudo policy or establish operator-machine acceptance.
-A native console cycle remains required before merge.
+host sudo policy or establish operator-machine acceptance. Workstation console
+acceptance separately covers private-umask activation, five modes, real
+Trojan/Hysteria2/Naive traffic, refresh and noninteractive check-only workers.
 
 Local fixture checks need no VM:
 
 ```sh
-pixi run test tests/test_tun_vm.py tests/test_desktop_config.py
+pixi run test tests/test_tun_vm.py tests/test_tun_lifecycle.py tests/test_desktop_config.py
 pixi run go test ./internal/tun ./internal/cli ./internal/api ./internal/service
 ```
 
 Each VM run retains its disk, generated assets, guest-only packet trace and
 serial log under the image cache's `runs/` directory. These contain synthetic private keys and credentials.
 Do not upload them wholesale. The script prints the run directory and failure
-markers. Native TUN IP and speed diagnostics, hosted installation, native
-scheduling, engine-version transitions, reboot, Docker, `SO_BINDTODEVICE` and
-non-SOCKS tunnel protocols are outside this VM suite.
+markers. TUN IP and speed diagnostics remain unsupported. End-to-end IPv6,
+Docker bridge and `SO_BINDTODEVICE` compatibility remain unvalidated. VM selector
+transports remain SOCKS fixtures. Physical workstation reboot, production timer
+migration and a production client release are not established by these suites.
 
 Core acceptance passes locally with sing-box 1.14.3 and the Noble fixture under
 KVM and TCG. The [GitHub CI run](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39415310872)
 also passes under TCG. Maintenance acceptance passes locally under KVM and TCG
 with sing-box 1.14.3 and the Noble fixture. Native route/protocol CLI switching
-also passes locally under KVM and TCG. This does not complete M1b acceptance.
+also passes locally under KVM and TCG. Lifecycle acceptance passes locally under
+both accelerators, including a real 1.14.2 to 1.14.3 engine upgrade. Together with
+console acceptance, these results meet the [M1b completion scope](REFACTOR_SPEC.md#m1b-acceptance-scope).
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real
