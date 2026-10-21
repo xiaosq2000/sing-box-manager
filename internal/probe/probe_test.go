@@ -34,16 +34,16 @@ func TestRequestsGoThroughTheProxyWithItsPassword(t *testing.T) {
 	var seen []string
 	port := proxyPort(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, strings.Join([]string{r.Header.Get("Proxy-Authorization"), r.URL.String(), r.Header.Get("User-Agent")}, " "))
-		io.WriteString(w, "IP\t: 198.51.100.20\n地址\t: 中国  上海  上海\n运营商\t: 电信\n\nURL\t: http://www.cip.cc/198.51.100.20\n")
+		io.WriteString(w, "198.51.100.20\n")
 	})
 
-	place, err := CIP(Client(port, "sbc", "s3cret", 5*time.Second), "http://cip.test/")
+	address, err := ExitIP(IPClient(port, "sbc", "s3cret", 5*time.Second), "http://echo.test/", 4)
 
-	if err != nil || place.String() != "中国 上海 上海 电信, 198.51.100.20" {
-		t.Fatalf("got %q, %v", place, err)
+	if err != nil || address != "198.51.100.20" {
+		t.Fatalf("got %q, %v", address, err)
 	}
 	password := "Basic " + base64.StdEncoding.EncodeToString([]byte("sbc:s3cret"))
-	if len(seen) != 1 || seen[0] != password+" http://cip.test/ curl/8" {
+	if len(seen) != 1 || seen[0] != password+" http://echo.test/ Go-http-client/1.1" {
 		t.Errorf("the proxy saw %q", seen)
 	}
 }
@@ -59,29 +59,11 @@ func TestGeminiRegionReadsTheCodeGoogleWritesInThePage(t *testing.T) {
 	}
 }
 
-func TestIPInfoReadsTheAddressCityAndCountry(t *testing.T) {
-	place, err := IPInfo(answering(t, `{"ip": "203.0.113.7", "city": "Los Angeles", "region": "California", "country": "US"}`), "http://ipinfo.test/json")
-	if err != nil || place.String() != "Los Angeles, US, 203.0.113.7" {
-		t.Errorf("got %q, %v", place, err)
-	}
-	place, err = IPInfo(answering(t, `{"ip": "203.0.113.7"}`), "http://ipinfo.test/json")
-	if err != nil || place.String() != "203.0.113.7" {
-		t.Errorf("without a city: got %q, %v", place, err)
-	}
-}
-
-func TestASiteThatGivesNoAddressOrNoAnswerSaysSo(t *testing.T) {
-	if _, err := CIP(answering(t, "<!DOCTYPE html><html><head><meta charset=utf-8></head></html>"), "http://cip.test/"); err == nil || err.Error() != "the site gave no address" {
-		t.Errorf("a web page: got %v", err)
-	}
-	if _, err := IPInfo(answering(t, `{"error": "rate limited"}`), "http://ipinfo.test/json"); err == nil || err.Error() != "the site gave no address" {
-		t.Errorf("JSON without an address: got %v", err)
-	}
-
+func TestGeminiPageFailures(t *testing.T) {
 	port := proxyPort(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "slow down", http.StatusTooManyRequests)
 	})
-	if _, err := IPInfo(Client(port, "", "", 5*time.Second), "http://ipinfo.test/json"); err == nil || err.Error() != "the site answered 429 Too Many Requests" {
+	if _, err := GeminiRegion(Client(port, "", "", 5*time.Second), "http://gemini.test/"); err == nil || err.Error() != "the site answered 429 Too Many Requests" {
 		t.Errorf("an error status: got %v", err)
 	}
 

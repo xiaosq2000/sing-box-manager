@@ -123,6 +123,8 @@ control-plane = [
 
 "docs/SECRET_HANDLING.md" = [
   "@control-plane",
+  "internal/probe/",
+  "internal/cli/checks.go",
   "sing_box_manager/models.py",
   "sing_box_manager/settings.py",
   "config/inventory/",

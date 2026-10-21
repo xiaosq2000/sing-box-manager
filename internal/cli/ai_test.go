@@ -19,8 +19,10 @@ import (
 func aiSites(t *testing.T, h *harness, safe bool) *[]string {
 	t.Helper()
 	seen := h.useSites(t, map[string]string{
-		"ipinfo.test":  `{"ip":"203.0.113.7"}`,
-		"cip.test":     "IP: 198.51.100.20\n",
+		"ipify4.test":  "203.0.113.7",
+		"ident4.test":  "198.51.100.20",
+		"ipify6.test":  "2001:db8::7",
+		"ident6.test":  "2001:db8::7",
 		"gemini.test":  `,2,1,200,"USA"`,
 		"chatgpt.test": "ip=203.0.113.7\nloc=US\n",
 		"claude.test":  "<html>Welcome</html>",
@@ -51,11 +53,12 @@ func TestAIProbesAreExplicitAndDirectAccessRequiresOverride(t *testing.T) {
 		requests   int
 		want       string
 	}{
-		{"default", "china", []string{"ip"}, true, 2, "china-direct"},
-		{"proxy", "china", []string{"ip", "--ai"}, true, 5, "AI checks use the remote proxy"},
-		{"direct skipped", "direct", []string{"ip", "--ai"}, true, 2, "skipped: direct route"},
-		{"unknown skipped", "china", []string{"ip", "--ai"}, false, 2, "skipped: proxy-only inlet unavailable"},
-		{"direct permitted", "direct", []string{"ip", "--ai", "--allow-direct-ai"}, false, 5, "Direct network IP exposure is permitted"},
+		{"default", "china", []string{"ip"}, true, 4, "china-direct"},
+		{"proxy", "china", []string{"ip", "--ai"}, true, 7, "AI checks use the remote proxy"},
+		{"dual stack", "china", []string{"ip", "--dual-stack", "--ai"}, true, 10, "IPify"},
+		{"direct skipped", "direct", []string{"ip", "--ai"}, true, 4, "skipped: direct route"},
+		{"unknown skipped", "china", []string{"ip", "--ai"}, false, 4, "skipped: proxy-only inlet unavailable"},
+		{"direct permitted", "direct", []string{"ip", "--ai", "--allow-direct-ai"}, false, 7, "Direct network IP exposure is permitted"},
 	} {
 		t.Run(entry.name, func(t *testing.T) {
 			h := newHarness(t)
@@ -65,14 +68,14 @@ func TestAIProbesAreExplicitAndDirectAccessRequiresOverride(t *testing.T) {
 			if code != 0 || len(*seen) != entry.requests || !strings.Contains(h.out.String(), entry.want) {
 				t.Fatalf("code %d, requests %d, output %s%s", code, len(*seen), h.out, h.errOut)
 			}
-			if entry.requests == 5 {
+			if entry.requests >= 7 {
 				for _, text := range []string{"gemini:", "reported region USA", "chatgpt:", "edge country US", "claude:", "region unknown"} {
 					if !strings.Contains(h.out.String(), text) {
 						t.Errorf("missing %q in %s", text, h.out)
 					}
 				}
 			}
-			if entry.requests == 2 && entry.name == "default" && strings.Contains(h.out.String(), "gemini:") {
+			if entry.name == "default" && strings.Contains(h.out.String(), "gemini:") {
 				t.Fatal("default command displayed an AI check")
 			}
 		})
@@ -106,7 +109,7 @@ func TestAIUsesTheSeparateProxyOnlyInletWithoutSwitching(t *testing.T) {
 	if code := Run(h.env, []string{"ip", "--ai"}); code != 0 {
 		t.Fatalf("code %d: %s%s", code, h.out, h.errOut)
 	}
-	if len(*generalRequests) != 2 || len(aiRequests) != 3 || h.api.mode != "china" || h.api.protocol != "trojan" || len(h.api.speedTests) != 0 {
+	if len(*generalRequests) != 4 || len(aiRequests) != 3 || h.api.mode != "china" || h.api.protocol != "trojan" || len(h.api.speedTests) != 0 {
 		t.Fatalf("general %d, AI %v, mode %s, protocol %s", len(*generalRequests), aiRequests, h.api.mode, h.api.protocol)
 	}
 }
@@ -122,7 +125,7 @@ func TestAIProxyFailureNeverRetriesThroughTheOrdinaryInlet(t *testing.T) {
 	if code := Run(h.env, []string{"ip", "--ai"}); code != 1 {
 		t.Fatalf("code %d: %s%s", code, h.out, h.errOut)
 	}
-	if len(*generalRequests) != 2 {
+	if len(*generalRequests) != 4 {
 		t.Fatalf("AI requests reached the ordinary inlet: %d requests", len(*generalRequests))
 	}
 }

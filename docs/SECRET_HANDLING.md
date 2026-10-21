@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-19.
+Checked on 2026-10-20.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -133,6 +133,13 @@ The owner's loopback API secret is in the owner's `sbc` config directory
 (`tun.json`, mode 0600). The `sbc-tun` service reads the root config; the owner
 does not need to. Treat both files like the mixed client config. The TUN DNS cache
 lives in `/var/lib/sbc-tun` and is writable only by the `sbc-tun` service user.
+
+IP diagnostics send each observed exit IP to ipwho.is over HTTPS for location and
+ASN estimates. Probe and detail requests follow the active route, which can be
+direct. The probe sources can therefore see the local network's public IP. The
+database also receives the explicit observed IP in the lookup path. Diagnostics
+use no account credentials or persistent result cache. Keep real diagnostic output
+out of committed fixtures.
 
 AI diagnostics use no browser cookies, API keys, or account credentials.
 `sbc ip --ai --allow-direct-ai` permits requests through the active route and can
