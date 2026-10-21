@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -502,13 +502,46 @@ all remote-proxy traffic or to close existing connections.
 
 ```sh
 sbc ip
+sbc ip --dual-stack
 sbc ip --ai
 # This permits provider requests to expose your direct network IP:
 sbc ip --ai --allow-direct-ai
 ```
 
-Plain `sbc ip` checks ipinfo.io and cip.cc through the local proxy. Each check
-follows the active destination rules. It makes no AI provider request.
+Plain `sbc ip` checks IPv4 through IPify and ident.me in parallel. `--dual-stack`
+also checks IPv6 through both sources. All requests use the ordinary local proxy
+and follow the active destination rules. The command changes no route or protocol
+and makes no AI provider request without `--ai`.
+
+| Source                            | IPv4 endpoint            | IPv6 endpoint             |
+| --------------------------------- | ------------------------ | ------------------------- |
+| [IPify](https://www.ipify.org/)   | `https://api.ipify.org/` | `https://api6.ipify.org/` |
+| [ident.me](https://api.ident.me/) | `https://4.ident.me/`    | `https://6.ident.me/`     |
+
+Each row names the source, address family, and observed exit IP. Different source
+domains can use different exits under split routing. These sources do not represent
+all domestic or foreign destinations. Family-specific endpoints select the proxy's
+exit family, not the connection from `sbc` to its loopback proxy.
+
+The command sends each distinct observed IP to [ipwho.is](https://ipwhois.io/documentation)
+over HTTPS for country, region, city, ASN, and organization estimates. It uses the
+ISP name when the organization is absent. The lookup names the observed IP explicitly,
+not the lookup request's own exit. Duplicate observations share one lookup per command.
+Database names and locations are estimates, not proof of a service's region classification.
+Missing fields show `unknown`. No API key is required. The free database has rate
+limits and no uptime guarantee.
+
+IPv4 makes two probe requests and at most two detail requests. Dual-stack makes
+four probes and at most four detail requests. Each request has a 5-second timeout.
+Probes run in parallel, followed by parallel detail lookups. Requests use no account
+credentials or cookies. They do not follow redirects, retry, change sources, or
+fall back to a direct connection.
+
+A failed probe keeps its row and reports the error. Any requested probe failure
+returns exit code `1`, even if other probes succeed. A failed detail lookup keeps
+the IP and shows unknown fields with a separate error. Detail errors alone do not
+change the exit code. An IPv6 probe failure does not prove that IPv6 is unavailable
+on the whole network.
 
 `--ai` adds one unauthenticated request each to Gemini, ChatGPT, and Claude.
 These requests use the existing proxy-only diagnostic inlet, not the active
