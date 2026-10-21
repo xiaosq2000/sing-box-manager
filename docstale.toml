@@ -131,6 +131,7 @@ control-plane = [
   "internal/tun/",
   "internal/cli/tun.go",
   "internal/cli/tun_maintenance.go",
+  "internal/cli/runtime_api.go",
   "internal/install/",
   "internal/probe/",
   "internal/cli/checks.go",

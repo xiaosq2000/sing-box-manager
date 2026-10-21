@@ -16,6 +16,7 @@ import socket
 import socketserver
 import struct
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -176,17 +177,24 @@ class _SocksHandler(socketserver.BaseRequestHandler):
         self.request.settimeout(3)
         try:
             header = _read_exact(self.request, 2)
-            _read_exact(self.request, header[1])
+            if header[0] != 5 or header[1] == 0:
+                return
+            if 0 not in _read_exact(self.request, header[1]):
+                return
             self.request.sendall(b"\x05\x00")
             request = _read_exact(self.request, 4)
+            if request[:3] != b"\x05\x01\x00":
+                return
             if request[3] == 3:
                 host = _read_exact(
                     self.request, _read_exact(self.request, 1)[0]
                 ).decode()
             elif request[3] == 1:
                 host = socket.inet_ntoa(_read_exact(self.request, 4))
-            else:
+            elif request[3] == 4:
                 host = socket.inet_ntop(socket.AF_INET6, _read_exact(self.request, 16))
+            else:
+                return
             _read_exact(self.request, 2)
             self.server.targets.append(host)
             self.request.sendall(b"\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x01")
@@ -250,6 +258,20 @@ def _server(handler, *, udp=False):
             thread.join(timeout=2)
 
 
+def test_socks_fixture_ignores_non_socks_traffic() -> None:
+    with _server(_SocksHandler) as server:
+        with socket.create_connection(server.server_address, timeout=5) as stream:
+            # A loopback HTTP probe must not become an IPv6 proxy target.
+            stream.sendall(
+                b"GET /" + b"fixture" * 16 + b" HTTP/1.1\r\nConnection: close\r\n\r\n"
+            )
+            stream.shutdown(socket.SHUT_WR)
+            with contextlib.suppress(OSError):
+                while stream.recv(4096):
+                    pass
+        assert server.targets == []
+
+
 def _port() -> int:
     """Return a loopback port that is free for both TCP and UDP.
 
@@ -275,6 +297,7 @@ def _running(binary: Path, root: Path, config: dict):
     path = root / "config.json"
     path.write_text(json.dumps(config))
     with (root / "process.log").open("a+") as log:
+        log_start = log.tell()
         process = subprocess.Popen(
             [str(binary), "run", "-D", str(root), "-c", str(path)],
             stdout=log,
@@ -290,11 +313,14 @@ def _running(binary: Path, root: Path, config: dict):
                     with socket.create_connection(
                         ("127.0.0.1", config["inbounds"][0]["listen_port"]), timeout=0.1
                     ):
-                        break
+                        log.seek(log_start)
+                        if "sing-box started" in log.read():
+                            break
                 except OSError:
-                    time.sleep(0.02)
+                    pass
+                time.sleep(0.02)
             else:
-                pytest.fail("Fixture mixed inbound did not open")
+                pytest.fail("Fixture engine did not finish startup")
             yield
         finally:
             process.terminate()
@@ -303,6 +329,27 @@ def _running(binary: Path, root: Path, config: dict):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+
+
+def test_running_waits_for_current_process_startup(tmp_path: Path) -> None:
+    binary = tmp_path / "delayed-engine"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, socket, sys, time\n"
+        'config = json.load(open(sys.argv[sys.argv.index("-c") + 1]))\n'
+        "listener = socket.socket()\n"
+        'listener.bind(("127.0.0.1", config["inbounds"][0]["listen_port"]))\n'
+        "listener.listen()\n"
+        "time.sleep(0.3)\n"
+        'print("sing-box started (fixture)", flush=True)\n'
+        "time.sleep(30)\n"
+    )
+    binary.chmod(0o700)
+    # A marker from an earlier process cannot establish this process's readiness.
+    (tmp_path / "process.log").write_text("sing-box started (old process)\n")
+    config = {"inbounds": [{"listen_port": _port()}]}
+    with _running(binary, tmp_path, config):
+        assert "sing-box started (fixture)" in (tmp_path / "process.log").read_text()
 
 
 def _connect(port: int, host: str, destination_port: int) -> bytes:

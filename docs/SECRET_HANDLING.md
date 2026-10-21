@@ -161,6 +161,7 @@ published directories use the same modes. A private `umask 077` must not make
 binaries inaccessible or hide public transaction metadata. Do not use recursive
 chmod or expose private configuration to repair a failed start.
 
+IP and AI diagnostics support mixed mode only. TUN refuses these checks before requests.
 IP diagnostics send each observed exit IP to ipwho.is over HTTPS for location and
 ASN estimates. Probe and detail requests follow the active route, which can be
 direct. The probe sources can therefore see the local network's public IP. The

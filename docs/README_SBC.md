@@ -119,11 +119,18 @@ an error with instructions. Run `sbc tun on` explicitly when ready.
 If shutdown is unconfirmed, recovery retains the backups and mixed-mode block.
 Do not delete the recovery record or staging directory to bypass this check.
 
-TUN command coverage is incomplete. `sbc route` and `sbc protocol` still use
-the mixed API, not the TUN API. Do not use them to change TUN selections.
-`sbc ip` and `sbc speed` also use mixed-mode paths, not TUN diagnostics.
-Maintenance preserves selections already present in the active TUN API.
-Native CLI switching and diagnostics remain separate M1b requirements.
+`sbc route` and `sbc protocol` query or switch the committed active TUN through
+the owner's saved API state. Switching does not restart capture or rewrite the
+installed configuration. Mutations use the operation lock. Invalid choices,
+pending or dirty capture, missing owner state, and API failures return errors.
+The commands never fall back to the mixed API while TUN is active or uncertain.
+`sbc status` uses the same owner-state checks. `route --list` and completion
+remain offline lists from the installed configuration, not live TUN queries.
+
+`sbc ip` and `sbc speed` explicitly refuse TUN mode before sending requests.
+This also applies to AI checks and downloads. Native TUN diagnostics need
+separate implementation and acceptance. Maintenance preserves CLI-selected
+routes and protocols across controlled publication.
 
 Android and iOS apps manage their own tunnels and are not affected.
 
@@ -512,6 +519,10 @@ sbc ip --ai
 # This permits provider requests to expose your direct network IP:
 sbc ip --ai --allow-direct-ai
 ```
+
+These diagnostics support mixed mode only. Under TUN, `sbc ip`, including
+`--dual-stack` and `--ai`, and `sbc speed` return an unsupported-command error
+without sending a network check.
 
 Plain `sbc ip` checks IPv4 through IPify and ident.me in parallel. `--dual-stack`
 also checks IPv6 through both sources. All requests use the ordinary local proxy

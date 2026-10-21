@@ -322,18 +322,17 @@ func runStatus(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if status := tunCapture(env).Status; status != "off" {
-		if status != "active" {
+	capture := tunCapture(env)
+	if !captureOff(capture) {
+		if !activeTunGeneration(capture) {
 			fmt.Fprintln(env.Stdout, i18n.T("tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'"))
 			return 1
 		}
 		fmt.Fprintf(env.Stdout, i18n.T("tun:      active (%s)\n"), tun.InterfaceName)
-		state, stateErr := tun.ReadState(layout)
+		client, stateErr := activeTunAPI(layout, capture)
 		if stateErr != nil {
-			fmt.Fprintln(env.Stdout, i18n.T("api:      state unavailable; run 'sbc tun on' again"))
-			return 1
+			return fail(env, stateErr)
 		}
-		client := api.New(state.APIPort, state.APISecret)
 		route, _, routeErr := client.Modes()
 		protocol, _, protocolErr := client.Selected(api.ProxySelector)
 		if routeErr != nil || protocolErr != nil {
@@ -420,7 +419,7 @@ func runSwitch(env Env, args []string, what string) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	client, _, err := localAPI(layout)
+	client, err := selectionAPI(env, layout)
 	if err != nil {
 		return fail(env, err)
 	}

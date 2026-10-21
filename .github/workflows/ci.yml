@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/m1b-tun-core]
+    branches: [main, feat/m1b-tun-core, feat/m1b-tun-maintenance]
 
 permissions:
   contents: read
