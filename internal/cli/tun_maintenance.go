@@ -25,6 +25,14 @@ func tunCapture(env Env) tun.CaptureState {
 	return tun.Current()
 }
 
+// tunActive preserves the production guard and lets fixtures supply host state.
+func tunActive(env Env) bool {
+	if env.TunCapture != nil {
+		return env.TunCapture().Status != "off"
+	}
+	return tun.Active()
+}
+
 // tunMaintenanceTarget identifies TUN before any mixed recovery hook runs.
 func tunMaintenanceTarget(env Env, layout paths.Layout) (bool, error) {
 	if env.OS != "linux" {

@@ -24,6 +24,21 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
+func TestTunActiveUsesTheInjectedCaptureState(t *testing.T) {
+	for _, status := range []string{"off", "active", "dirty", "unknown"} {
+		t.Run(status, func(t *testing.T) {
+			calls := 0
+			env := Env{TunCapture: func() tun.CaptureState {
+				calls++
+				return tun.CaptureState{Status: status}
+			}}
+			if got := tunActive(env); got != (status != "off") || calls != 1 {
+				t.Fatalf("capture guard=%v, calls=%d", got, calls)
+			}
+		})
+	}
+}
+
 type tunMaintenanceFixture struct {
 	h         *harness
 	capture   tun.CaptureState
