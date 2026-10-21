@@ -47,8 +47,9 @@ An unavailable KVM selects TCG before acceptance starts. The job summary records
 the selected accelerator. Each suite runs in full. A failed suite does not retry
 with another accelerator. CI does not require TCG coverage on a runner with KVM.
 
-The Python test job caches Go modules, Go build results and the custom server
-binary cache. The TUN jobs cache Go modules and Go build results. Cache keys
+The `test` job caches Go modules, Go build results and the custom server
+binary cache. The TUN jobs cache Go modules and Go build results. The `test` job
+runs Go tests with `-count=1` to prevent reuse of cached test outcomes. Cache keys
 include the Pixi lockfile and build inputs. Only successful pushes to `main` save
 these caches. PR jobs can restore them but cannot save them. Cached custom server
 binaries still require the build-recipe key and SHA-256 check. No VM disks,

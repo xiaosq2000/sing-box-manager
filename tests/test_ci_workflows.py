@@ -78,6 +78,7 @@ def test_build_caches_restore_for_prs_but_save_only_after_success_on_main(
     paths = set(restore["with"]["path"].splitlines())
     expected = {"~/.cache/go-build", "~/go/pkg/mod"}
     if job_id == "test":
+        assert {"run": "pixi run go test -count=1 ./..."} in steps
         expected.add(".cache/sing-box-manager/server-binary")
         assert "sing_box_manager/traffic_stats.py" in restore["with"]["key"]
         assert "config/inventory/example.yaml" in restore["with"]["key"]

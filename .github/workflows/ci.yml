@@ -97,7 +97,8 @@ jobs:
         env:
           SBM_REQUIRE_SING_BOX: "1"
           SBM_TEST_SING_BOX_SERVER: ${{ github.workspace }}/.cache/sing-box-manager/server/sing-box
-      - run: pixi run test-go
+      # Reuse compilation, not cached test outcomes.
+      - run: pixi run go test -count=1 ./...
       - name: Build sbc for each release platform
         run: |
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
