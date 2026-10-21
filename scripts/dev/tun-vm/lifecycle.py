@@ -460,6 +460,11 @@ def first_boot() -> None:
     sbc("protocol", "naive")
     assert_active()
     before = fingerprint()
+    old_engine = read(ASSETS / "engines.json")["1.14.2"]
+    for name, digest in old_engine["files"].items():
+        assert before[str(DATA / "bin" / name)] == digest
+        assert before["/usr/local/lib/sbc-tun/" + name] == digest
+    assert "version 1.14.2" in run("/usr/local/lib/sbc-tun/sing-box", "version").stdout
     assert (
         sbc(
             "install", input=ASSETS.joinpath("subscription").read_text(), ok=False
