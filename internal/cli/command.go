@@ -162,7 +162,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	})
 	browser := &cobra.Command{
 		Use:   "browser [on|off|status]",
-		Short: i18n.T("Show or change Chrome WebRTC protection and languages (Linux)"),
+		Short: i18n.T("Show or change Chrome WebRTC, geolocation and language protection (Linux)"),
 		Args:  choiceArgs(0, "on", "off", "status"),
 		Run: func(_ *cobra.Command, args []string) {
 			*exit = browserOperation(env, args, runPrivacyBrowser)
@@ -177,6 +177,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	}{
 		{"webrtc", i18n.T("Show or change Chrome WebRTC protection (Linux)"), runPrivacyWebRTC},
 		{"language", i18n.T("Show or match Chrome languages to the node (Linux)"), runPrivacyBrowserLanguage},
+		{"geolocation", i18n.T("Show or block Chrome website geolocation (Linux, all accounts)"), runPrivacyBrowserGeolocation},
 	} {
 		child := &cobra.Command{
 			Use: component.name + " [on|off|status]", Short: component.help,

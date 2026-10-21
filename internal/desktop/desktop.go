@@ -62,6 +62,9 @@ func Exec(name string, args ...string) (string, error) {
 		if name == "sudo" && len(args) > 2 && args[2] == linuxPolicyScript {
 			return "", i18n.Errorf("could not change WebRTC browser policies: %s", detail)
 		}
+		if name == "sudo" && len(args) > 2 && args[2] == geolocationPolicyScript {
+			return "", i18n.Errorf("Chrome geolocation policy helper failed: %s", detail)
+		}
 		return "", fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), detail)
 	}
 	return string(output), nil
