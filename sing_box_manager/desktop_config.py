@@ -190,7 +190,9 @@ def build_linux_tun_config(
             "auto_route": True,
             "strict_route": True,
             "auto_redirect": True,
-            "dns_mode": "disabled",
+            # Announce the TUN DNS address to systemd-resolved. Its LAN
+            # upstream otherwise bypasses auto_redirect's capture.
+            "dns_mode": "hijack",
         }
     ]
 

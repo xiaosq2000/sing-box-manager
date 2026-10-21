@@ -2,7 +2,11 @@ package tun
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -11,10 +15,22 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 )
 
-const (
-	captureProbeHost = "1.1.1.1"
-	captureProbePort = "443"
-)
+const directProbeURL = "https://www.baidu.com/"
+
+// probePlan keeps activation on the selected policy. Non-direct policies also
+// need a working selected proxy. No probe visits an AI provider.
+func probePlan(mode string) (string, bool, error) {
+	switch mode {
+	case "direct":
+		return directProbeURL, false, nil
+	case "ai-only", "gfw-proxy", "china-direct":
+		return directProbeURL, true, nil
+	case "global":
+		return api.TestURL, true, nil
+	default:
+		return "", false, i18n.Errorf("unsupported TUN route mode %q", mode)
+	}
+}
 
 // Verify accepts an activation only when the service, capture, DNS and an
 // egress request all work.
@@ -37,9 +53,6 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	if _, err := runner.Output(tools.Nft, "list", "ruleset"); err != nil {
 		return i18n.New("the nftables ruleset is unavailable")
 	}
-	if err := lookupThroughTunnel(); err != nil {
-		return err
-	}
 	port, secret, err := ReadAPI(paths.Config)
 	if err != nil {
 		return err
@@ -52,11 +65,25 @@ func Verify(paths Paths, runner Runner, tools Tools) error {
 	if err := client.WaitReady(15 * time.Second); err != nil {
 		return i18n.Errorf("the TUN API did not become ready: %w", err)
 	}
-	if err := verifyCapture(client, tag); err != nil {
+	mode, _, err := client.Modes()
+	if err != nil {
 		return err
 	}
-	if _, err := client.Delay(api.ProxySelector, 10*time.Second); err != nil {
-		return i18n.Errorf("a page did not load through the TUN: %w", err)
+	page, proxyRequired, err := probePlan(mode)
+	if err != nil {
+		return err
+	}
+	if proxyRequired {
+		if _, err := client.Delay(api.ProxySelector, 10*time.Second); err != nil {
+			return i18n.Errorf("the selected proxy is unavailable in TUN mode %s: %w", mode, err)
+		}
+	}
+	if err := verifyRequest(client, tag, page); err != nil {
+		return err
+	}
+	current, _, err := client.Modes()
+	if err != nil || current != mode {
+		return i18n.New("the TUN route mode changed during verification")
 	}
 	return nil
 }
@@ -131,36 +158,100 @@ func mainPID(runner Runner, tools Tools) (int, error) {
 	return pid, nil
 }
 
-// verifyCapture proves that the TUN captures locally generated traffic. Under
-// auto_redirect, nftables redirects captured TCP to a local socket before
-// routing, so the interface packet counters do not change. A new connection in
-// sing-box's own Clash API list is the reliable evidence.
-func verifyCapture(client *api.Client, tag string) error {
+// verifyRequest proves capture and an HTTP response on the same socket. DNS
+// uses the application's system resolver. The transport ignores proxy variables,
+// never redirects, and validates HTTPS with the system trust store.
+func verifyRequest(client *api.Client, tag, page string) error {
+	target, err := url.Parse(page)
+	if err != nil {
+		return err
+	}
+	port := target.Port()
+	if port == "" {
+		port = "443"
+		if target.Scheme == "http" {
+			port = "80"
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	resolver := &net.Resolver{PreferGo: true}
+	addresses, err := resolver.LookupHost(ctx, target.Hostname())
+	if err != nil {
+		return i18n.Errorf("DNS through the TUN failed: %w", err)
+	}
+	if len(addresses) == 0 {
+		return i18n.New("DNS through the TUN returned no address")
+	}
+	host := addresses[0]
+	for _, address := range addresses {
+		if ip := net.ParseIP(address); ip != nil && ip.To4() != nil {
+			host = address
+			break
+		}
+	}
 	before, err := connectionIDs(client)
 	if err != nil {
 		return err
 	}
-	probe, err := net.DialTimeout("tcp", net.JoinHostPort(captureProbeHost, captureProbePort), 5*time.Second)
+	var dialer net.Dialer
+	probe, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return i18n.Errorf("the TUN did not capture a test connection: %w", err)
+		return i18n.Errorf("the TUN test connection failed: %w", err)
 	}
 	defer probe.Close()
+	localHost, localPort, err := net.SplitHostPort(probe.LocalAddr().String())
+	if err != nil {
+		return err
+	}
 	deadline := time.Now().Add(5 * time.Second)
-	for {
+	observed := false
+	for !observed {
 		connections, err := client.Connections()
 		if err != nil {
 			return err
 		}
 		for _, connection := range connections {
-			if captured(connection, tag, before) {
-				return nil
+			if captured(connection, tag, localHost, localPort, host, port, before) {
+				observed = true
+				break
 			}
 		}
-		if time.Now().After(deadline) {
-			return i18n.New("the TUN did not capture a test connection")
+		if !observed {
+			if time.Now().After(deadline) {
+				return i18n.New("the TUN did not capture the test socket")
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
+	used := false
+	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, TLSHandshakeTimeout: 5 * time.Second,
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			if used {
+				return nil, fmt.Errorf("TUN probe refused a second connection")
+			}
+			used = true
+			return probe, nil
+		},
+	}
+	defer transport.CloseIdleConnections()
+	httpClient := &http.Client{Transport: transport, Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, page, nil)
+	if err != nil {
+		return err
+	}
+	response, err := httpClient.Do(request)
+	if err != nil {
+		return i18n.Errorf("the captured TUN request failed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 400 {
+		return i18n.Errorf("the captured TUN request returned HTTP %d", response.StatusCode)
+	}
+	_, err = io.Copy(io.Discard, io.LimitReader(response.Body, 1024))
+	return err
 }
 
 func connectionIDs(client *api.Client) (map[string]struct{}, error) {
@@ -175,29 +266,12 @@ func connectionIDs(client *api.Client) (map[string]struct{}, error) {
 	return ids, nil
 }
 
-func captured(connection api.Connection, tag string, before map[string]struct{}) bool {
+func captured(connection api.Connection, tag, sourceHost, sourcePort, host, port string, before map[string]struct{}) bool {
 	if _, seen := before[connection.ID]; seen {
 		return false
 	}
-	if connection.Metadata.Type != "tun/"+tag {
-		return false
-	}
-	return connection.Metadata.DestinationIP == captureProbeHost &&
-		connection.Metadata.DestinationPort == captureProbePort
-}
-
-func lookupThroughTunnel() error {
-	resolver := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var dialer net.Dialer
-			return dialer.DialContext(ctx, "udp", "8.8.8.8:53")
-		},
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if _, err := resolver.LookupHost(ctx, "example.com"); err != nil {
-		return i18n.Errorf("DNS through the TUN failed: %w", err)
-	}
-	return nil
+	metadata := connection.Metadata
+	return metadata.Type == "tun/"+tag && metadata.Network == "tcp" &&
+		metadata.SourceIP == sourceHost && metadata.SourcePort == sourcePort &&
+		metadata.DestinationIP == host && metadata.DestinationPort == port
 }

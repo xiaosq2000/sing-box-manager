@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -78,8 +79,13 @@ func runTunOn(env Env) int {
 	if err != nil {
 		return fail(env, i18n.New("cannot find the current user"))
 	}
+	transaction, err := tun.RandomSecret()
+	if err != nil {
+		return fail(env, err)
+	}
 	args := []string{
 		"_tun-apply",
+		"--transaction", transaction,
 		"--config", staged.Config,
 		"--bin-dir", staged.BinDir,
 		"--rules", staged.RulesDir,
@@ -95,11 +101,27 @@ func runTunOn(env Env) int {
 		Interface: tun.InterfaceName,
 		Since:     time.Now().UTC().Format(time.RFC3339),
 	}
-	if err := tun.WriteState(layout, state); err != nil {
-		return fail(env, i18n.Errorf("Linux TUN is active but its local API state could not be saved: %w", err))
+	if err := finishTunActivation(env, layout, self, transaction, state); err != nil {
+		return fail(env, err)
 	}
 	fmt.Fprintf(env.Stdout, i18n.T("Linux TUN is active on %s. Traffic is captured; 'sbc tun off' stops it and leaves the mixed proxy off.\n"), tun.InterfaceName)
 	return 0
+}
+
+// finishTunActivation closes the user/root commit boundary. The independent
+// recovery deadline remains armed until root accepts the saved user state.
+func finishTunActivation(env Env, layout paths.Layout, self, transaction string, state tun.State) error {
+	err := tun.WriteState(layout, state)
+	if err == nil {
+		err = env.Sudo(self, []string{"_tun-commit", "--transaction", transaction})
+	}
+	if err == nil {
+		return nil
+	}
+	if stopErr := env.Sudo(self, []string{"_tun-off"}); stopErr != nil {
+		return errors.Join(i18n.New("TUN commit failed. Recovery is pending. Run 'sbc tun off'"), err, stopErr)
+	}
+	return errors.Join(i18n.New("TUN commit failed. The TUN was stopped and the mixed proxy remains off"), err, tun.RemoveState(layout))
 }
 
 // runTunOff asks root to stop and disable the service. It never starts the
@@ -130,14 +152,15 @@ func runTunOff(env Env) int {
 }
 
 // runTunApply is the root-side hidden command.
-func runTunApply(env Env, config, binDir, rules string, ownerUID int, ownerUser string) int {
+func runTunApply(env Env, config, binDir, rules string, ownerUID int, ownerUser, transaction string) int {
 	if err := tun.Apply(tun.Options{
-		Paths:     tun.DefaultPaths(),
-		Config:    config,
-		BinDir:    binDir,
-		RulesDir:  rules,
-		OwnerUID:  ownerUID,
-		OwnerUser: ownerUser,
+		Paths:       tun.DefaultPaths(),
+		Config:      config,
+		BinDir:      binDir,
+		RulesDir:    rules,
+		OwnerUID:    ownerUID,
+		OwnerUser:   ownerUser,
+		Transaction: transaction,
 	}); err != nil {
 		return fail(env, err)
 	}

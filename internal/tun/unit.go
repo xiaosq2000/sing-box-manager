@@ -4,6 +4,8 @@ import "strconv"
 
 // Unit returns the root systemd unit for the TUN service.
 func Unit(paths Paths) string {
+	// WorkingDirectory is a path directive, not an Exec argument. Quoting it
+	// makes the quote part of the path on systemd 255.
 	quote := strconv.Quote
 	return `[Unit]
 Description=sbc Linux TUN (sing-box)
@@ -22,6 +24,7 @@ RuntimeDirectoryMode=0755
 StateDirectory=sbc-tun
 StateDirectoryMode=0700
 Environment=` + quote("LD_LIBRARY_PATH="+paths.BinaryDir) + `
+ExecCondition=+` + quote(paths.ControlDir()+"/recover-sbc") + ` _tun-check-start
 ExecStartPre=+/bin/touch ` + quote(paths.Active) + `
 ExecStart=` + quote(paths.Binary) + ` run -c ` + quote(paths.Config) + `
 ExecStopPost=+/bin/rm -f ` + quote(paths.Active) + `

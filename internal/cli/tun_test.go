@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,49 @@ func TestTunOnRefusesARemoteShellBeforeSudo(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "SSH") {
 		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestTunCommitFailureStopsBeforeRemovingUserState(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		writeFails, stopFails bool
+	}{
+		{"user state write", true, false}, {"root commit", false, false}, {"root stop", false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			layout := paths.Layout{Config: t.TempDir()}
+			if test.writeFails {
+				if err := os.Mkdir(tun.StatePath(layout), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var calls []string
+			env := Env{Sudo: func(_ string, args []string) error {
+				calls = append(calls, args[0])
+				if args[0] == "_tun-commit" {
+					return errors.New("fixture commit failed")
+				}
+				if test.stopFails {
+					return errors.New("fixture stop failed")
+				}
+				return nil
+			}}
+			err := finishTunActivation(env, layout, "/fixture/sbc", "fixture-id", tun.State{APIPort: 63001})
+			if err == nil {
+				t.Fatal("failed commit reported success")
+			}
+			if calls[len(calls)-1] != "_tun-off" {
+				t.Fatalf("cleanup=%v", calls)
+			}
+			_, stateErr := os.Stat(tun.StatePath(layout))
+			if !test.writeFails && test.stopFails && stateErr != nil {
+				t.Fatal("unconfirmed stop lost user state")
+			}
+			if !test.writeFails && !test.stopFails && !os.IsNotExist(stateErr) {
+				t.Fatal("confirmed stop retained user state")
+			}
+		})
 	}
 }
 

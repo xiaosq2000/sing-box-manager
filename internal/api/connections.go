@@ -6,6 +6,7 @@ import "net/http"
 type Connection struct {
 	ID       string             `json:"id"`
 	Metadata ConnectionMetadata `json:"metadata"`
+	Chains   []string           `json:"chains"`
 }
 
 // ConnectionMetadata is the part of a connection that names its inbound and
@@ -13,6 +14,8 @@ type Connection struct {
 type ConnectionMetadata struct {
 	Type            string `json:"type"`
 	Network         string `json:"network"`
+	SourceIP        string `json:"sourceIP"`
+	SourcePort      string `json:"sourcePort"`
 	DestinationIP   string `json:"destinationIP"`
 	DestinationPort string `json:"destinationPort"`
 }

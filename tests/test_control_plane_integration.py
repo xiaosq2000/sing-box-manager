@@ -702,7 +702,7 @@ payload = resp.json()
 assert payload["latest"] == {"sing_box": "1.14.2", "sbc": "0.2.0"}
 assert payload["config"]["inbounds"][0]["type"] == "mixed"
 assert payload["config_tun"]["inbounds"][0]["type"] == "tun"
-assert payload["config_tun"]["inbounds"][0]["dns_mode"] == "disabled"
+assert payload["config_tun"]["inbounds"][0]["dns_mode"] == "hijack"
 assert payload["config_tun"]["dns"]["strategy"] == "prefer_ipv4"
 assert all(
     server["tag"] != "system"

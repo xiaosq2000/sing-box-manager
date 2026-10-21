@@ -1,6 +1,6 @@
 # Sing-box VPN Client for Windows
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 `sbc` is the Sing-box client CLI for Windows. It runs unelevated, manages background
 services via Windows Task Scheduler, and configures user and desktop proxy settings.
@@ -77,8 +77,9 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc uninstall`                   | Remove scheduled tasks, files, PATH entry, and owned proxy settings            |
 | `sbc version`                     | Display `sbc` version and commit information                                   |
 
-Region matching (`sbc privacy region`) is Linux-only. On Windows the command
-reports that it is unavailable.
+Region matching (`sbc privacy region`) and Linux TUN (`sbc tun on`) are
+Linux-only. On Windows these commands report that they are unavailable; the
+mixed proxy and scheduled tasks provide the client service.
 
 ### Current session environment
 

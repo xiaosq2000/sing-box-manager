@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -43,12 +43,19 @@ failure recovery and settings ownership.
 `sbc tun on` runs a root-owned sing-box TUN service (`sbc-tun.service`, interface
 `sbc-tun0`) on native Linux. It needs a running systemd and `/dev/net/tun`; it
 refuses WSL2, containers, SSH sessions, and machines with other login accounts.
-The command asks for sudo. Root owns `/etc/sbc/tun`, `/var/lib/sbc-tun`, the
-staged binary and the unit; the service runs as `sbc-tun` with `CAP_NET_ADMIN`
-only. The subscription's `config_tun` supplies the TUN config, and `sbc` adds the
-local API, cache and absolute rule snapshot paths. The service does not download
-rule updates; `sbc tun on` stages the installed snapshots again. One user owns the
+The command asks for sudo. Root owns `/etc/sbc/tun`, `/etc/sbc/tun-control`,
+`/var/lib/sbc-tun`, the staged binary and the unit; the control directory keeps
+transaction metadata without API credentials. The service runs as `sbc-tun` with
+`CAP_NET_ADMIN` only. The subscription's `config_tun` supplies the TUN config,
+and `sbc` adds the local API, cache and absolute rule snapshot paths.
+Root patches remote rule sets into local, read-only snapshots. The service does
+not download rules. `sbc tun on` stages the installed snapshots again. One user owns the
 TUN on a machine; another user's `sbc tun on` is refused.
+
+Root sets directory modes explicitly, including with `umask 077`. Do not lower
+a private umask to make activation work. Public transaction metadata stays
+readable, while config and rule directories remain service-group-only and the
+engine state directory remains private. See [TUN file protection](SECRET_HANDLING.md).
 
 TUN answers DNS through its route rules and never uses the systemd-resolved stub.
 Mixed mode and TUN never run together: `sbc on`, `sbc desktop on` and
@@ -58,6 +65,31 @@ while TUN is active; run `sbc tun off` first. The service is enabled at boot onl
 after activation checks pass. `sbc tun off` stops and disables the service and
 leaves the mixed proxy off; run `sbc on` to restore it. There is no fail-open: if
 the proxy fails, captured traffic has no exit, so run `sbc tun off` at the machine.
+
+Activation requires a captured HTTPS request under the current route mode.
+The check never changes that mode. `direct` does not require an unused proxy;
+the other modes also require the selected proxy to reach the latency-test URL.
+The current-route request uses `www.baidu.com`, or `www.gstatic.com` in `global`.
+It uses system DNS, validates TLS, ignores proxy variables, and does not follow
+redirects. No activation probe contacts an AI provider. These probes check
+representative paths, not every destination or rule.
+
+Root prepares a complete candidate before changing live files. Superseded
+config and binary directories remain beside the live directories with `.prev-`
+suffixes. They can contain credentials and consume disk space. There is no
+automatic garbage collection. No failed operation automatically starts an older
+TUN or the mixed proxy.
+
+The user saves the local API state before root commits and enables the service
+at boot. Until commit, an independent root timer can stop the pending generation
+after three minutes. A pending generation cannot start after reboot without its
+recovery timer. A failed user-state write or commit requests a confirmed stop.
+
+Stop checks the service state, main process, interface, routes and nftables table.
+If it cannot confirm cleanup, sbc retains a persistent mixed-mode block and marks
+the TUN as dirty. `sbc status` reports `tun: dirty` and exits 1. Run `sbc tun off`
+at the machine to retry recovery. Pending and dirty state also block install,
+uninstall and upgrade. Do not delete markers to bypass this protection.
 
 Android and iOS apps manage their own tunnels and are not affected.
 
@@ -99,6 +131,7 @@ command is removed. Other commands retain their syntax and meaning.
 | `sbc privacy browser webrtc [on\|off]`    | Show or change Chrome WebRTC protection (Linux)                 |
 | `sbc privacy browser language [on\|off]`  | Show or match Chrome language preferences to the node (Linux)   |
 | `sbc privacy region [on\|off]`            | Show or match the node's client time zone and language (Linux)  |
+| `sbc tun on`, `sbc tun off`               | Enable or disable Linux TUN capture                             |
 | `sbc lang [en\|zh\|auto]`                 | Show or set the language of sbc messages                        |
 | `sbc docker [on\|off] [--yes]`            | Show or switch the Linux Docker daemon's proxy                  |
 | `sbc route [name]`, `sbc protocol [name]` | Show or switch a choice without restarting sing-box             |

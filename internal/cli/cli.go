@@ -320,7 +320,11 @@ func runStatus(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if tun.Active() {
+	if status := tun.Status(); status != "off" {
+		if status != "active" {
+			fmt.Fprintln(env.Stdout, i18n.T("tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'"))
+			return 1
+		}
 		fmt.Fprintf(env.Stdout, i18n.T("tun:      active (%s)\n"), tun.InterfaceName)
 		state, stateErr := tun.ReadState(layout)
 		if stateErr != nil {

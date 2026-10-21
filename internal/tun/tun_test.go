@@ -116,7 +116,7 @@ func TestPatchAddsLocalAPIAndRulePaths(t *testing.T) {
 	config := []byte(`{
 		"experimental": {"clash_api": {"default_mode": "china-direct"}, "cache_file": {"enabled": true}},
 		"route": {"rule_set": [
-			{"tag": "a", "type": "remote", "initial_path": "rules/a.srs"},
+			{"tag": "a", "type": "remote", "format": "binary", "initial_path": "rules/a.srs", "url": "https://unlisted.invalid/a.srs", "http_client": "rule-downloads", "update_interval": "24h"},
 			{"tag": "b", "type": "remote", "initial_path": "rules/b.srs"},
 			{"tag": "c", "type": "remote", "initial_path": "rules/a.srs"}
 		]}
@@ -146,12 +146,22 @@ func TestPatchAddsLocalAPIAndRulePaths(t *testing.T) {
 		t.Fatalf("cache = %#v", experimental["cache_file"])
 	}
 	sets := root["route"].(map[string]any)["rule_set"].([]any)
-	first := sets[0].(map[string]any)["initial_path"]
-	if first != "/etc/sbc/tun/rules/a.srs" {
-		t.Fatalf("initial_path = %v", first)
+	first := sets[0].(map[string]any)
+	if first["type"] != "local" || first["path"] != "/etc/sbc/tun/rules/a.srs" || first["format"] != "binary" {
+		t.Fatalf("local rule set = %v", first)
 	}
-	if sets[0].(map[string]any)["update_interval"] != "0" {
-		t.Fatalf("update_interval = %v", sets[0].(map[string]any)["update_interval"])
+	for _, key := range []string{"initial_path", "url", "http_client", "update_interval"} {
+		if _, present := first[key]; present {
+			t.Fatalf("remote field retained: %s", key)
+		}
+	}
+
+	checked, checkedFiles, err := Patch(patched, Local{RulesDir: "/candidate/rules"})
+	if err != nil || len(checkedFiles) != 2 || !strings.Contains(string(checked), "/candidate/rules/a.srs") {
+		t.Fatalf("rebase local snapshots: %s %v %v", checked, checkedFiles, err)
+	}
+	if strings.Contains(string(checked), "/etc/sbc/tun/rules") {
+		t.Fatal("candidate check retained live snapshot paths")
 	}
 
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -161,6 +171,13 @@ func TestPatchAddsLocalAPIAndRulePaths(t *testing.T) {
 	port, secret, err := ReadAPI(path)
 	if err != nil || port != 63001 || secret != "fixture-secret" {
 		t.Fatalf("ReadAPI = %d %q %v", port, secret, err)
+	}
+}
+
+func TestPatchRefusesRemoteRulesWithoutSnapshots(t *testing.T) {
+	_, _, err := Patch([]byte(`{"experimental":{},"route":{"rule_set":[{"type":"remote","tag":"missing","url":"https://unlisted.invalid/rules.srs"}]}}`), Local{})
+	if err == nil || !strings.Contains(err.Error(), "no installed snapshot") {
+		t.Fatalf("error=%v", err)
 	}
 }
 
@@ -277,6 +294,15 @@ func (f *fakeRunner) Run(name string, args ...string) error {
 }
 
 func (f *fakeRunner) Output(name string, args ...string) (string, error) {
+	if filepath.Base(name) == "systemctl" {
+		return "LoadState=loaded\nActiveState=inactive\nMainPID=0\nUnitFileState=disabled\n", nil
+	}
+	if filepath.Base(name) == "ip" {
+		return "[]", nil
+	}
+	if filepath.Base(name) == "nft" {
+		return `{"nftables":[]}`, nil
+	}
 	if f.outputs != nil {
 		if value, ok := f.outputs[name]; ok {
 			return value, nil
@@ -308,21 +334,23 @@ func TestApplyStagesAndEnablesTheService(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := filepath.Join(staged, "config.json")
-	if err := os.WriteFile(config, []byte(`{}`), 0o600); err != nil {
+	if err := os.WriteFile(config, []byte(`{"experimental":{"clash_api":{"external_controller":"127.0.0.1:63001","secret":"fixture"}},"route":{"rule_set":[]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	runner := &fakeRunner{}
 	opts := Options{
-		Paths:     paths,
-		Config:    config,
-		BinDir:    stagedBin,
-		RulesDir:  stagedRules,
-		OwnerUID:  1000,
-		OwnerUser: "alice",
-		Runner:    runner,
-		Euid:      func() int { return 0 },
-		LookPath:  func(name string) (string, error) { return "/usr/sbin/" + name, nil },
+		Paths:       paths,
+		Config:      config,
+		BinDir:      stagedBin,
+		RulesDir:    stagedRules,
+		OwnerUID:    1000,
+		OwnerUser:   "alice",
+		Transaction: "0123456789abcdef0123456789abcdef",
+		Self:        filepath.Join(stagedBin, "sing-box"),
+		Runner:      runner,
+		Euid:        func() int { return 0 },
+		LookPath:    func(name string) (string, error) { return "/usr/sbin/" + name, nil },
 		LookupUser: func(string) (*user.User, error) {
 			return &user.User{Uid: "61000", Gid: "61000", Username: ServiceUser}, nil
 		},
@@ -333,6 +361,12 @@ func TestApplyStagesAndEnablesTheService(t *testing.T) {
 		Verify: func(Paths, Runner, Tools) error { return nil },
 	}
 	if err := Apply(opts); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(runner.joined(), "systemctl enable ") {
+		t.Fatal("Apply enabled the service before the user saved API state")
+	}
+	if err := Commit(StopOptions{Paths: paths, Runner: runner, Euid: opts.Euid, LookPath: opts.LookPath}, opts.Transaction); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{
@@ -365,6 +399,7 @@ func TestApplyStagesAndEnablesTheService(t *testing.T) {
 	}
 
 	runner.failStart = true
+	opts.Transaction = "1123456789abcdef0123456789abcdef"
 	if err := os.Remove(paths.Active); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -383,11 +418,13 @@ func TestCapturedRequiresANewTunConnection(t *testing.T) {
 		Metadata: api.ConnectionMetadata{
 			Type:            "tun/tun-in",
 			Network:         "tcp",
+			SourceIP:        "192.0.2.10",
+			SourcePort:      "45678",
 			DestinationIP:   "1.1.1.1",
 			DestinationPort: "443",
 		},
 	}
-	if !captured(probe, "tun-in", before) {
+	if !captured(probe, "tun-in", "192.0.2.10", "45678", "1.1.1.1", "443", before) {
 		t.Fatal("a new TUN connection was not accepted")
 	}
 
@@ -399,12 +436,15 @@ func TestCapturedRequiresANewTunConnection(t *testing.T) {
 		{"other inbound", func(connection *api.Connection) { connection.Metadata.Type = "mixed/mixed" }},
 		{"other destination", func(connection *api.Connection) { connection.Metadata.DestinationIP = "8.8.8.8" }},
 		{"other port", func(connection *api.Connection) { connection.Metadata.DestinationPort = "80" }},
+		{"other source", func(connection *api.Connection) { connection.Metadata.SourceIP = "192.0.2.11" }},
+		{"other socket", func(connection *api.Connection) { connection.Metadata.SourcePort = "45679" }},
+		{"other network", func(connection *api.Connection) { connection.Metadata.Network = "udp" }},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			connection := probe
 			test.mutate(&connection)
-			if captured(connection, "tun-in", before) {
+			if captured(connection, "tun-in", "192.0.2.10", "45678", "1.1.1.1", "443", before) {
 				t.Fatal("an unrelated connection was accepted")
 			}
 		})
