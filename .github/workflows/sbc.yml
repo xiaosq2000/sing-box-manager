@@ -130,11 +130,13 @@ jobs:
       - run: go test -tags e2e -count=1 -v ./internal/e2e
 
   e2e-tun:
-    # Only the disposable guest changes services, certificates and networking.
+    # Each suite has its own disposable runner and guest.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, lifecycle]
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      SBC_TUN_E2E_ACCEL: tcg
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -143,15 +145,40 @@ jobs:
         with:
           locked: true
           cache: true
+      - name: Restore TUN build cache
+        id: build-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-tun-build-v1-${{ hashFiles('pixi.lock') }}-${{ hashFiles('go.sum', 'cmd/**/*.go', 'internal/**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-tun-build-v1-${{ hashFiles('pixi.lock') }}-
       - name: Install the VM tools
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils netcat-openbsd
+      - name: Select the VM accelerator
+        run: |
+          # This changes device access only on the disposable hosted runner.
+          if [ -c /dev/kvm ]; then
+            sudo chown "$(id -u)" /dev/kvm || echo "Could not grant KVM access; testing existing access." >&2
+          fi
+          accel=$(pixi run python scripts/dev/tun-vm/select-accel.py)
+          echo "SBC_TUN_E2E_ACCEL=$accel" >> "$GITHUB_ENV"
+          echo "TUN suite ${{ matrix.suite }}: accelerator=$accel" >> "$GITHUB_STEP_SUMMARY"
       - name: Prepare the verified binaries and cloud image
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           pixi run fetch-sing-box
           bash scripts/dev/fetch-tun-image.sh
-      - name: Run controlled Linux TUN acceptance
-        run: pixi run bash scripts/dev/test-tun-vm.sh
-      - name: Run installation, engine upgrade and reboot acceptance
-        run: pixi run bash scripts/dev/test-tun-vm.sh lifecycle
+      - name: Run complete Linux TUN acceptance (${{ matrix.suite }})
+        run: pixi run bash scripts/dev/test-tun-vm.sh "${{ matrix.suite }}"
+      - name: Save TUN build cache
+        if: github.event_name == 'push' && github.ref_name == 'main' && steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
