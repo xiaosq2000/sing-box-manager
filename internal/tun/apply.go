@@ -374,6 +374,9 @@ func stage(opts Options, gid int) error {
 	if err := os.MkdirAll(opts.Paths.BinaryDir, 0o755); err != nil {
 		return err
 	}
+	if err := os.Chmod(opts.Paths.BinaryDir, 0o755); err != nil {
+		return err
+	}
 	if err := opts.Chown(opts.Paths.BinaryDir, 0, 0); err != nil {
 		return err
 	}
@@ -384,6 +387,9 @@ func stage(opts Options, gid int) error {
 		return err
 	}
 	if err := os.MkdirAll(opts.Paths.RulesDir, 0o750); err != nil {
+		return err
+	}
+	if err := os.Chmod(opts.Paths.RulesDir, 0o750); err != nil {
 		return err
 	}
 	if err := opts.Chown(opts.Paths.RulesDir, 0, gid); err != nil {

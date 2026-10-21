@@ -509,8 +509,15 @@ Environment:
 Root owns binaries, configs, rule snapshots and the unit. `sbc-tun` runs sing-box
 with `CAP_NET_ADMIN` only and writes only its state directory. Stage the signed
 binary and record its hash, and re-sync it on every `tun on`. Copy rule snapshots
-into the root-owned config directory and set each `initial_path` to its absolute
-path, so the first start works without a download.
+into the root-owned config directory. Replace remote rule sets with local sets
+that use absolute paths, so the first start works without a download.
+
+Set final directory modes explicitly after creation, including candidate binary
+and rule directories. Repair existing public control-directory modes before
+taking the root lock. Support a private `umask 077` without changing the caller's
+umask. Keep configuration and rule access service-group-only and engine state
+private. Require a separate native console cycle before accepting these modes
+on an operator machine.
 
 Routing:
 

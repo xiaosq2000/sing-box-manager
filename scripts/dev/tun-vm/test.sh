@@ -6,6 +6,8 @@ if [ "$(hostname)" != tun-fixture ] || [ ! -f "$ASSETS/run-id" ] || ! systemd-de
 	echo "Refusing to change a system outside the disposable TUN guest." >&2
 	exit 2
 fi
+# Exercise the root publisher with the same private umask as an operator backup.
+umask 077
 export PATH="$HOME/.local/bin:$PATH"
 export SBC_LANG=en
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -45,6 +47,34 @@ assert_off() {
 	[ "$(/usr/bin/systemctl show -p UnitFileState --value sbc-tun.service)" = disabled ]
 	sudo nft -j list ruleset | python3 -c 'import json,sys; assert not any(x.get("table",{}).get("name")=="sing-box" for x in json.load(sys.stdin)["nftables"])'
 }
+assert_modes() {
+	sudo python3 - <<'PY'
+import grp, os, pwd, stat
+uid = pwd.getpwnam("sbc-tun").pw_uid
+gid = grp.getgrnam("sbc-tun").gr_gid
+for path, mode, owner, group in [
+    ("/etc/sbc", 0o755, 0, 0),
+    ("/etc/sbc/tun-control", 0o755, 0, 0),
+    ("/etc/sbc/tun-control/transaction.json", 0o644, 0, 0),
+    ("/etc/sbc/tun-control/recover-sbc", 0o755, 0, 0),
+    ("/usr/local/lib/sbc-tun", 0o755, 0, 0),
+    ("/usr/local/lib/sbc-tun/sing-box", 0o755, 0, 0),
+    ("/etc/sbc/tun", 0o750, 0, gid),
+    ("/etc/sbc/tun/config.json", 0o640, 0, gid),
+    ("/etc/sbc/tun/rules", 0o750, 0, gid),
+    ("/var/lib/sbc-tun", 0o700, uid, gid),
+]:
+    info = os.stat(path)
+    assert (stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid) == (mode, owner, group), path
+PY
+}
+step "strict umask for the guest user and privileged publisher"
+printf 'Defaults:ubuntu umask=0077,umask_override\n' >"$HOME/sudo-umask"
+sudo install -m 440 "$HOME/sudo-umask" /etc/sudoers.d/sbc-fixture-umask
+sudo visudo -cf /etc/sudoers.d/sbc-fixture-umask
+root_umask=$(sudo sh -c umask)
+printf 'user umask=%s; root umask=%s\n' "$(umask)" "$root_umask"
+[ "$root_umask" = 0077 ]
 step "prepare an isolated router and direct target"
 for tool in ip nft dig curl python3 update-ca-certificates; do command -v "$tool" >/dev/null; done
 # A restricted QEMU network supplies an address but no default route.
@@ -109,6 +139,7 @@ sbc tun on >"$HOME/tun-on.log" 2>&1
 [ "$(phase)" = active ]
 sbc status
 load_api() {
+	assert_modes
 	port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_port"])' "$XDG_CONFIG_HOME/sbc/tun.json")
 	secret=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_secret"])' "$XDG_CONFIG_HOME/sbc/tun.json")
 }
@@ -431,6 +462,7 @@ assert_off
 sudo rm /usr/local/bin/systemctl /usr/local/bin/systemd-run
 step "the client can activate again after independent recovery"
 sbc tun on
+assert_modes
 sbc tun off
 assert_off
 result=PASS

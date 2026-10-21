@@ -156,7 +156,10 @@ system scope, absolute and relative time zone links, unchanged tool results,
 tool and file fallback, ownership, external changes, partial components, pending
 retries and the root state. No test changes the host's time
 zone or locale. The common CLI fixture uses temporary system region paths and
-rejects sudo calls without a fake runner. CLI fixtures check the `--system`
+rejects sudo calls without a fake runner. Mixed guards also use the injected
+capture state, including for region warnings. Without an injected state, the
+production guard still uses `tun.Active()`. An unreadable operator journal must
+not change fixture results. CLI fixtures check the `--system`
 confirmation, activation through a symbolic-link directory, the no-sudo refresh
 path and the uninstall restore. The directory fixture covers macOS path aliases
 on Linux too.
@@ -305,7 +308,17 @@ proxy paths in all five modes. The suite drives route and protocol changes throu
 the native CLI, including a route alias and round-trip selector changes.
 Generation, process ID and installed files stay unchanged across switching.
 Distinct responses prove both selector paths. Invalid choices and mixed-only
-diagnostics fail explicitly. Checks cover stop failure, recovery after a dead proxy,
+diagnostics fail explicitly.
+
+A capture-first activation probe does not establish hostname-based routing.
+Native domain-route checks need an application TLS flow with SNI. Obtain operator
+permission before sending TLS ahead of capture verification. Match the new
+connection ID, source/destination tuple, TUN inbound, hostname and expected chain
+before sending HTTP on that socket. Keep system TLS verification. Do not follow
+redirects, retry directly, or infer routing from HTTP status or exit location.
+These checks do not enable TUN `ip` or `speed` diagnostics.
+
+Checks cover stop failure, recovery after a dead proxy,
 `direct` with an unused dead proxy, and controller death after service startup.
 Controller-death cases observe timer recovery before explicit test cleanup.
 
@@ -329,7 +342,19 @@ not establish an engine-version transition.
 A guest-only wrapper shortens the real systemd timer to 15 seconds and pauses
 the start command after the service starts. No production skip flag is used.
 Unit tests check expired commits, stale timers, user-state write failure,
-complete candidates and native systemd unit syntax. Local fixture checks need no VM:
+complete candidates and native systemd unit syntax. Permission subprocesses
+check `umask 022` and `077`, with fresh and existing private control directories.
+They check the complete published generation, commit and shutdown. The tests do
+not change the parent test process's umask.
+
+The guest runs with user and root `umask 0077`. A guest-only sudoers entry sets
+the elevated mask, and the script checks its effective value. It checks directory
+modes and ownership after activation and maintenance. Public metadata remains
+readable without sudo. Config, rule and state access stays restricted. These checks do not change
+host sudo policy or establish operator-machine acceptance.
+A native console cycle remains required before merge.
+
+Local fixture checks need no VM:
 
 ```sh
 pixi run test tests/test_tun_vm.py tests/test_desktop_config.py

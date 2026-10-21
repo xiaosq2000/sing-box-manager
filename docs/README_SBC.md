@@ -52,6 +52,11 @@ Root patches remote rule sets into local, read-only snapshots. The service does
 not download rules. `sbc tun on` stages the installed snapshots again. One user owns the
 TUN on a machine; another user's `sbc tun on` is refused.
 
+Root sets directory modes explicitly, including with `umask 077`. Do not lower
+a private umask to make activation work. Public transaction metadata stays
+readable, while config and rule directories remain service-group-only and the
+engine state directory remains private. See [TUN file protection](SECRET_HANDLING.md).
+
 TUN answers DNS through its route rules and never uses the systemd-resolved stub.
 Mixed mode and TUN never run together: `sbc on`, `sbc desktop on` and
 `sbc docker on` refuse while TUN is active, and the mixed user unit has a

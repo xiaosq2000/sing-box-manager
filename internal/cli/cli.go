@@ -152,7 +152,7 @@ func runInstall(env Env, options installOptions) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if tun.Active() {
+	if tunActive(env) {
 		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before reinstalling the mixed proxy"))
 	}
 	// The link is a credential, so it comes from standard input rather than an
@@ -496,7 +496,7 @@ func runUninstall(env Env, yes bool) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if tun.Active() {
+	if tunActive(env) {
 		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before uninstalling"))
 	}
 	local, localErr := readLocal(layout)
