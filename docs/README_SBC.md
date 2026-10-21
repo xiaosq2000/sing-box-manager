@@ -132,6 +132,24 @@ This also applies to AI checks and downloads. Native TUN diagnostics need
 separate implementation and acceptance. Maintenance preserves CLI-selected
 routes and protocols across controlled publication.
 
+### Acceptance and limits
+
+The M1b acceptance scope covers workstation activation, five route modes, real
+Trojan/Hysteria2/Naive traffic and refresh. Isolated KVM and TCG checks also cover
+the hosted installer, actual maintenance timer triggers, a signed engine upgrade
+from 1.14.2 to 1.14.3, and committed/pending/dirty state across reboot.
+These checks do not mean the workstation received a new release or rebooted.
+
+End-to-end IPv6, Docker bridge networking and interface-bound sockets remain
+unvalidated compatibility areas. Do not assume those paths behave like the
+verified application traffic. TUN IP and speed diagnostics remain unsupported.
+See the [acceptance scope](REFACTOR_SPEC.md#m1b-acceptance-scope).
+
+After `sbc tun off`, uninstall removes the user client and its maintenance
+schedules. It retains the disabled root TUN unit, helper, journal and superseded
+root generations. Those generations can contain credentials. Uninstall does not
+perform privileged garbage collection.
+
 Android and iOS apps manage their own tunnels and are not affected.
 
 The hosted installer refuses when a legacy TUN unit, transaction marker, or
