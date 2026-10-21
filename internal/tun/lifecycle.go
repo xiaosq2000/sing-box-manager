@@ -54,8 +54,15 @@ func saveTransaction(p Paths, record transaction) error {
 }
 
 func controlLock(p Paths) (func(), error) {
-	if err := os.MkdirAll(p.ControlDir(), 0o755); err != nil {
-		return nil, err
+	// Public transaction metadata must remain readable with a private umask.
+	// MkdirAll does not repair existing modes or override the caller's umask.
+	for _, dir := range []string{filepath.Dir(p.ConfigDir), p.ControlDir()} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(dir, 0o755); err != nil {
+			return nil, err
+		}
 	}
 	return maintenance.Lock(paths.Layout{Config: filepath.Join(p.ControlDir(), "control")})
 }

@@ -284,7 +284,19 @@ The last case observes timer recovery before explicit test cleanup.
 A guest-only wrapper shortens the real systemd timer to 15 seconds and pauses
 the start command after the service starts. No production skip flag is used.
 Unit tests check expired commits, stale timers, user-state write failure,
-complete candidates and native systemd unit syntax. Local fixture checks need no VM:
+complete candidates and native systemd unit syntax. Permission subprocesses
+check `umask 022` and `077`, with fresh and existing private control directories.
+They check the complete published generation, commit and shutdown. The tests do
+not change the parent test process's umask.
+
+The guest runs with user and root `umask 0077`. A guest-only sudoers entry sets
+the elevated mask, and the script checks its effective value. It checks directory
+modes and ownership after activation. Public metadata remains readable without
+sudo. Config, rule and state access stays restricted. These checks do not change
+host sudo policy or establish operator-machine acceptance.
+A native console cycle remains required before merge.
+
+Local fixture checks need no VM:
 
 ```sh
 pixi run test tests/test_tun_vm.py tests/test_desktop_config.py

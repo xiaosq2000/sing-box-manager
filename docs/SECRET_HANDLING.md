@@ -138,6 +138,21 @@ routine log cleanup. The transaction journal under `/etc/sbc/tun-control` has no
 API secret and is not writable by the engine. The TUN DNS cache lives in
 `/var/lib/sbc-tun` and is writable only by the `sbc-tun` service user.
 
+Root sets these modes explicitly, regardless of the caller's umask:
+
+| Directory                            | Mode   | Owner             |
+| ------------------------------------ | ------ | ----------------- |
+| `/etc/sbc`, `/etc/sbc/tun-control`   | `0755` | `root:root`       |
+| `/usr/local/lib/sbc-tun`             | `0755` | `root:root`       |
+| `/etc/sbc/tun`, `/etc/sbc/tun/rules` | `0750` | `root:sbc-tun`    |
+| `/var/lib/sbc-tun`                   | `0700` | `sbc-tun:sbc-tun` |
+
+The journal is mode `0644` and contains no API secret. Config and rule snapshots
+remain mode `0640`. The owner's API state remains mode `0600`. Candidate and
+published directories use the same modes. A private `umask 077` must not make
+binaries inaccessible or hide public transaction metadata. Do not use recursive
+chmod or expose private configuration to repair a failed start.
+
 IP diagnostics send each observed exit IP to ipwho.is over HTTPS for location and
 ASN estimates. Probe and detail requests follow the active route, which can be
 direct. The probe sources can therefore see the local network's public IP. The
