@@ -15,7 +15,7 @@ func TestCompletionNewFlagsAreOfflineAndCommandSpecific(t *testing.T) {
 		command string
 		want    []string
 	}{
-		{"ip", []string{"--ai", "--allow-direct-ai", "--help"}},
+		{"ip", []string{"--ai", "--allow-direct-ai", "--dual-stack", "--help"}},
 		{"route", []string{"--list", "--help"}},
 	} {
 		got := completionNames(t, env, out, entry.command, "--")
@@ -26,10 +26,10 @@ func TestCompletionNewFlagsAreOfflineAndCommandSpecific(t *testing.T) {
 		}
 	}
 	got := completionNames(t, env, out, "protocol", "--")
-	if slices.Contains(got, "--ai") || slices.Contains(got, "--list") {
+	if slices.Contains(got, "--ai") || slices.Contains(got, "--dual-stack") || slices.Contains(got, "--list") {
 		t.Fatal(got)
 	}
-	for _, flag := range []string{"--ai=", "--allow-direct-ai="} {
+	for _, flag := range []string{"--ai=", "--allow-direct-ai=", "--dual-stack="} {
 		if got := completionNames(t, env, out, "ip", flag); len(got) != 0 {
 			t.Fatal(got)
 		}

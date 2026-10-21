@@ -285,6 +285,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	add("status", i18n.T("Show service, proxy, route, protocol, shells, and traffic"), "proxy", argumentRange(0, 0), func([]string) int { return runStatus(env) })
 	var ip ipOptions
 	ipCmd := add("ip", i18n.T("Show exit IPs, with optional unauthenticated AI provider checks"), "proxy", argumentRange(0, 0), func([]string) int { return runIP(env, ip) })
+	ipCmd.Flags().BoolVar(&ip.dualStack, "dual-stack", false, i18n.T("Probe IPv6 as well as IPv4 through the active route"))
 	ipCmd.Flags().BoolVar(&ip.ai, "ai", false, i18n.T("Also probe Gemini, ChatGPT, and Claude"))
 	ipCmd.Flags().BoolVar(&ip.allowDirectAI, "allow-direct-ai", false, i18n.T("Permit AI probes to expose your direct network IP (requires --ai)"))
 	ipCmd.Args = func(cmd *cobra.Command, args []string) error {
@@ -296,7 +297,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		}
 		return nil
 	}
-	ipCmd.Long = i18n.T("General IP checks follow the active route. --ai uses the proxy-only diagnostic inlet and skips the direct route. --allow-direct-ai uses the active route instead. Provider checks use no account credentials and do not prove account eligibility. Redirects are not followed.")
+	ipCmd.Long = i18n.T("IPify and ident.me check IPv4 through the active route. --dual-stack also checks IPv6. ipwho.is supplies location and ASN estimates for each distinct exit IP. Sources can see different exits. --ai uses the proxy-only diagnostic inlet and skips the direct route. --allow-direct-ai uses the active route instead. AI checks use no account credentials and do not prove account eligibility. Redirects are not followed.")
 	var speed speedOptions
 	speedCmd := add("speed", i18n.T("Test page latency, or download throughput with --download [MB]"), "proxy", argumentRange(0, 0), func([]string) int { return runSpeed(env, speed) })
 	speedCmd.Flags().BoolVar(&speed.all, "all", false, i18n.T("Test every protocol without switching the one in use"))

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
@@ -31,7 +33,14 @@ func (h *harness) useSites(t *testing.T, pages map[string]string) *[]string {
 		lock.Lock()
 		seen = append(seen, r.Header.Get("Proxy-Authorization"))
 		lock.Unlock()
-		page, ok := pages[r.URL.Host]
+		page, ok := pages[r.URL.Host+r.URL.Path]
+		if !ok {
+			page, ok = pages[r.URL.Host]
+		}
+		if !ok && r.URL.Host == "details.test" {
+			fmt.Fprintf(w, `{"success":true,"ip":%q}`, strings.TrimPrefix(r.URL.Path, "/"))
+			return
+		}
 		if !ok {
 			http.Error(w, "down", http.StatusBadGateway)
 			return
@@ -42,45 +51,96 @@ func (h *harness) useSites(t *testing.T, pages map[string]string) *[]string {
 	address, _ := url.Parse(proxy.URL)
 	port, _ := strconv.Atoi(address.Port())
 	h.writeLocal(t, func(local *singbox.Local) { local.ListenPort = port })
-	h.env.Sites = probe.Sites{Gemini: "http://gemini.test/", Abroad: "http://ipinfo.test/json", China: "http://cip.test/"}
+	h.env.Sites = probe.Sites{
+		Gemini: "http://gemini.test/", IPify4: "http://ipify4.test/", IPify6: "http://ipify6.test/",
+		IdentMe4: "http://ident4.test/", IdentMe6: "http://ident6.test/", IPDetails: "http://details.test/",
+	}
 	return &seen
 }
 
-func TestIPShowsTheRouteAndWhereEachKindOfSitePlacesTheMachine(t *testing.T) {
-	h := newHarness(t)
-	h.writeLocal(t, func(local *singbox.Local) { local.Username, local.Password = "sbc", "s3cret" })
-	seen := h.useSites(t, map[string]string{
-		"gemini.test": `[["AA2Yr",2,1,200,"USA",null]]`,
-		"ipinfo.test": `{"ip": "203.0.113.7", "city": "Los Angeles", "country": "US"}`,
-		"cip.test":    "IP\t: 198.51.100.20\n地址\t: 中国  上海  上海\n运营商\t: 电信\n",
-	})
-
-	code := Run(h.env, []string{"ip"})
-
-	want := "route:    china-direct\nabroad:   Los Angeles, US, 203.0.113.7\nchina:    中国 上海 上海 电信, 198.51.100.20\n"
-	if code != 0 || h.out.String() != want {
-		t.Fatalf("code %d, got\n%s%s", code, h.out, h.errOut)
-	}
-	password := "Basic " + base64.StdEncoding.EncodeToString([]byte("sbc:s3cret"))
-	if len(*seen) != 2 || (*seen)[0] != password || (*seen)[1] != password {
-		t.Errorf("the proxy saw %q", *seen)
+func TestIPShowsSourcesIPv4AndDatabaseDetailsThroughTheActiveRoute(t *testing.T) {
+	for _, args := range [][]string{{"ip"}, {"ip", "--dual-stack=false"}} {
+		h := newHarness(t)
+		h.writeLocal(t, func(local *singbox.Local) { local.Username, local.Password = "sbc", "s3cret" })
+		seen := h.useSites(t, map[string]string{
+			"ipify4.test": "203.0.113.7", "ident4.test": "198.51.100.20",
+			"details.test/203.0.113.7": `{"success":true,"ip":"203.0.113.7","country":"US","region":"California","city":"Los Angeles","connection":{"asn":64500,"org":"Example Network"}}`,
+		})
+		code := Run(h.env, args)
+		text := strings.Join(strings.Fields(h.out.String()), " ")
+		for _, want := range []string{
+			"route: china-direct", "IP checks follow the active route", "IP details: ipwho.is (database estimates)",
+			"Source Family Exit IP Location ASN / organization",
+			"IPify IPv4 203.0.113.7 US / California / Los Angeles AS64500 / Example Network",
+			"ident.me IPv4 198.51.100.20 unknown unknown / unknown",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("missing %q in %s", want, h.out)
+			}
+		}
+		if code != 0 || len(*seen) != 4 || strings.Contains(text, "IPv6") || strings.Contains(text, "gemini:") || h.api.mode != "china" || h.api.protocol != "trojan" || len(h.api.speedTests) != 0 {
+			t.Fatalf("code %d, %d requests, output %s%s", code, len(*seen), h.out, h.errOut)
+		}
+		password := "Basic " + base64.StdEncoding.EncodeToString([]byte("sbc:s3cret"))
+		for _, header := range *seen {
+			if header != password {
+				t.Errorf("wrong proxy authentication")
+			}
+		}
 	}
 }
 
 func TestIPReportsASiteThatFailsWithoutContactingAI(t *testing.T) {
 	h := newHarness(t)
-	h.useSites(t, map[string]string{
-		"gemini.test": `,2,1,200,"HKG"`,
-		"cip.test":    "IP\t: 198.51.100.20\n",
-	})
-
+	seen := h.useSites(t, map[string]string{"ident4.test": "198.51.100.20"})
 	code := Run(h.env, []string{"ip"})
+	text := strings.Join(strings.Fields(h.out.String()), " ")
+	if code != 1 || len(*seen) != 3 || !strings.Contains(text, "IPify IPv4 failed unknown unknown / unknown") || !strings.Contains(text, "ident.me IPv4 198.51.100.20") || !strings.Contains(text, "IPify IPv4: failed: the site answered 502 Bad Gateway") || strings.Contains(text, "gemini:") {
+		t.Fatalf("code %d, %d requests, got\n%s%s", code, len(*seen), h.out, h.errOut)
+	}
+}
 
-	want := "route:    china-direct\n" +
-		"abroad:   failed: the site answered 502 Bad Gateway\n" +
-		"china:    198.51.100.20\n"
-	if code != 1 || h.out.String() != want {
-		t.Errorf("code %d, got\n%s", code, h.out)
+func TestIPDualStackKeepsIPv4ResultsWhenOneIPv6SourceFails(t *testing.T) {
+	h := newHarness(t)
+	seen := h.useSites(t, map[string]string{
+		"ipify4.test": "203.0.113.7", "ident4.test": "198.51.100.20", "ipify6.test": "2001:db8::7",
+	})
+	code := Run(h.env, []string{"ip", "--dual-stack"})
+	text := strings.Join(strings.Fields(h.out.String()), " ")
+	for _, want := range []string{"IPify IPv4 203.0.113.7", "ident.me IPv4 198.51.100.20", "IPify IPv6 2001:db8::7", "ident.me IPv6 failed", "ident.me IPv6: failed:", "An IPv6 check failure does not prove that IPv6 is unavailable."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %s", want, h.out)
+		}
+	}
+	if code != 1 || len(*seen) != 7 {
+		t.Fatalf("code %d, %d requests: %s%s", code, len(*seen), h.out, h.errOut)
+	}
+}
+
+func TestIPDetailsFailureIsNonFatalAndReportedOnce(t *testing.T) {
+	h := newHarness(t)
+	seen := h.useSites(t, map[string]string{
+		"ipify4.test": "203.0.113.7", "ident4.test": "203.0.113.7", "details.test": "not JSON",
+	})
+	code := Run(h.env, []string{"ip"})
+	text := strings.Join(strings.Fields(h.out.String()), " ")
+	if code != 0 || len(*seen) != 3 || !strings.Contains(text, "IPify IPv4 203.0.113.7 unknown unknown / unknown") || !strings.Contains(text, "ident.me IPv4 203.0.113.7 unknown unknown / unknown") || strings.Count(text, "the IP database returned an invalid response") != 1 {
+		t.Fatalf("code %d, %d requests: %s%s", code, len(*seen), h.out, h.errOut)
+	}
+}
+
+func TestIPSourceTableAndFailuresAreChinese(t *testing.T) {
+	i18n.SetChinese(true)
+	defer i18n.SetChinese(false)
+	h := newHarness(t)
+	h.useSites(t, nil)
+	if code := Run(h.env, []string{"ip", "--dual-stack"}); code != 1 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{"来源", "地址族", "出口 IP", "ASN / 运营组织", "未知", "IPify IPv4: 失败：", "IPv6 检查失败不能证明 IPv6 不可用。"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("missing %q in %s", want, h.out)
+		}
 	}
 }
 
