@@ -1,11 +1,12 @@
 # Chrome privacy in sbc
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
-sbc manages WebRTC leak protection and language preferences for **Google Chrome
-on Linux**. The two components have independent choices. `sbc privacy browser
-on|off` attempts both components and reports each result. Any failed component
-makes the command exit nonzero. A successful component stays applied.
+sbc manages WebRTC leak protection, website geolocation blocking and language
+preferences for **Google Chrome on Linux**. The three components have independent
+choices. `sbc privacy browser on|off` attempts all three and reports each result.
+Any failed component makes the command exit nonzero. Successful components stay
+applied. Geolocation and language matching require explicit activation.
 
 The WebRTC component writes the mandatory Chrome policy
 `WebRtcIPHandling=disable_non_proxied_udp` under
@@ -15,19 +16,21 @@ directory. Language matching changes only this account's personal profiles.
 Chromium, Edge, Brave, Firefox, macOS and Windows are not managed. The previous
 cross-platform implementation remains in the repository history.
 
-| Command                            | Behavior                                                                                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------- |
-| `sbc privacy browser`              | Show both saved choices and saved language profile status                                   |
-| `sbc privacy browser on\|off`      | Attempt both components independently                                                       |
-| `sbc privacy browser webrtc on`    | Write the Chrome policy and enable automatic repair. May request sudo                       |
-| `sbc privacy browser webrtc off`   | Remove the owned policy and disable automatic repair. May request sudo                      |
-| `sbc privacy browser language on`  | Replace personal profiles' languages with the node language. Chrome must be closed          |
-| `sbc privacy browser language off` | Restore the language fields sbc still owns. Chrome must be closed                           |
-| `sbc desktop on`                   | Enable the desktop proxy and ensure the WebRTC policy unless opted out                      |
-| `sbc on`                           | Repair the WebRTC policy when the desktop proxy follows sbc, unless opted out               |
-| `sbc off`, `sbc desktop off`       | Disable the proxy and keep both Chrome choices                                              |
-| `sbc uninstall`                    | Restore owned language fields and remove the owned WebRTC policy before removing the client |
-| `sbc privacy`                      | Summarize both choices and region matching                                                  |
+| Command                               | Behavior                                                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `sbc privacy browser`                 | Show all three choices, local geolocation policies and saved language profile status           |
+| `sbc privacy browser on\|off`         | Attempt all three components independently                                                     |
+| `sbc privacy browser geolocation on`  | Block website geolocation for all accounts. May request sudo                                   |
+| `sbc privacy browser geolocation off` | Remove only the owned geolocation policy. May request sudo                                     |
+| `sbc privacy browser webrtc on`       | Write the Chrome policy and enable automatic repair. May request sudo                          |
+| `sbc privacy browser webrtc off`      | Remove the owned policy and disable automatic repair. May request sudo                         |
+| `sbc privacy browser language on`     | Replace personal profiles' languages with the node language. Chrome must be closed             |
+| `sbc privacy browser language off`    | Restore the language fields sbc still owns. Chrome must be closed                              |
+| `sbc desktop on`                      | Enable the desktop proxy and ensure the WebRTC policy unless opted out                         |
+| `sbc on`                              | Repair the WebRTC policy when the desktop proxy follows sbc, unless opted out                  |
+| `sbc off`, `sbc desktop off`          | Disable the proxy and keep all three Chrome choices                                            |
+| `sbc uninstall`                       | Restore owned languages and remove owned WebRTC and geolocation policies before client removal |
+| `sbc privacy`                         | Summarize Chrome choices and region matching                                                   |
 
 `privacy browser webrtc on|off` works without a subscription, a running proxy,
 a GNOME session, or a default route. Use this explicit subcommand for WebRTC-only
@@ -87,6 +90,69 @@ location and are not covered by this setup.
   writes no policy. Install Chrome and run it again.
 - Chrome's managed policy directory is system-wide, so the policy affects every
   account that uses this system policy. sbc removes only its own file.
+
+## Website geolocation blocking
+
+```sh
+sbc privacy browser geolocation       # Inspect the choice and local policies
+sbc privacy browser geolocation on    # Block location requests, including saved site grants
+sbc privacy browser geolocation off   # Withdraw only sbc's policy
+```
+
+`on` configures the mandatory Chrome policy `DefaultGeolocationSetting=2` under
+`/etc/opt/chrome/policies/managed`. It requires sudo when a policy write is
+needed. The policy affects all accounts and Chrome profiles that use this system
+policy directory, including new profiles. It can be configured before Chrome is
+installed. Snap and Flatpak packages are outside this scope.
+
+The command needs no subscription, node metadata, running proxy or desktop
+session. It does not edit personal preferences or require Chrome to be closed.
+Restart Chrome after a change. Inspect `chrome://policy` for the effective policy
+and any URL exceptions.
+
+The default choice is off. Only explicit `geolocation on` or `browser on` enables
+it. Installation, upgrades, refreshes, desktop setup and proxy toggles do not
+enable or repair it. If a policy disappears, status reports the missing setting.
+Run `geolocation on` explicitly to repair it.
+
+### Ownership, conflicts and cleanup
+
+The policy file is `sbc-geolocation-<uid>.json`. Its adjacent ownership record is
+`.sbc-geolocation-<uid>.owner`. The elevated helper rechecks paths, ownership and
+constant policy bytes. It rejects symbolic links. It publishes files atomically
+with mode `0644`, regardless of a private umask.
+
+An existing matching policy remains unowned. A different
+`DefaultGeolocationSetting`, a nonempty `GeolocationAllowedForUrls`, or invalid
+types in either geolocation URL list block activation. sbc reports file paths, not URL values.
+It does not overwrite administrator policies or create an allowlist exception.
+Malformed or unsafe policy files also prevent activation.
+
+`off` records the disabled choice before cleanup. It removes only its own exact
+policy file. Externally changed files remain intact and appear in diagnostics.
+It does not set location permission to allow, delete saved site permissions or
+change OS location services. Removing the policy lets other Chrome settings
+control permission again. External policies can still restrict or allow location.
+
+The private `geolocation-mode` in sbc's config directory contains `on` or `off`.
+Its absence means off. Ownership records remain available after failed cleanup.
+Uninstall refuses to remove the client if owned-policy cleanup fails. Retry
+`geolocation off` or uninstall after correcting the failure. Before downgrading to
+a client without this feature, run `sbc privacy browser geolocation off`.
+
+### Diagnostics and limits
+
+Status distinguishes the saved choice, a local blocking value, ownership and
+conflicting policy files. It writes nothing and makes no sudo, browser or network
+request. It returns nonzero for conflicts, a missing enabled policy or pending
+owned cleanup. `off` can succeed while external policies remain, and reports them.
+
+Local files do not prove a running browser's effective policy. Cloud policies,
+extensions and other policy sources need separate inspection in Chrome. Verify
+that website location requests are denied after restarting Chrome. This feature
+does not hide IP-based location estimates, cookies, account data or other browser
+fingerprint signals. It neither spoofs coordinates nor manages system location
+services.
 
 ## Chrome language matching
 

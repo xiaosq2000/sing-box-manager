@@ -178,8 +178,9 @@ The Windows desktop proxy is opt-in via `sbc desktop on`. Once enabled, it follo
 - **Safety**: `sbc` preserves foreign proxies and PAC scripts. A conflicting
   proxy setting makes `sbc desktop on` fail before enabling a new desktop proxy.
 
-Chrome WebRTC protection and browser language matching are not managed on
-Windows. They are available only for Google Chrome on Linux. See
+Chrome WebRTC protection, website geolocation blocking and browser language
+matching are not managed on Windows. They are available only for Google Chrome
+on Linux. See
 [Chrome privacy](WEBRTC.md).
 
 ### File locations

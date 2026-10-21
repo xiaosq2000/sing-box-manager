@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Checked on 2026-10-20.
+Checked on 2026-10-21.
 
 This repo builds `sing-box` releases, serves authenticated downloads, and deploys
 the code and an already-built release directory to a VPS. Use Pixi and Python 3.12.
@@ -36,7 +36,7 @@ surrounding context.
 | Unix installer and legacy migration              | [README_SBC.md](docs/README_SBC.md#unix-installation-and-migration), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#subscription-links)                                                                                                                                                           |
 | Linux TUN                                        | [REFACTOR_SPEC.md](docs/REFACTOR_SPEC.md#m1b-linux-tun), [README_SBC.md](docs/README_SBC.md#linux-tun), [SECRET_HANDLING.md](docs/SECRET_HANDLING.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                          |
 | Client region matching (time zone and language)  | [README_SBC.md](docs/README_SBC.md#region-matching), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#subscription-links)                                                                                                                                                                           |
-| Privacy: Chrome WebRTC, browser language, region | [WEBRTC.md](docs/WEBRTC.md), [README_SBC.md](docs/README_SBC.md#chrome-webrtc-protection), [Chrome language matching](docs/README_SBC.md#chrome-language-matching)                                                                                                                                    |
+| Privacy: Chrome WebRTC, geolocation and language | [WEBRTC.md](docs/WEBRTC.md), [README_SBC.md](docs/README_SBC.md#chrome-webrtc-protection), [Chrome language matching](docs/README_SBC.md#chrome-language-matching), [Geolocation blocking](docs/README_SBC.md#chrome-geolocation-blocking)                                                            |
 | Windows client, including the hosted installer   | [README_WIN.md](docs/README_WIN.md)                                                                                                                                                                                                                                                                   |
 | Checks, docstale, agent instructions and skills  | [DEVELOPMENT.md](docs/DEVELOPMENT.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md)                                                                                                                                                                                                 |
 | Django control plane and PostgreSQL              | [CONTROL_PLANE.md](docs/CONTROL_PLANE.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                                                                                                                      |

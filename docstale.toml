@@ -47,6 +47,8 @@ sbc = [
   "internal/tun/",
   "internal/service/",
   "internal/browserlanguage/",
+  "internal/browserprivacy/",
+  "internal/desktop/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 unix-installer = [

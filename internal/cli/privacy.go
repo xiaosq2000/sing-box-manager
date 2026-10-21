@@ -19,6 +19,7 @@ func runPrivacy(env Env) int {
 	if env.OS == "linux" {
 		printBrowserSummary(env)
 		_ = printBrowserLanguageStatus(env, layout)
+		_ = runPrivacyBrowserGeolocation(env, nil)
 		printRegionChoice(env, layout)
 	} else {
 		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: unavailable on this platform; Linux Chrome only"))
@@ -89,14 +90,15 @@ func printOrphanedSystemChoice(env Env) {
 	}
 }
 
-// runPrivacyBrowser attempts both components, even if one fails.
+// runPrivacyBrowser attempts all components, even if one fails.
 func runPrivacyBrowser(env Env, args []string) int {
 	if env.OS != "linux" {
-		return fail(env, i18n.New("Chrome WebRTC protection is available on Linux only"))
+		return fail(env, i18n.New("Chrome browser privacy is available on Linux only"))
 	}
 	webrtc := runPrivacyWebRTC(env, args)
 	language := runPrivacyBrowserLanguage(env, args)
-	if webrtc != 0 || language != 0 {
+	geolocation := runPrivacyBrowserGeolocation(env, args)
+	if webrtc != 0 || language != 0 || geolocation != 0 {
 		return 1
 	}
 	return 0

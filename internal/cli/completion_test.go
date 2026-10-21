@@ -56,6 +56,8 @@ func TestCompletionFixedChoicesAndFlagsNeedNoInstallation(t *testing.T) {
 		{[]string{"lang", ""}, []string{"en", "zh", "auto"}},
 		{[]string{"privacy", "browser", "o"}, []string{"on", "off"}},
 		{[]string{"privacy", "browser", "l"}, []string{"language"}},
+		{[]string{"privacy", "browser", "g"}, []string{"geolocation"}},
+		{[]string{"privacy", "browser", "geolocation", "o"}, []string{"on", "off"}},
 		{[]string{"privacy", "browser", "w"}, []string{"webrtc"}},
 		{[]string{"privacy", "browser", "language", "o"}, []string{"on", "off"}},
 		{[]string{"privacy", "browser", "webrtc", "o"}, []string{"on", "off"}},
