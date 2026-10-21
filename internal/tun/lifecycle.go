@@ -27,9 +27,10 @@ func (p Paths) blocked() string    { return filepath.Join(p.ControlDir(), "block
 func (p Paths) journal() string    { return filepath.Join(p.ControlDir(), "transaction.json") }
 
 type transaction struct {
-	ID       string    `json:"id"`
-	Phase    string    `json:"phase"`
-	Deadline time.Time `json:"deadline,omitempty"`
+	ID        string    `json:"id"`
+	Phase     string    `json:"phase"`
+	Deadline  time.Time `json:"deadline,omitempty"`
+	Committed bool      `json:"committed,omitempty"`
 }
 
 func loadTransaction(p Paths) (transaction, error) {
@@ -128,6 +129,27 @@ func AllowStart(opts StopOptions) error {
 		}
 	}
 	return i18n.New("TUN startup refused: the generation is not committed and recovery is not armed")
+}
+
+// CaptureState contains public root metadata, never an API credential.
+type CaptureState struct {
+	Status      string
+	Transaction string
+	Phase       string
+	Committed   bool
+}
+
+// Current pairs conservative status with the root transaction identity. A
+// caller must recheck identity after a privileged recovery operation.
+func Current() CaptureState {
+	state := CaptureState{Status: Status()}
+	if runtime.GOOS == "linux" {
+		if record, err := loadTransaction(DefaultPaths()); err == nil {
+			state.Transaction, state.Phase = record.ID, record.Phase
+			state.Committed = record.Committed || record.Phase == "active"
+		}
+	}
+	return state
 }
 
 // Status reports conservative capture state. A pending or unreadable journal
@@ -230,6 +252,7 @@ func Commit(opts StopOptions, id string) error {
 		return i18n.New("the TUN service works but could not be enabled at boot")
 	}
 	record.Phase = "active"
+	record.Committed = true
 	if err := saveTransaction(opts.Paths, record); err != nil {
 		return err
 	}
@@ -256,7 +279,7 @@ func Recover(opts StopOptions, id string) error {
 	if err != nil {
 		return err
 	}
-	if record.ID != id || record.Phase == "active" || record.Phase == "off" {
+	if record.ID != id || record.Committed || record.Phase == "active" || record.Phase == "off" {
 		return nil
 	}
 	tools, err := resolveTools(opts.LookPath)
@@ -284,6 +307,9 @@ func stopDefaults(opts StopOptions) StopOptions {
 
 func stopLocked(p Paths, runner Runner, tools Tools, record transaction) error {
 	blockErr := block(p)
+	// A stopped committed generation must not become eligible for user-file
+	// rollback. Also retain the commit fact from journals without this field.
+	record.Committed = record.Committed || record.Phase == "active"
 	record.Phase = "dirty"
 	stateErr := errors.Join(blockErr, saveTransaction(p, record))
 	// Storage failure must not prevent an attempt to stop capture. Retain

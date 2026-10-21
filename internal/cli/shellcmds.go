@@ -16,7 +16,6 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
-	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
 
@@ -115,7 +114,7 @@ func runInit(env Env, args []string, root *cobra.Command) int {
 // runOn points shells, and the desktop after 'sbc desktop on', at the proxy,
 // starting the service if it is stopped, so they never point at nothing.
 func runOn(env Env) int {
-	if tun.Active() {
+	if tunActive(env) {
 		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before enabling the mixed proxy"))
 	}
 	layout, err := env.Layout()
@@ -166,8 +165,8 @@ func runOff(env Env) int {
 	if err := os.Remove(layout.EnvFile()); err != nil && !os.IsNotExist(err) {
 		return fail(env, err)
 	}
-	tunActive := tun.Active()
-	if tunActive {
+	capturing := tunActive(env)
+	if capturing {
 		fmt.Fprintln(env.Stdout, i18n.T("Linux TUN capture remains active; run 'sbc tun off' to stop it."))
 	} else if env.OS == "windows" {
 		windowsEnvironmentNotice(env)
@@ -411,7 +410,7 @@ func runUpgrade(env Env) int {
 	if err != nil {
 		return fail(env, err)
 	}
-	if tun.Active() {
+	if tunActive(env) {
 		return fail(env, i18n.New("Linux TUN capture is active; run 'sbc tun off' before upgrading the client"))
 	}
 	link, err := install.ReadLink(layout)

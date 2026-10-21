@@ -25,7 +25,7 @@ on:
       - "sing_box_manager/release/**"
       - "sing_box_manager/settings.py"
   pull_request:
-    branches: [main]
+    branches: [main, feat/m1b-tun-core]
     paths:
       - "cmd/**"
       - "internal/**"

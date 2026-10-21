@@ -217,8 +217,11 @@ current location.
    DNS, privilege, and recovery requirements are defined in [M1b](#m1b-linux-tun).
    The client has route/protocol API access, lifecycle guards, a transaction
    journal, and `scripts/dev/test-tun-vm.sh`. The `e2e-tun` job passes controlled
-   native QEMU acceptance under TCG on GitHub Actions. Docker, bound sockets, reboot and maintenance acceptance
-   remain outside the core suite. Do not restore the legacy Bash client.
+   native QEMU acceptance under TCG on GitHub Actions. Controlled maintenance
+   passes locally under KVM and TCG for client-only upgrades and rule refreshes.
+   Native CLI switching, engine-version transitions, install/uninstall, reboot,
+   Docker and bound-socket acceptance remain incomplete. M1b is not complete.
+   Do not restore the legacy Bash client.
 6. **M4b device management.** Add operator-issued single-use enrollment codes,
    device subscriptions, independent credentials, and revocation. Do not add public user login.
 7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
@@ -583,21 +586,41 @@ DNS:
 
 Maintenance:
 
-- While TUN is active, the automatic refresh and upgrade jobs check but do not
-  apply. A changed config or a newer signed build writes a pending-update hint,
-  and `sbc status` asks the user to update manually.
-- A manual `sbc refresh` or `sbc upgrade` re-stages the root generation and
-  restarts the TUN service. It never starts the mixed service.
+- While TUN is active, automatic refresh and upgrade jobs only check updates.
+  Changed configuration, signed rule hashes or signed builds produce a pending
+  hint. `sbc status` asks the user to update manually. Workers do not apply
+  updates, invoke sudo or change services.
+- Manual `sbc refresh` and `sbc upgrade` use one TUN maintenance path at the
+  machine's own console. A short interruption is permitted. Prepare and check
+  the complete candidate before stopping the previous capture. Refresh keeps
+  the installed binaries. Upgrade selects signed client and engine builds.
+- Preserve the active route and protocol through startup defaults and a fresh
+  cache namespace. Verify that selection and representative current-policy
+  traffic before publishing user files and API state. Commit root last.
+- Keep a typed user recovery record with both root transaction IDs. A committed
+  root generation retires that record without rollback. Root retains the commit
+  fact after successful or failed shutdown. A stopped committed generation keeps
+  its published user files. Recheck transaction identity after privileged
+  recovery. Unknown or different identities retain the recovery files.
+  Otherwise, confirm capture is off before restoring user files, unless the previous generation
+  never stopped. A failed shutdown retains recovery data and the mixed-mode
+  block. Never call mixed restart or rollback hooks from this path.
 
-Stop an active TUN before install or upgrade.
+Stop an active TUN before install or uninstall. Pending or dirty capture needs
+repair with `sbc tun off` before a new maintenance transaction.
 
 The core `e2e-tun` suite runs in a disposable QEMU guest through
 `scripts/dev/test-tun-vm.sh` and cannot capture the runner's network. It uses
 product-rendered routing, a guest router namespace, distinct DNS answers, and a
 proxy-only target that cannot succeed by direct access. It includes native stop
 failure, failed activation, an unused dead proxy under `direct`, and controller
-death after startup. Docker, `SO_BINDTODEVICE` and native reboot acceptance remain
-separate work. Keep `scripts/lib/ui.sh` while the server scripts use it.
+death after startup. Maintenance fixtures check signed candidate rejection,
+a client upgrade, changed rule snapshots, preserved API selections and
+check-only workers. They observe independent timer recovery after both
+maintenance controllers die, before restoring user files. Alternate selector
+transports remain SOCKS fixtures, not real Naive acceptance. Native CLI switching,
+engine-version upgrades, installation, reboot, Docker and `SO_BINDTODEVICE`
+acceptance remain separate work. Keep `scripts/lib/ui.sh` while the server scripts use it.
 
 ### M2: Client CLI for Windows
 

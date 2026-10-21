@@ -10,7 +10,6 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/region"
-	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
 func regionFor(env Env, layout paths.Layout) *region.Manager {
@@ -530,7 +529,7 @@ func printRegionStatus(env Env) int {
 	if !status.Mode.Any() {
 		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy region on' to apply it."))
 	}
-	if status.Mode.Any() && !proxyLikelyOn(layout) {
+	if status.Mode.Any() && !proxyLikelyOn(env, layout) {
 		fmt.Fprintln(env.Stdout, i18n.T("Warning: the proxy does not appear to be on; the exit IP will not match the region."))
 	}
 	if status.Mode.Language {
@@ -585,7 +584,7 @@ func printSystemRegionStatus(env Env, layout paths.Layout, status region.Status)
 	if !status.Mode.Any() && region.SystemStateExists(paths) {
 		fmt.Fprintln(env.Stdout, i18n.T("A system region record exists; run 'sbc privacy region off --system' to restore it."))
 	}
-	if status.Mode.Any() && !proxyLikelyOn(layout) {
+	if status.Mode.Any() && !proxyLikelyOn(env, layout) {
 		fmt.Fprintln(env.Stdout, i18n.T("Warning: the proxy does not appear to be on; the exit IP will not match the region."))
 	}
 	if status.Mode.Language {
@@ -677,8 +676,8 @@ func systemRegionHint(mode region.Mode) string {
 	}
 }
 
-func proxyLikelyOn(layout paths.Layout) bool {
-	if tun.Active() {
+func proxyLikelyOn(env Env, layout paths.Layout) bool {
+	if tunActive(env) {
 		return true
 	}
 	if _, err := os.Stat(layout.EnvFile()); err == nil {
@@ -717,7 +716,7 @@ func printRegionSummary(env Env, layout paths.Layout) {
 			(status.Mode.Language && !sys.LanguageMatches()) {
 			fmt.Fprintf(env.Stdout, i18n.T("region:   out of date; run '%s'\n"), systemRegionHint(status.Mode))
 		}
-		if !proxyLikelyOn(layout) {
+		if !proxyLikelyOn(env, layout) {
 			fmt.Fprintln(env.Stdout, i18n.T("region:   the proxy is off, so the exit IP will not match"))
 		}
 		return
@@ -739,7 +738,7 @@ func printRegionSummary(env Env, layout paths.Layout) {
 	if !status.FilesCurrent {
 		fmt.Fprintln(env.Stdout, i18n.T("region:   out of date; run 'sbc privacy region on'"))
 	}
-	if !proxyLikelyOn(layout) {
+	if !proxyLikelyOn(env, layout) {
 		fmt.Fprintln(env.Stdout, i18n.T("region:   the proxy is off, so the exit IP will not match"))
 	}
 }

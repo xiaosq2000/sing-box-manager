@@ -252,16 +252,17 @@ func newCommand(env Env, exit *int) *cobra.Command {
 
 	tunCmd := add("tun on|off", i18n.T("Enable or disable the root-owned Linux TUN service"), "proxy", choiceArgs(1, "on", "off"), func(args []string) int {
 		if args[0] == "on" {
-			return withOperation(env, func(env Env) int { return runTunOn(env) })
+			return withRecovery(env, func(env Env) int { return runTunOn(env) })
 		}
 		return withOperation(env, func(env Env) int { return runTunOff(env) })
 	})
 	tunCmd.ValidArgsFunction = fixedChoices("on", "off")
 
 	var tunConfig, tunBinDir, tunRules, tunOwnerUser, tunTransaction string
+	var tunSelection tun.Selection
 	var tunOwnerUID int
 	tunApply := add("_tun-apply", "", "proxy", argumentRange(0, 0), func([]string) int {
-		return runTunApply(env, tunConfig, tunBinDir, tunRules, tunOwnerUID, tunOwnerUser, tunTransaction)
+		return runTunApply(env, tunConfig, tunBinDir, tunRules, tunOwnerUID, tunOwnerUser, tunTransaction, tunSelection)
 	})
 	tunApply.Hidden = true
 	tunApply.Flags().StringVar(&tunTransaction, "transaction", "", "")
@@ -270,6 +271,8 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	tunApply.Flags().StringVar(&tunRules, "rules", "", "")
 	tunApply.Flags().IntVar(&tunOwnerUID, "owner-uid", 0, "")
 	tunApply.Flags().StringVar(&tunOwnerUser, "owner-user", "", "")
+	tunApply.Flags().StringVar(&tunSelection.Mode, "route", "", "")
+	tunApply.Flags().StringVar(&tunSelection.Protocol, "protocol", "", "")
 	tunApply.Args = func(cmd *cobra.Command, args []string) error {
 		if err := argumentRange(0, 0)(cmd, args); err != nil {
 			return err
@@ -350,6 +353,9 @@ func newCommand(env Env, exit *int) *cobra.Command {
 		cmd := add(what+" [name]", description, "proxy", argumentRange(0, 1), func(args []string) int {
 			if what == "route" && listRoutes {
 				return runRouteList(env)
+			}
+			if len(args) > 0 {
+				return withOperation(env, func(env Env) int { return runSwitch(env, args, what) })
 			}
 			return runSwitch(env, args, what)
 		})

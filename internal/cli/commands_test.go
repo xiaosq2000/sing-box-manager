@@ -22,6 +22,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/region"
 	"github.com/xiaosq2000/sing-box-manager/internal/service"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
+	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
 // fakeAPI answers the Clash API calls sbc makes, as sing-box does.
@@ -192,13 +193,13 @@ func newHarness(t *testing.T) *harness {
 	home := filepath.Join(root, "home")
 	os.MkdirAll(home, 0o755)
 	h.env.Home = func() (string, error) { return home, nil }
-	// Tests never read or change this machine's system region, desktop or
-	// Docker settings. Tests that need elevation must supply a fake runner.
+	// Fixtures must not read operator state or request real sudo.
 	system := newSystemCLIFixture(t)
 	h.env.SystemRegion = func() region.SystemPaths { return system.paths }
-	h.env.Sudo = func(string, []string) error {
-		t.Fatal("test attempted to run sudo without a fake runner")
-		return nil
+	h.env.TunCapture = func() tun.CaptureState { return tun.CaptureState{Status: "off", Phase: "off"} }
+	h.env.Sudo = func(_ string, args []string) error {
+		t.Errorf("unexpected privileged fixture operation: %s", args[0])
+		return errors.New("fixture rejected sudo")
 	}
 	isolateBrowserLanguage(t, &h.env, h.layout)
 	h.env.Privacy = func() (desktop.BrowserPrivacy, error) { return &fakeDesktop{}, nil }

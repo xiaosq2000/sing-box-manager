@@ -200,6 +200,29 @@ func runMaintenance(env Env, action string, background bool) int {
 	if background && !p.Enabled {
 		return 0
 	}
+	targetTun, err := tunMaintenanceTarget(env, layout)
+	if err != nil {
+		return fail(env, err)
+	}
+	if targetTun {
+		if !background {
+			guard, err := tunMaintenanceGuard(env, layout)
+			if err != nil {
+				return fail(env, err)
+			}
+			defer guard.close()
+			if err = tryMaintenanceSchedule(env, layout); err != nil {
+				return fail(env, err)
+			}
+			settings, err = maintenance.Load(layout)
+			if err != nil {
+				return fail(env, err)
+			}
+		}
+		return maintenanceAttempt(env, layout, settings, action, func() int {
+			return runTunMaintenance(env, layout, action, background)
+		})
+	}
 	guard, err := newStartupGuard(env, layout)
 	if err != nil {
 		return fail(env, err)
@@ -225,23 +248,28 @@ func runMaintenance(env Env, action string, background bool) int {
 		}
 		p = settings.Policy(action)
 	}
+	return maintenanceAttempt(env, layout, settings, action, func() int {
+		if action == "refresh" {
+			return runRefresh(env)
+		}
+		return runUpgrade(env)
+	})
+}
+
+func maintenanceAttempt(env Env, layout paths.Layout, settings maintenance.Settings, action string, run func() int) int {
+	p := settings.Policy(action)
 	p.LastAttempt = time.Now().UTC()
 	p.Result = "running"
-	if err = settings.Save(layout); err != nil {
+	if err := settings.Save(layout); err != nil {
 		return fail(env, err)
 	}
-	code := 0
-	if action == "refresh" {
-		code = runRefresh(env)
-	} else {
-		code = runUpgrade(env)
-	}
+	code := run()
 	p.Result = "failed"
 	if code == 0 {
 		p.LastSuccess = time.Now().UTC()
 		p.Result = "ok"
 	}
-	if err = settings.Save(layout); err != nil {
+	if err := settings.Save(layout); err != nil {
 		return fail(env, err)
 	}
 	return code
@@ -378,11 +406,18 @@ func recoverMaintenance(env Env, layout paths.Layout) error {
 	} else if err != nil {
 		return err
 	}
+	installer := env.Installer(layout, env.Stdout)
+	recovery, err := installer.PendingTunUpdate()
+	if err != nil {
+		return err
+	}
+	if recovery != nil {
+		return i18n.New("A TUN update needs explicit recovery. Run 'sbc refresh' at the machine's own console.")
+	}
 	restart, ready, err := maintenanceHooks(env, layout)
 	if err != nil {
 		return err
 	}
-	installer := env.Installer(layout, env.Stdout)
 	manager, err := env.Service(layout.SBC())
 	if err != nil {
 		return err

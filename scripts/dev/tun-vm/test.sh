@@ -19,7 +19,7 @@ cleanup() {
 	set +e
 	if [ "$result" != PASS ]; then
 		df -h /
-		cat "$HOME/tun-on.log" "$HOME/interrupted.log" 2>/dev/null
+		cat "$HOME/tun-on.log" "$HOME/interrupted.log" "$HOME/interrupted-maintenance.log" "$HOME/interrupted-commit.log" 2>/dev/null
 		cat /etc/sbc/tun-control/transaction.json 2>/dev/null
 		sudo cat /run/sbc-fixture-systemd-run.log 2>/dev/null
 		sudo /usr/bin/systemctl status sbc-tun.service --no-pager
@@ -38,6 +38,7 @@ absent() { if "$@"; then
 	return 1
 fi; }
 phase() { python3 -c 'import json; print(json.load(open("/etc/sbc/tun-control/transaction.json"))["phase"])'; }
+generation() { python3 -c 'import json; print(json.load(open("/etc/sbc/tun-control/transaction.json"))["id"])'; }
 assert_off() {
 	[ "$(phase)" = off ]
 	absent /usr/bin/systemctl is-active --quiet sbc-tun.service
@@ -120,8 +121,14 @@ curl --noproxy '*' --resolve www.baidu.com:443:198.18.0.10 -fsS --max-time 3 htt
 step "negative control: the proxy target cannot be reached directly"
 absent curl --noproxy '*' --resolve ai.fixture.test:443:198.18.0.20 -fsS --max-time 3 https://ai.fixture.test/control
 step "stage the client and activate the real root service"
-install -d -m 700 "$HOME/.local/bin" "$XDG_CONFIG_HOME/sbc" "$XDG_DATA_HOME/sbc/bin" "$XDG_DATA_HOME/sbc/rules"
-install -m 755 "$ASSETS/sbc" "$HOME/.local/bin/sbc"
+install -d -m 700 "$HOME/.local/bin" "$XDG_CONFIG_HOME/sbc" "$XDG_DATA_HOME/sbc/bin" "$XDG_DATA_HOME/sbc/rules" "$XDG_DATA_HOME/sbc/cli"
+install -m 755 "$ASSETS/sbc" "$XDG_DATA_HOME/sbc/cli/sbc"
+ln -s "$XDG_DATA_HOME/sbc/cli/sbc" "$HOME/.local/bin/sbc"
+printf 'tun-e2e-old\n' >"$XDG_DATA_HOME/sbc/sbc.version"
+install -m 600 "$ASSETS/mixed.json" "$XDG_CONFIG_HOME/sbc/config.json"
+# Invoke the real worker explicitly, not a scheduler. Native schedule and mixed
+# installation acceptance are separate from this fixture bootstrap.
+printf '%s\n' '{"version":1,"scheduled":true,"refresh":{"enabled":true,"interval_seconds":21600},"upgrade":{"enabled":true,"interval_seconds":21600}}' >"$XDG_CONFIG_HOME/sbc/maintenance.json"
 cp "$ASSETS"/sing-box* "$XDG_DATA_HOME/sbc/bin/"
 cp "$ASSETS/sing-box.version" "$XDG_DATA_HOME/sbc/sing-box.version"
 if [ -f "$ASSETS/libcronet.so" ]; then cp "$ASSETS/libcronet.so" "$XDG_DATA_HOME/sbc/bin/"; fi
@@ -131,9 +138,23 @@ portal=$(sed 's,/sub/.*$,,' "$ASSETS/subscription")
 sbc tun on >"$HOME/tun-on.log" 2>&1
 [ "$(phase)" = active ]
 sbc status
-assert_modes
-port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_port"])' "$XDG_CONFIG_HOME/sbc/tun.json")
-secret=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_secret"])' "$XDG_CONFIG_HOME/sbc/tun.json")
+load_api() {
+	assert_modes
+	port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_port"])' "$XDG_CONFIG_HOME/sbc/tun.json")
+	secret=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_secret"])' "$XDG_CONFIG_HOME/sbc/tun.json")
+}
+load_api
+runtime_digest() {
+	{
+		find "$XDG_DATA_HOME/sbc/bin" "$XDG_DATA_HOME/sbc/rules" "$XDG_DATA_HOME/sbc/cli" -type f -exec sha256sum '{}' +
+		sha256sum "$XDG_CONFIG_HOME/sbc/config.json" "$XDG_CONFIG_HOME/sbc/tun.json" "$XDG_DATA_HOME/sbc/sbc.version" "$XDG_DATA_HOME/sbc/sing-box.version"
+	} | LC_ALL=C sort | sha256sum
+}
+assert_selection() {
+	curl -fsS --max-time 5 -H "Authorization: Bearer $secret" "http://127.0.0.1:$port/configs" | python3 -c 'import json,sys; assert json.load(sys.stdin)["mode"]=="gfw-proxy"'
+	curl -fsS --max-time 5 -H "Authorization: Bearer $secret" "http://127.0.0.1:$port/proxies/proxy" | python3 -c 'import json,sys; assert json.load(sys.stdin)["now"]=="naive"'
+	sudo python3 -c 'import json; t=json.load(open("/etc/sbc/tun-control/transaction.json")); c=json.load(open("/etc/sbc/tun/config.json")); assert c["experimental"]["cache_file"]["cache_id"]=="sbc-tun-"+t["id"]'
+}
 set_mode() {
 	curl -fsS --max-time 5 -X PATCH -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
 		-d "{\"mode\":\"$1\"}" "http://127.0.0.1:$port/configs" >/dev/null
@@ -183,6 +204,101 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 	esac
 	assert_path portal.fixture.test direct
 done
+step "signed maintenance: candidate rejection must not stop the active generation"
+set_mode gfw-proxy
+# Change the active API selection. Native route/protocol CLI switching has its
+# own acceptance scope; this case checks preservation across maintenance.
+curl -fsS --max-time 5 -X PUT -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' -d '{"name":"naive"}' "http://127.0.0.1:$port/proxies/proxy" >/dev/null
+assert_path ordinary.fixture.test direct
+before=$(generation)
+before_pid=$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)
+before_files=$(runtime_digest)
+curl -fsS --max-time 5 -X POST "$portal/fixture/manifest/tampered"
+absent sbc upgrade
+[ "$(generation)" = "$before" ]
+[ "$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)" = "$before_pid" ]
+[ "$(runtime_digest)" = "$before_files" ]
+curl -fsS --max-time 5 -X POST "$portal/fixture/manifest/valid"
+step "upgrade the signed client through the real root transaction"
+sbc upgrade
+[ "$(sbc version)" = 'sbc tun-e2e-new' ]
+[ "$(generation)" != "$before" ]
+[ "$(phase)" = active ]
+load_api
+assert_selection
+assert_path gfw.fixture.test proxy-alt
+step "automatic workers only report a signed rule snapshot change"
+curl -fsS --max-time 5 -X POST "$portal/fixture/sub/changed"
+before=$(generation)
+before_pid=$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)
+before_files=$(runtime_digest)
+sbc _maintenance refresh
+sbc _maintenance upgrade
+[ "$(generation)" = "$before" ]
+[ "$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)" = "$before_pid" ]
+[ "$(runtime_digest)" = "$before_files" ]
+test -f "$XDG_CONFIG_HOME/sbc/tun-update-available"
+sbc status | grep 'updates are available' >/dev/null
+assert_path ordinary.fixture.test direct
+step "refresh signed rule snapshots and preserve route and protocol selections"
+sbc refresh
+[ "$(generation)" != "$before" ]
+[ "$(phase)" = active ]
+load_api
+assert_selection
+assert_path ordinary.fixture.test proxy-alt
+assert_path portal.fixture.test direct
+sbc _maintenance refresh
+test ! -e "$XDG_CONFIG_HOME/sbc/tun-update-available"
+step "a committed update stays committed after controller death and explicit off"
+cat >"$HOME/sudo-wrapper" <<'SH'
+#!/bin/sh
+if [ -e /run/sbc-fixture-pause-commit ] && [ "$1" = -- ] && [ "$3" = _tun-commit ]; then
+	/usr/bin/sudo "$@" || exit $?
+	/usr/bin/sudo touch /run/sbc-fixture-committed
+	sleep 120
+	exit 0
+fi
+exec /usr/bin/sudo "$@"
+SH
+sudo install -m 755 "$HOME/sudo-wrapper" /usr/local/bin/sudo
+sudo touch /run/sbc-fixture-pause-commit
+curl -fsS --max-time 5 -X POST "$portal/fixture/sub/good"
+sbc refresh >"$HOME/interrupted-commit.log" 2>&1 &
+controller=$!
+committed=
+for _ in $(seq 600); do
+	kill -0 "$controller" 2>/dev/null || break
+	if [ -e /run/sbc-fixture-committed ]; then
+		committed=yes
+		break
+	fi
+	sleep 0.1
+done
+[ "$committed" = yes ]
+[ "$(phase)" = active ]
+kill -KILL "$controller"
+wait "$controller" 2>/dev/null || true
+published=$(sha256sum "$XDG_DATA_HOME/sbc/rules/"*.srs | LC_ALL=C sort | sha256sum)
+sbc tun off
+assert_off
+python3 -c 'import json; assert json.load(open("/etc/sbc/tun-control/transaction.json"))["committed"] is True'
+test -f "$XDG_DATA_HOME/sbc/upgrade-recovery.json"
+absent sbc refresh
+[ "$(sha256sum "$XDG_DATA_HOME/sbc/rules/"*.srs | LC_ALL=C sort | sha256sum)" = "$published" ]
+test ! -e "$XDG_DATA_HOME/sbc/upgrade-recovery.json"
+[ "$(sbc version)" = 'sbc tun-e2e-new' ]
+assert_off
+sudo rm /run/sbc-fixture-pause-commit /run/sbc-fixture-committed /usr/local/bin/sudo
+sbc tun on
+step "failed active maintenance stops capture without restarting the old generation"
+curl -fsS --max-time 5 -X POST "$portal/fixture/sub/failed"
+absent sbc refresh
+assert_off
+test ! -e "$XDG_CONFIG_HOME/sbc/tun.json"
+test ! -e "$XDG_DATA_HOME/sbc/upgrade-recovery.json"
+curl -fsS --max-time 5 -X POST "$portal/fixture/sub/good"
+sbc tun on
 step "native stop failure must remain dirty and block mixed mode"
 cat >"$HOME/systemctl-wrapper" <<'SH'
 #!/bin/sh
@@ -263,7 +379,52 @@ for _ in $(seq 45); do
 done
 [ "$recovered" = yes ]
 assert_off
-sudo rm /run/sbc-fixture-pause
+sudo rm /run/sbc-fixture-pause /run/sbc-fixture-started
+step "kill both maintenance controllers; observe the timer before user-file recovery"
+sbc tun on
+sudo touch /run/sbc-fixture-pause
+sbc refresh >"$HOME/interrupted-maintenance.log" 2>&1 &
+controller=$!
+started=
+for _ in $(seq 600); do
+	kill -0 "$controller" 2>/dev/null || break
+	if [ -e /run/sbc-fixture-started ]; then
+		started=yes
+		break
+	fi
+	sleep 0.1
+done
+[ "$started" = yes ]
+/usr/bin/systemctl is-active --quiet sbc-tun.service
+helper=$(pgrep -f '^/[^[:space:]]*/sbc _tun-apply ')
+case "$helper" in '' | *[!0-9]*)
+	echo "expected one root apply PID" >&2
+	exit 1
+	;;
+esac
+kill -KILL "$controller"
+sudo kill -KILL "$helper"
+wait "$controller" 2>/dev/null || true
+recovered=
+for _ in $(seq 45); do
+	if [ "$(phase)" = off ]; then
+		recovered=yes
+		break
+	fi
+	sleep 1
+done
+[ "$recovered" = yes ]
+assert_off
+test -f "$XDG_DATA_HOME/sbc/upgrade-recovery.json"
+sudo rm /run/sbc-fixture-pause /run/sbc-fixture-started
+absent sbc on
+absent sbc tun on
+test -f "$XDG_DATA_HOME/sbc/upgrade-recovery.json"
+assert_off
+absent sbc refresh
+test ! -e "$XDG_DATA_HOME/sbc/upgrade-recovery.json"
+test ! -e "$XDG_CONFIG_HOME/sbc/tun.json"
+assert_off
 sudo rm /usr/local/bin/systemctl /usr/local/bin/systemd-run
 step "the client can activate again after independent recovery"
 sbc tun on

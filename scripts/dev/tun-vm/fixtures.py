@@ -14,6 +14,8 @@ import socket
 import socketserver
 import ssl
 import struct
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -120,6 +122,7 @@ def target(
 
 def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
     site = target(assets, "127.0.0.1", "proxy")
+    alternate = target(assets, "127.0.0.1", "proxy-alt")
     tls = context(assets)
 
     class TLSStream(socketserver.BaseRequestHandler):
@@ -138,6 +141,8 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
     start(dns)
 
     class SOCKS(socketserver.BaseRequestHandler):
+        site_port = site.server_address[1]
+
         def handle(self) -> None:
             stream = self.request
             stream.settimeout(20)
@@ -146,7 +151,7 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
                 if address == "198.18.0.53" and port == 853:
                     destination = ("127.0.0.1", dns.server_address[1])
                 elif address in NAMES | {DIRECT, PROXY} and port == 443:
-                    destination = ("127.0.0.1", site.server_address[1])
+                    destination = ("127.0.0.1", self.site_port)
                 else:
                     stream.sendall(b"\x05\x02\x00\x01" + bytes(6))
                     return
@@ -164,21 +169,67 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
             except (EOFError, OSError, ValueError):
                 return
 
+    class AlternateSOCKS(SOCKS):
+        site_port = alternate.server_address[1]
+
     socks = TCPServer(("127.0.0.1", 0), SOCKS)
+    socks_alt = TCPServer(("127.0.0.1", 0), AlternateSOCKS)
     start(socks)
+    start(socks_alt)
 
     class Assets(http.server.SimpleHTTPRequestHandler):
+        release_choice = "good"
+
+        def do_GET(self) -> None:
+            # Keep the subscription endpoint a file, with authenticated-style
+            # download paths below it, as the real portal exposes them.
+            if "/files/" in self.path and self.path.startswith("/sub/"):
+                prefix, relative = self.path.split("/files/", 1)
+                subscription = next((assets / "sub").iterdir())
+                allowed = {"manifest.json", "manifest.json.sig", "sbc/linux-amd64/sbc"}
+                allowed.update(
+                    "rules/" + path.name
+                    for path in (assets / "release/rules").glob("*.srs")
+                )
+                if prefix != "/sub/" + subscription.name or relative not in allowed:
+                    self.send_error(404)
+                    return
+                self.path = "/release/" + relative
+            super().do_GET()
+
         def do_POST(self) -> None:
             choices = {
                 "/fixture/sub/good": "good-sub.json",
                 "/fixture/sub/failed": "failed-sub.json",
                 "/fixture/sub/direct-failed": "direct-failed-sub.json",
+                "/fixture/sub/changed": "good-sub.json",
             }
-            if self.path not in choices:
+            if self.path in choices:
+                target = next((assets / "sub").iterdir())
+                target.write_bytes((assets / choices[self.path]).read_bytes())
+                type(self).release_choice = (
+                    "changed" if self.path.endswith("/changed") else "good"
+                )
+            elif self.path not in {
+                "/fixture/manifest/tampered",
+                "/fixture/manifest/valid",
+            }:
                 self.send_error(404)
                 return
-            target = next((assets / "sub").iterdir())
-            target.write_bytes((assets / choices[self.path]).read_bytes())
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("release.py")),
+                    str(assets),
+                    "--choice",
+                    self.release_choice,
+                ],
+                check=True,
+            )
+            if self.path.endswith("/tampered"):
+                (assets / "release/manifest.json.sig").write_text(
+                    "invalid-fixture-signature\n"
+                )
             self.send_response(204)
             self.end_headers()
 
@@ -198,6 +249,7 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
         json.dumps(
             {
                 "socks": socks.server_address[1],
+                "socks_alt": socks_alt.server_address[1],
                 "portal": portal.server_address[1],
             }
         )

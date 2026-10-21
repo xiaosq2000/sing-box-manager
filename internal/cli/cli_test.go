@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
+	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
 func run(args ...string) (code int, stdout, stderr string) {
@@ -52,6 +53,7 @@ func TestInstallNeedsALinkOnStandardInput(t *testing.T) {
 	var out, errOut bytes.Buffer
 	env := DefaultEnv("1.2.3", strings.NewReader(""), &out, &errOut)
 	env.Layout = func() (paths.Layout, error) { return paths.Layout{Config: t.TempDir(), Data: t.TempDir()}, nil }
+	env.TunCapture = func() tun.CaptureState { return tun.CaptureState{Status: "off"} }
 
 	if code := Run(env, []string{"install"}); code != 1 {
 		t.Fatalf("got code %d", code)

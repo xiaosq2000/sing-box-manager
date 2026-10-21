@@ -31,7 +31,22 @@ if [ ! -x "$BINARY" ]; then
 	exit 1
 fi
 BINARY=$(realpath "$BINARY")
-CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o "$ASSETS/sbc" "$ROOT/cmd/sbc"
+# Only disposable binaries trust this ephemeral key. Production source and
+# signature checks stay unchanged. The private key is not in the guest archive.
+openssl genpkey -algorithm ED25519 -out "$WORK/signing.key"
+openssl pkey -in "$WORK/signing.key" -pubout -outform DER -out "$WORK/signing-public.der"
+python3 - "$ROOT" "$WORK" <<'PY'
+import base64, json, sys
+from pathlib import Path
+root, work = map(Path, sys.argv[1:])
+public = base64.b64encode((work / "signing-public.der").read_bytes()[-32:]).decode()
+key = work / "key.go"
+key.write_text("package trust\nfunc init() { Keys = append(Keys, " + json.dumps(public) + ") }\n")
+(work / "overlay.json").write_text(json.dumps({"Replace": {str(root / "internal/trust/zz_e2e_key.go"): str(key)}}))
+PY
+CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -overlay "$WORK/overlay.json" -ldflags '-X main.version=tun-e2e-old' -o "$ASSETS/sbc" "$ROOT/cmd/sbc"
+mkdir -p "$ASSETS/release/sbc/linux-amd64"
+CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -overlay "$WORK/overlay.json" -ldflags '-X main.version=tun-e2e-new' -o "$ASSETS/release/sbc/linux-amd64/sbc" "$ROOT/cmd/sbc"
 install -m 755 "$BINARY" "$ASSETS/sing-box"
 if [ -f "$(dirname "$BINARY")/libcronet.so" ]; then
 	install -m 644 "$(dirname "$BINARY")/libcronet.so" "$ASSETS/libcronet.so"
@@ -51,8 +66,10 @@ for _ in $(seq 50); do
 	sleep 0.1
 done
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 "$ROOT/scripts/dev/tun-vm/prepare.py" "$ASSETS" "$BINARY"
+python3 "$ROOT/scripts/dev/tun-vm/release.py" "$ASSETS"
 portal=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["portal"])' "$ASSETS/ports.json")
 socks=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["socks"])' "$ASSETS/ports.json")
+socks_alt=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["socks_alt"])' "$ASSETS/ports.json")
 echo "Preflight: bounded SOCKS/TLS fixture, without public DNS or internet requests"
 response=$(curl --noproxy '' --socks5-hostname "127.0.0.1:$socks" --cacert "$ASSETS/ca.crt" \
 	-fsS --max-time 10 https://www.gstatic.com/generate_204)
@@ -96,7 +113,7 @@ timeout 1800 qemu-system-x86_64 \
 	-machine "accel=$accel" -cpu max -m 2048 -smp 2 \
 	-drive "file=$WORK/disk.qcow2,if=virtio,format=qcow2" \
 	-smbios "type=1,serial=ds=nocloud-net;s=http://10.0.2.100:$portal/" \
-	-netdev "user,id=net0,restrict=on,guestfwd=tcp:10.0.2.100:$portal-cmd:nc -N 127.0.0.1 $portal,guestfwd=tcp:10.0.2.100:$socks-cmd:nc -N 127.0.0.1 $socks" -device virtio-net-pci,netdev=net0 \
+	-netdev "user,id=net0,restrict=on,guestfwd=tcp:10.0.2.100:$portal-cmd:nc -N 127.0.0.1 $portal,guestfwd=tcp:10.0.2.100:$socks-cmd:nc -N 127.0.0.1 $socks,guestfwd=tcp:10.0.2.100:$socks_alt-cmd:nc -N 127.0.0.1 $socks_alt" -device virtio-net-pci,netdev=net0 \
 	-object "filter-dump,id=trace,netdev=net0,file=$WORK/network.pcap" \
 	-display none -serial "file:$WORK/serial.log" -monitor none -no-reboot &
 vm_pid=$!

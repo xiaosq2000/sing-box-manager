@@ -34,6 +34,10 @@ and the GitHub-hosted runner policy described in [SECURITY.md](../SECURITY.md).
 Choose checks for the files and behavior being changed. The commands below are
 available tools, not a sequence required for every edit.
 
+Both CI workflows accept PRs against `main` and `feat/m1b-tun-core`.
+The core branch permits a separate maintenance PR with automated checks.
+Push events run these workflows only on `main`.
+
 | Change              | Useful checks                                                                                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                                         |
@@ -151,7 +155,10 @@ system scope, absolute and relative time zone links, unchanged tool results,
 tool and file fallback, ownership, external changes, partial components, pending
 retries and the root state. No test changes the host's time
 zone or locale. The common CLI fixture uses temporary system region paths and
-rejects sudo calls without a fake runner. CLI fixtures check the `--system`
+rejects sudo calls without a fake runner. Mixed guards also use the injected
+capture state, including for region warnings. Without an injected state, the
+production guard still uses `tun.Active()`. An unreadable operator journal must
+not change fixture results. CLI fixtures check the `--system`
 confirmation, activation through a symbolic-link directory, the no-sudo refresh
 path and the uninstall restore. The directory fixture covers macOS path aliases
 on Linux too.
@@ -225,6 +232,16 @@ or retired binaries. Windows tests replace and restore an
 executable while both prior versions remain mapped. No local fixture registers a
 real maintenance task. Native scheduling checks run only in the gated lifecycle.
 
+TUN maintenance fixtures use a separate typed recovery path. They check complete
+candidate preparation, fresh startup selections, user-file publication before
+root commit, failed writes and confirmed shutdown before restoration. They also
+check missing user journals, lost commit replies, committed-generation recovery
+and refusal to recover TUN implicitly through proxy startup. Commit facts survive
+shutdown. Stopped committed generations keep their published files. A failed
+stop or changed transaction identity retains recovery data. Automatic workers
+check signed source fingerprints and update hints without changing runtime files
+or invoking sudo. No TUN recovery test uses mixed restart or rollback hooks.
+
 `sbc` passes every message through `internal/i18n`, whose catalog holds the Chinese,
 keyed by the English. Its test reads the source and fails when a message has no
 translation, when a translation formats different values, or when the catalog keeps
@@ -279,7 +296,24 @@ Reserved `.test` names reach the resolver, unlike locally rejected `.invalid`
 names. Distinct DNS answers and nonce-bearing responses distinguish direct and
 proxy paths in all five modes. Checks cover stop failure, recovery after a dead proxy,
 `direct` with an unused dead proxy, and controller death after service startup.
-The last case observes timer recovery before explicit test cleanup.
+Controller-death cases observe timer recovery before explicit test cleanup.
+
+Maintenance acceptance checks signature rejection without changing the live
+process, a signed client-only upgrade, rule-snapshot refresh, and check-only
+workers. It preserves an API-selected route and alternate selector across root
+publication. Distinct SOCKS responses prove the selected path. The alternate
+selector uses the `naive` tag but not the Naive transport. After both maintenance
+controllers die, the test observes shutdown before explicit user-file recovery.
+Proxy startup cannot perform that recovery implicitly. A second fixture pauses
+sudo after root commit. It kills the CLI, explicitly stops capture, and checks
+that recovery keeps the newly published rule snapshots rather than restoring
+superseded files.
+
+A build overlay adds an ephemeral signing key to disposable test binaries only.
+Production trust keys and signature checks stay unchanged. The private signing
+key remains outside the guest archive. The guest uses fixture files rather than
+the hosted installer or native scheduler. Client-only upgrade acceptance does
+not establish an engine-version transition.
 
 A guest-only wrapper shortens the real systemd timer to 15 seconds and pauses
 the start command after the service starts. No production skip flag is used.
@@ -291,8 +325,8 @@ not change the parent test process's umask.
 
 The guest runs with user and root `umask 0077`. A guest-only sudoers entry sets
 the elevated mask, and the script checks its effective value. It checks directory
-modes and ownership after activation. Public metadata remains readable without
-sudo. Config, rule and state access stays restricted. These checks do not change
+modes and ownership after activation and maintenance. Public metadata remains
+readable without sudo. Config, rule and state access stays restricted. These checks do not change
 host sudo policy or establish operator-machine acceptance.
 A native console cycle remains required before merge.
 
@@ -306,12 +340,14 @@ pixi run go test ./internal/tun ./internal/cli ./internal/api ./internal/service
 Each VM run retains its disk, generated assets, guest-only packet trace and
 serial log under the image cache's `runs/` directory. These contain synthetic private keys and credentials.
 Do not upload them wholesale. The script prints the run directory and failure
-markers. Docker, `SO_BINDTODEVICE`, native reboot acceptance and non-SOCKS tunnel
-protocols are outside this VM suite.
+markers. Native route/protocol CLI switching, hosted installation, native
+scheduling, engine-version transitions, reboot, Docker, `SO_BINDTODEVICE` and
+non-SOCKS tunnel protocols are outside this VM suite.
 
 Core acceptance passes locally with sing-box 1.14.3 and the Noble fixture under
 KVM and TCG. The [GitHub CI run](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39415310872)
-also passes under TCG. This does not complete M1b acceptance.
+also passes under TCG. Maintenance acceptance passes locally under KVM and TCG
+with sing-box 1.14.3 and the Noble fixture. This does not complete M1b acceptance.
 
 Tests use temporary fixtures and mocked external operations for release and deploy
 checks. A real `sbm release` decrypts inventory and writes sensitive outputs; a real

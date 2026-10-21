@@ -137,6 +137,14 @@ Publication retains superseded generations. Do not upload or remove them as
 routine log cleanup. The transaction journal under `/etc/sbc/tun-control` has no
 API secret and is not writable by the engine. The TUN DNS cache lives in
 `/var/lib/sbc-tun` and is writable only by the `sbc-tun` service user.
+Maintenance uses a transaction-specific cache namespace in that database.
+
+TUN maintenance keeps candidates and user-file backups in private `.upgrade-*`
+directories under the owner's data directory. The typed `upgrade-recovery.json`
+record can reference old configuration and API-state backups. Treat the record
+and staging directory as credential-bearing recovery data. Keep them until
+recovery finishes. Completed maintenance removes its user staging directory,
+not root `.prev-` generations. Update hints contain no configuration or secret.
 
 Root sets these modes explicitly, regardless of the caller's umask:
 

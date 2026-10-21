@@ -16,6 +16,9 @@ type Local struct {
 	APISecret string
 	CachePath string
 	RulesDir  string
+	// Selection and CacheID are set together for a maintenance generation.
+	Selection Selection
+	CacheID   string
 }
 
 // Patch adds the local API, cache path and absolute rule snapshot paths. The
@@ -45,6 +48,9 @@ func Patch(config []byte, local Local) ([]byte, []string, error) {
 		experimental["cache_file"] = cache
 	}
 	cache["path"] = local.CachePath
+	if err := patchSelection(root, local.Selection, local.CacheID); err != nil {
+		return nil, nil, err
+	}
 
 	route, _ := root["route"].(map[string]any)
 	sets, _ := route["rule_set"].([]any)
