@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -157,6 +157,14 @@ Root sets these modes explicitly, regardless of the caller's umask:
 | `/usr/local/lib/sbc-tun`             | `0755` | `root:root`       |
 | `/etc/sbc/tun`, `/etc/sbc/tun/rules` | `0750` | `root:sbc-tun`    |
 | `/var/lib/sbc-tun`                   | `0700` | `sbc-tun:sbc-tun` |
+
+Shell integration reuses the private Mixed config to identify residual proxy
+values. Generated `sbc init` code contains these values and can contain local
+proxy credentials. Treat that code as sensitive. Shell bookkeeping stays local
+and is not exported, including with `set -a`. The hook restores that shell option
+after bookkeeping. Bash helper functions also remain unexported. No additional
+credential record is created. Environment
+warnings print variable names only, never their values.
 
 The journal is mode `0644` and contains no API secret. Config and rule snapshots
 remain mode `0640`. The owner's API state remains mode `0600`. Candidate and

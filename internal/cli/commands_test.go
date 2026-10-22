@@ -197,6 +197,11 @@ func newHarness(t *testing.T) *harness {
 	system := newSystemCLIFixture(t)
 	h.env.SystemRegion = func() region.SystemPaths { return system.paths }
 	h.env.TunCapture = func() tun.CaptureState { return tun.CaptureState{Status: "off", Phase: "off"} }
+	h.env.Getenv = func(string) string { return "" }
+	p := tun.DefaultPaths()
+	p.ConfigDir = filepath.Join(root, "etc", "sbc", "tun")
+	p.Active = filepath.Join(root, "run", "sbc-tun", "active")
+	h.env.TunPaths = func() tun.Paths { return p }
 	h.env.Sudo = func(_ string, args []string) error {
 		t.Errorf("unexpected privileged fixture operation: %s", args[0])
 		return errors.New("fixture rejected sudo")

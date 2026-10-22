@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/xiaosq2000/sing-box-manager/internal/desktop"
@@ -72,6 +74,9 @@ func runEnv(env Env, args []string) int {
 		}
 		return 0
 	}
+	if !captureOff(tunCapture(env)) {
+		return fail(env, i18n.New("TUN capture is active or unconfirmed. Mixed proxy exports are unavailable. 'sbc env off' still prints explicit cleanup code."))
+	}
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -94,7 +99,13 @@ func runInit(env Env, args []string, root *cobra.Command) int {
 		return fail(env, err)
 	}
 	discardStaleUpgradeHint(layout, env.Version)
-	code, err := shell.Init(args[0], layout.CLIDir(), layout.EnvFile(), layout.RegionEnv(), layout.UpgradeHint())
+	state := shellProxyState(env, layout)
+	if state.ControlDir != "" && !captureOff(tunCapture(env)) {
+		if record, readErr := os.ReadFile(filepath.Join(state.ControlDir, "transaction.json")); readErr == nil {
+			state.BlockedRecord = strings.TrimSuffix(string(record), "\n")
+		}
+	}
+	code, err := shell.Init(args[0], layout.CLIDir(), layout.EnvFile(), layout.RegionEnv(), layout.UpgradeHint(), state)
 	if err != nil {
 		return fail(env, err)
 	}

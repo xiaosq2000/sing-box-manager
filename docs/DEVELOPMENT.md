@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -294,6 +294,14 @@ locks, missing or invalid owner state, and unavailable APIs. Pending, dirty or
 inconsistent capture metadata blocks runtime access. No TUN failure falls back
 to the answering mixed endpoint. IP and speed fixtures refuse TUN before config
 access or network requests, including explicit AI and download flags.
+
+Environment migration fixtures cover inherited and manual Mixed exports without a
+shell marker, changed and unrelated values, conservative capture metadata checks,
+and a persistent parent's later children. Hooks use shell builtins, not a process
+per prompt. The core TUN VM suite deliberately introduces Mixed exports before
+activation. A stale parent's later request must fail. A replacement from the clean
+source must connect without exports or a proxy-bypass option. These fixtures need
+no tmux or Herdr installation. See [environment migration](TUN_ENV_MIGRATION.md).
 
 `sbc` passes every message through `internal/i18n`, whose catalog holds the Chinese,
 keyed by the English. Its test reads the source and fails when a message has no

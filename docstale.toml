@@ -154,6 +154,9 @@ control-plane = [
 
 "docs/SECRET_HANDLING.md" = [
   "@control-plane",
+  "internal/shell/",
+  "internal/cli/proxy_environment*.go",
+  "internal/cli/shellcmds.go",
   "internal/tun/",
   "internal/cli/tun.go",
   "internal/cli/tun_maintenance.go",
@@ -208,6 +211,23 @@ control-plane = [
   "sing_box_manager/desktop_config.py",
   "sing_box_manager/release/platforms.py",
   "sing_box_manager/release/renderers.py",
+]
+
+"docs/TUN_ENV_MIGRATION.md" = [
+  "internal/shell/",
+  "internal/cli/shellcmds.go",
+  "internal/cli/proxy_environment*.go",
+  "internal/cli/tun.go",
+  "internal/cli/cli.go",
+  "internal/cli/runtime_api.go",
+  "internal/cli/commands_test.go",
+  "internal/cli/tun_test.go",
+  "internal/cli/runtime_api_test.go",
+  "internal/install/install.go",
+  "internal/tun/verify.go",
+  "internal/i18n/",
+  "scripts/dev/tun-vm/",
+  "tests/test_tun_lifecycle.py",
 ]
 
 "docs/README_WIN.md" = [
