@@ -71,6 +71,10 @@ Check these workflow contracts and the accelerator probe with
 | Go client (`sbc`)   | `pixi run format-go`, `pixi run lint-go` and `pixi run test-go`                                                                                                                               |
 | `install.sh`        | `pixi run test tests/test_install_sh.py`, plus `pixi run lint-shell`                                                                                                                          |
 
+For rendered subscription changes, also run the
+[PostgreSQL checks](#control-plane-checks). They verify authenticated subscription
+responses, including Linux `config_tun`, separately from renderer and engine tests.
+
 Use `pixi run -e control-plane-test test tests/test_routes.py -k download` as the pattern for running a
 specific file or case. `pixi run test` runs the full Python suite when shared
 behavior or the scope of the change warrants it.
