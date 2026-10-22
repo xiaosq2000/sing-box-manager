@@ -20,7 +20,7 @@ func checkMaintenance(t *testing.T, l paths.Layout) {
 	t.Helper()
 	sbc := l.SBC()
 	pid := singBoxPID(t, l.SingBox())
-	expect(t, run(t, nil, sbc, "status"), "refresh: auto on, interval 6h", "upgrade: auto on, interval 6h")
+	expect(t, run(t, nil, sbc, "status"), "refresh:  auto on, interval 6h", "upgrade:  auto on, interval 6h")
 	seedLegacyRefresh(t, l)
 	if err := os.Remove(maintenance.File(l)); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func checkMaintenance(t *testing.T, l paths.Layout) {
 	if now := singBoxPID(t, l.SingBox()); now != pid {
 		t.Fatalf("policy change restarted the proxy: %s -> %s", pid, now)
 	}
-	expect(t, run(t, nil, sbc, "status"), "refresh: auto off, interval 30m", "upgrade: auto off, interval 24h")
+	expect(t, run(t, nil, sbc, "status"), "refresh:  auto off, interval 30m", "upgrade:  auto off, interval 24h")
 	if busy, err := maintenance.EngineBusy(l); err != nil || !busy {
 		t.Fatalf("native engine did not retain its lifetime lease: %t %v", busy, err)
 	}
