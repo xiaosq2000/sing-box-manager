@@ -19,6 +19,7 @@ from sing_box_manager.release.validation import check_config
 from sing_box_manager.settings import Settings, TrafficStatsSettings, load_settings
 from sing_box_manager.subscription import user_protocols
 from tests.fetch_sing_box import EXAMPLE_INVENTORY, TEST_BINARY
+from tests.snell_fixtures import with_snell
 from tests.traffic_fixtures import NOW, new, update, usage_rows
 
 GOLDENS = Path(__file__).parent / "fixtures/profiles"
@@ -66,6 +67,31 @@ def golden_profiles() -> dict[str, dict]:
             )
     for enabled in (False, True):
         configs[f"server-stats-{str(enabled).lower()}"] = build_server_config(
+            inventory, TrafficStatsSettings(enabled=enabled)
+        )
+    # Keep the legacy goldens too: optional Snell must not change old profiles.
+    inventory = with_snell(inventory)
+    protocols = user_protocols(inventory, "alice")
+    for os_name in ("linux", "darwin", "windows"):
+        configs[f"desktop-snell-{os_name}"] = build_desktop_config(
+            inventory.deployment,
+            protocols,
+            os_name=os_name,
+            default_protocol="trojan",
+            default_route="china-direct",
+        )
+    configs["mobile-snell"] = build_mobile_config(
+        inventory.deployment, protocols, default_protocol="trojan"
+    )
+    for route in ROUTE_STRATEGIES:
+        config = build_client_profile(
+            inventory.deployment, protocols, "snell", MIXED_PROFILE
+        )
+        configs[f"mixed-snell-{route}"] = apply_desktop_route_strategy(
+            config, route, os_name="linux"
+        )
+    for enabled in (False, True):
+        configs[f"server-snell-stats-{str(enabled).lower()}"] = build_server_config(
             inventory, TrafficStatsSettings(enabled=enabled)
         )
     return configs

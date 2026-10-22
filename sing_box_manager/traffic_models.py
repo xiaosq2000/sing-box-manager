@@ -8,8 +8,10 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from sing_box_manager.settings import SUPPORTED_PROTOCOLS
+
 DEFAULT_BILLING_DAY = 1
-TRAFFIC_PROTOCOLS: tuple[str, ...] = ("trojan", "hysteria2", "naive")
+TRAFFIC_PROTOCOLS: tuple[str, ...] = SUPPORTED_PROTOCOLS
 
 OTHER_DOMAIN_KEY = "__other__"
 UNATTRIBUTED_DOMAIN_KEY = "__unattributed__"

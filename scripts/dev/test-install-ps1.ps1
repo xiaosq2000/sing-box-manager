@@ -162,6 +162,11 @@ try {
     Assert-Test (($script:events -join ',') -eq 'install --protocol trojan,protocol trojan,speed') 'Reinstall did not reuse its link'
 
     Reset-Fixture
+    Write-Fixture (Join-Path $env:LOCALAPPDATA 'sbc\subscription') $script:fixtureLink
+    Install-Sbc -Protocol snell
+    Assert-Test (($script:events -join ',') -eq 'install --protocol snell,protocol snell,speed') 'Snell selection was lost'
+
+    Reset-Fixture
     New-LegacyFixture
     $script:portFailures = 1
     Install-Sbc

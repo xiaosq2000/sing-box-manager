@@ -68,7 +68,9 @@ func testLifecycle(t *testing.T, engine string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	upstream := startUpstream(t, extractSingBox(t, archive))
+	core := extractSingBox(t, archive)
+	t.Run("SnellV6", func(t *testing.T) { testSnellV6(t, core) })
+	upstream := startUpstream(t, core)
 	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "reached")
 	}))

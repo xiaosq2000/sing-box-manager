@@ -21,6 +21,7 @@ import pytest
 from sing_box_manager.desktop_config import _protocol_outbounds
 from sing_box_manager.release.profiles import build_server_config
 from sing_box_manager.subscription import user_protocols
+from tests.snell_fixtures import with_snell
 from tests.test_m3_profiles import profile_inventory
 from tests.test_sing_box_114 import binary as binary
 from tests.test_sing_box_114 import deployment as deployment
@@ -205,12 +206,13 @@ def routed_node(tmp_path, deployment, binary):
         if os.environ.get("SBM_REQUIRE_SING_BOX"):
             pytest.fail("The pinned custom server binary is required")
         pytest.skip("Set SBM_TEST_SING_BOX_SERVER to the pinned custom server build")
-    inventory = profile_inventory()
+    inventory = with_snell(profile_inventory())
     inventory.deployment_data = deployment.model_copy(
         update={
             "trojan_port": _port(),
             "hysteria2_port": _port(),
             "naive_port": _port(),
+            "snell_port": _port(),
         }
     )
     server = build_server_config(inventory)
@@ -269,9 +271,10 @@ def client(binary, deployment, inventory, protocol, root, *, transport_port=None
         )
         if value["type"] == protocol.removesuffix("-mux")
     )
-    outbound["tls"]["certificate"] = (
-        Path(deployment.tls.certificate_path).read_text().splitlines()
-    )
+    if "tls" in outbound:
+        outbound["tls"]["certificate"] = (
+            Path(deployment.tls.certificate_path).read_text().splitlines()
+        )
     outbound.pop("domain_resolver", None)
     if protocol == "trojan-mux":
         outbound["multiplex"] = {"enabled": True, "max_connections": 1}
@@ -309,7 +312,9 @@ def request(port, host, destination_port=18080):
             return b""
 
 
-@pytest.mark.parametrize("protocol", ["trojan", "trojan-mux", "hysteria2", "naive"])
+@pytest.mark.parametrize(
+    "protocol", ["trojan", "trojan-mux", "hysteria2", "naive", "snell"]
+)
 def test_private_literals_and_dns_answers_never_reach_outbound(
     tmp_path,
     binary,
@@ -377,7 +382,7 @@ def test_private_literals_and_dns_answers_never_reach_outbound(
         assert len(outbound.targets) == before
 
 
-@pytest.mark.parametrize("protocol", ["trojan", "trojan-mux", "hysteria2"])
+@pytest.mark.parametrize("protocol", ["trojan", "trojan-mux", "hysteria2", "snell"])
 def test_udp_destination_changes_keep_private_addresses_blocked(
     tmp_path,
     binary,
@@ -439,7 +444,7 @@ def udp_client(port):
         yield udp, target
 
 
-@pytest.mark.parametrize("protocol", ["trojan", "trojan-mux", "hysteria2"])
+@pytest.mark.parametrize("protocol", ["trojan", "trojan-mux", "hysteria2", "snell"])
 def test_udp_first_private_destination_is_rejected(
     tmp_path, binary, deployment, routed_node, protocol
 ):

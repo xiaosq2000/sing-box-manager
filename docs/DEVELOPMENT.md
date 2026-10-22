@@ -142,6 +142,15 @@ restart, policy defaults, old-task migration, interval changes without a proxy
 restart, failed refresh and upgrade recovery, first-upgrade notification cleanup,
 and uninstall.
 
+E2E fixture ports use `singbox.FreePort`, which checks both TCP and UDP.
+A TCP-only probe can select a port that `sbc port` rejects because UDP is busy.
+`TestE2EPortSelection` checks UDP-only occupancy and simultaneous TCP/UDP binds.
+It changes no client installation, service or system setting:
+
+```sh
+pixi run go test -tags e2e ./internal/e2e -run '^TestE2EPortSelection$' -count=100
+```
+
 Windows runs the full lifecycle under Windows PowerShell 5.1 and PowerShell 7.
 The harness supplies the hidden `Read-Host` answer; the downloaded installer,
 executable download and child processes run against the local portal. The
@@ -542,8 +551,10 @@ pixi run -e control-plane-test test tests/test_mobile_config.py tests/test_mobil
 
 These checks do not replace [physical-device acceptance](README_MOBILE.md#acceptance-boundary).
 Record app and embedded core versions separately. Mark unavailable values as unknown.
-Unified-profile device acceptance is not complete on iOS or Android. Native app
-controls, refresh, real-DNS domain routing and TUN capture need device checks.
+iOS unified-profile device acceptance is operator-reported complete. Device
+and version details are not recorded. Snell-specific iOS checks remain pending.
+Android device acceptance is optional for Snell code completion. Automated
+policy checks do not prove native app controls or TUN capture.
 
 ## sing-box version checks
 
@@ -623,7 +634,8 @@ checks cover enabled, empty and entirely disabled Naive rosters, both with and
 without traffic stats. The profile tests also check shared API accounting,
 stream replay, protocol separation, and redaction of failed checker output.
 `tests/test_m3_runtime.py` runs one real node process and loopback clients for all
-three protocols, verifying authentication and both collectors' per-protocol usage.
+four protocols, verifying authentication and both collectors' per-protocol usage,
+including separate Snell usage for two users.
 Include it in the command above to run that integration check.
 `tests/test_server_install.py` runs a scratch copy of the server installer with a
 fake systemd and a scratch filesystem. It bypasses only the root-user guard in
@@ -636,6 +648,22 @@ sockets. They do not establish native Windows Task Scheduler, macOS launchd, or
 Linux TUN kernel compatibility. Native `sbc` lifecycle checks run on disposable
 CI runners. Linux TUN end-to-end checks run in a disposable QEMU guest with
 `scripts/dev/test-tun-vm.sh`.
+
+## Snell checks
+
+```sh
+pixi run -e control-plane-test test tests/test_snell.py tests/test_snell_runtime.py tests/test_snell_operations.py tests/test_control_plane_snell.py tests/test_m3_runtime.py
+SBM_TEST_SING_BOX="$PWD/.cache/sing-box-manager/bin/sing-box" pixi run go test -tags e2e ./internal/e2e -run '^TestSnellV6Loopback$' -count=1
+```
+
+The Python checks cover optional settings, all rendered platforms and modes,
+real TCP and UDP-over-TCP, authentication refusal, routing, selector persistence,
+PostgreSQL backfill and subscriptions. The accounting test requires
+`SBM_TEST_SING_BOX_SERVER` as described above. Keep the official client binary
+and custom server binary separate: the server build lacks Naive outbound support.
+The standalone Go loopback test changes no services or user settings. Native
+Linux, macOS and Windows lifecycle suites call the same real Snell check.
+See [Snell acceptance limits](SNELL.md#verification-and-remaining-acceptance).
 
 ## Generated protobuf stubs
 

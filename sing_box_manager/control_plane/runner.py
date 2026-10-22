@@ -22,6 +22,7 @@ CanonicalAction = Literal[
     "health",
     "import-inventory",
     "sync-node",
+    "backfill-snell",
 ]
 Action = Literal[CanonicalAction, "createsuperuser", "import", "sync"]
 MIGRATION_LOCK = 1396854083
@@ -41,8 +42,10 @@ def normalize_action(action: Action) -> CanonicalAction:
     return action
 
 
-def run(action: Action, runtime: Settings) -> None:
+def run(action: Action, runtime: Settings, *, dry_run: bool = False) -> None:
     action = normalize_action(action)
+    if dry_run and action != "backfill-snell":
+        raise ValueError("--dry-run is supported only for backfill-snell")
     control = runtime.control_plane
     if not control.enabled:
         raise ValueError("The control plane is disabled")
@@ -83,10 +86,12 @@ def run(action: Action, runtime: Settings) -> None:
     import django
 
     django.setup()
-    _run_django_action(action, runtime)
+    _run_django_action(action, runtime, **({"dry_run": True} if dry_run else {}))
 
 
-def _run_django_action(action: CanonicalAction, runtime: Settings) -> None:
+def _run_django_action(
+    action: CanonicalAction, runtime: Settings, *, dry_run: bool = False
+) -> None:
     from django.core.management import call_command
     from django.db import connection
 
@@ -110,6 +115,13 @@ def _run_django_action(action: CanonicalAction, runtime: Settings) -> None:
 
         counts = import_inventory(runtime)
         print(f"Imported inventory: {json.dumps(counts, sort_keys=True)}")
+    elif action == "backfill-snell":
+        from sing_box_manager.control_plane.services import backfill_snell_credentials
+
+        counts = backfill_snell_credentials(runtime, dry_run=dry_run)
+        print(
+            f"Snell credential {'preview' if dry_run else 'backfill'}: {json.dumps(counts, sort_keys=True)}"
+        )
     elif action == "sync-node":
         from sing_box_manager.control_plane.services import sync_node_config
 

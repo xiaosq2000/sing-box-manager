@@ -5,6 +5,7 @@ from __future__ import annotations
 from sing_box_manager.desktop_config import (
     RULE_SET_URLS,
     UserProtocols,
+    snell_outbound,
 )
 from sing_box_manager.release.platforms import (
     MIXED_PROFILE,
@@ -14,6 +15,7 @@ from sing_box_manager.release.renderers import (
     _apply_api_service_settings,
     _apply_v2ray_api_settings,
     apply_desktop_route_strategy,
+    apply_direct_exceptions,
     apply_tls_settings,
     bundled_remote_rule_set,
     render_hysteria2_client_config,
@@ -42,6 +44,18 @@ def client_base_config(protocol: str, profile: ClientProfile = MIXED_PROFILE) ->
         "password": "",
         "tls": {"enabled": True},
     }
+    if protocol == "snell":
+        outbound = {
+            "type": "snell",
+            "tag": "proxy",
+            "server": "",
+            "server_port": 443,
+            "version": 6,
+            "psk": "synthetic-validation-psk",
+            "userkey": "synthetic-userkey",
+            "mode": "default",
+            "reuse": False,
+        }
     if protocol == "naive":
         outbound["username"] = ""
     if protocol == "hysteria2":
@@ -120,11 +134,17 @@ def build_client_profile(
         return render_naive_client_config(
             config, deployment, protocols.naive, profile.set_system_proxy
         )
+    if protocol == "snell" and protocols.snell is not None and protocols.snell.enabled:
+        config["outbounds"][0] = dict(
+            snell_outbound(deployment, protocols.snell, protocols.snell_settings),
+            tag="proxy",
+        )
+        return apply_direct_exceptions(config, deployment)
     raise ValueError(f"User holds no enabled {protocol} credential")
 
 
 def counter_username(protocol: str, username: str) -> str:
-    """Naive's username is wire-visible; the other protocols authenticate passwords."""
+    """Keep Naive's wire username. Qualify internal labels for other protocols."""
     return username if protocol == "naive" else f"{protocol}:{username}"
 
 
@@ -165,9 +185,34 @@ def build_server_config(
     for protocol in SUPPORTED_PROTOCOLS:
         section = getattr(inventory, protocol)
         users = [user for user in section.users if user.enabled]
-        # Naive requires a non-empty roster in sing-box. Unlike the
-        # other protocols, its unused listener cannot be checked or started.
-        if protocol == "naive" and not users:
+        # Empty Snell users enable PSK-only authentication upstream. Never
+        # publish that fallback. Naive also requires a non-empty roster.
+        if protocol in {"naive", "snell"} and not users:
+            continue
+        if protocol == "snell":
+            if not inventory.snell.psk or inventory.deployment.snell_port is None:
+                raise ValueError("Snell requires shared settings and a port")
+            config["inbounds"].append(
+                {
+                    "type": "snell",
+                    "tag": "snell",
+                    "listen": "::",
+                    "listen_port": inventory.deployment.snell_port,
+                    "version": 6,
+                    "psk": inventory.snell.psk,
+                    "mode": "default",
+                    "users": [
+                        {
+                            "name": counter_username(protocol, user.username),
+                            "userkey": user.password,
+                        }
+                        for user in users
+                    ],
+                }
+            )
+            usernames.extend(
+                counter_username(protocol, user.username) for user in users
+            )
             continue
         tls: dict = {}
         apply_tls_settings(tls, inventory.deployment, include_server_paths=True)

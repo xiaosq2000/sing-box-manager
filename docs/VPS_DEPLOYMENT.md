@@ -1,6 +1,6 @@
 # VPS Deployment
 
-Checked on 2026-10-18.
+Checked on 2026-10-21.
 
 This is the primary deployment path for `sing-box-manager`.
 
@@ -19,6 +19,7 @@ It assumes:
 - `4443/udp`: Hysteria2 (base listen port)
 - `20000:50000/udp`: Hysteria2 port-hopping range (only if enabled — see below)
 - `9443/tcp`: Naive
+- operator-selected `deployment.snell_port/tcp`: optional Snell v6
 - `47071/tcp`: Django portal and control plane, bound to `127.0.0.1`
 
 Enable the [control plane](CONTROL_PLANE.md) for portal service. It uses OS-managed
@@ -35,6 +36,15 @@ directory. For example, run `sudo -u sbm sbm control-plane createsuperuser` to
 create an operator, or `sudo sbm control-plane sync` to apply database-managed
 accounts to the node. See [command syntax and the wrapper](CONTROL_PLANE.md#command-syntax-and-vps-wrapper)
 for aliases and configuration overrides.
+
+## Snell v6 (optional)
+
+Set `deployment.snell_port` and `snell.psk` together. Snell runs in the existing
+node service and needs no TLS certificate or separate UDP port. Bootstrap opens
+the selected TCP port. On an existing VPS, admit it in ufw and any provider
+firewall during the authorized rollout. Ordinary deploy does not change ufw.
+See [Snell setup and account backfill](SNELL.md) for migration, revocation,
+verification and rollback. Do not reimport authoritative accounts.
 
 ## Hysteria2 Port Hopping (optional)
 
@@ -262,7 +272,8 @@ The packaged installer writes `/usr/local/etc/sing-box/config.json` as root-only
 and installs `/etc/systemd/system/sing-box.service`. Repeat `-p PROTOCOL` to select
 an exact subset of packaged inbounds; omitting it installs all available ones.
 The release omits Naive when `naive.users` is empty or every entry is disabled,
-because sing-box rejects a Naive inbound without users. Explicitly selecting
+because sing-box rejects a Naive inbound without users. Snell is omitted without
+enabled users to prevent PSK-only authentication. Explicitly selecting
 an omitted inbound fails before services are changed.
 
 Do not run an old packaged installer directly on a database-managed node. Use

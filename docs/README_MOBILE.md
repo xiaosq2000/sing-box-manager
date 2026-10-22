@@ -5,7 +5,9 @@ Checked on 2026-10-21.
 Use the latest official stable iOS or Android app. Each account receives one
 remote profile with all its enabled protocols. The app selects the protocol and
 routing strategy independently. Older app versions are not a compatibility target.
-Unified-profile device acceptance is not complete on either platform.
+iOS unified-profile device acceptance is operator-reported complete. Device,
+OS, app and embedded core versions are not recorded. Snell-specific iOS checks
+remain pending. Android device acceptance is optional for this feature.
 
 ## Import a remote profile
 
@@ -50,6 +52,11 @@ mobile platform interface, not Linux's `127.0.0.53`. The app manages rule storag
 Seven remote rule sets update daily through the selected proxy protocol. Mobile
 has no bundled snapshots, so first-start rule downloads need a working proxy.
 `direct` does not disable rule downloads through the proxy.
+
+Snell v6 appears when its shared infrastructure and the account credential are
+enabled. It requires a compatible embedded core, not a new import URL. Refresh
+the unified profile, then select `snell`. See [Snell v6](SNELL.md) for credential
+handling and acceptance limits. Existing route and protocol defaults stay unchanged.
 
 The `proxy` selector contains only enabled account protocols. Its default uses
 `default_protocol`, or the account's first enabled protocol. Changing the selector
@@ -125,10 +132,10 @@ usage headers, host validation and revocation. Core tests check all five modes,
 selector paths, DNS changes, proxy failures and restart persistence with local
 stand-ins. They use a mixed inlet instead of native TUN capture.
 
-| Platform | Unified import | Five modes | Protocol switching | Refresh and restart |
-| -------- | -------------- | ---------- | ------------------ | ------------------- |
-| iOS      | Not tested     | Not tested | Not tested         | Not tested          |
-| Android  | Not tested     | Not tested | Not tested         | Not tested          |
+| Platform | Unified-profile device acceptance | Evidence                                | Snell v6 device checks |
+| -------- | --------------------------------- | --------------------------------------- | ---------------------- |
+| iOS      | Complete, operator report         | Device and version details not recorded | Pending                |
+| Android  | Not tested                        | No device record                        | Optional, not tested   |
 
 For device acceptance, record the device, OS, app version, embedded core version,
 network, tested commit and date. Mark unavailable values as unknown.

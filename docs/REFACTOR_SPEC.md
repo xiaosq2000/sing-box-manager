@@ -24,28 +24,28 @@ complexity comes from machinery built around premises that the target design dro
 
 ## Decisions
 
-| Decision                                                                                          | Status                                     |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Build a minimal Django control plane instead of adopting an existing panel                        | Decided                                    |
-| Operators create free accounts and issue single-use device enrollment codes                       | Decided                                    |
-| Ordinary users have no login password, public registration, or password-recovery flow             | Decided                                    |
-| sing-box is the only proxy core on nodes and clients                                              | Decided                                    |
-| Security fixes come first, then the client CLI                                                    | Decided                                    |
-| The control plane uses Django and Postgres                                                        | Decided                                    |
-| The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                    |
-| Add a node agent, with Go as the proposed language                                                | Planned after device management            |
-| Give each enrolled installation its own subscription token and proxy credentials                  | Planned after M1b                          |
-| Support multiple nodes before invalidating all legacy user credentials and links                  | Decided                                    |
-| A client runs one config per installation, with routes as Clash modes and protocols in a selector | Decided                                    |
-| Configs are built in code and pass `sing-box check` before release                                | Implemented                                |
-| Nodes run the official sing-box build                                                             | Proposed                                   |
-| Per-user traffic comes from the sing-box API stream only                                          | Deferred; requires accounting parity       |
-| Nodes apply user changes by reloading sing-box in batches                                         | Proposed, revisit if reloads disturb users |
-| Protocols stay trojan, hysteria2 and naive; VLESS-Reality is an option for nodes without a domain | Open until M6                              |
-| The subscription envelope carries the Linux TUN config beside the mixed config                    | Decided                                    |
-| Linux TUN answers DNS through its route rules, not through the systemd-resolved stub              | Decided                                    |
-| Linux TUN is refused in WSL2, containers and remote shells                                        | Decided                                    |
-| Linux TUN uses IPv4-only DNS and rejects public IPv6 without removing capture                     | Decided                                    |
+| Decision                                                                                                           | Status                                     |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| Build a minimal Django control plane instead of adopting an existing panel                                         | Decided                                    |
+| Operators create free accounts and issue single-use device enrollment codes                                        | Decided                                    |
+| Ordinary users have no login password, public registration, or password-recovery flow                              | Decided                                    |
+| sing-box is the only proxy core on nodes and clients                                                               | Decided                                    |
+| Security fixes come first, then the client CLI                                                                     | Decided                                    |
+| The control plane uses Django and Postgres                                                                         | Decided                                    |
+| The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                                 | Decided                                    |
+| Add a node agent, with Go as the proposed language                                                                 | Planned after device management            |
+| Give each enrolled installation its own subscription token and proxy credentials                                   | Planned after M1b                          |
+| Support multiple nodes before invalidating all legacy user credentials and links                                   | Decided                                    |
+| A client runs one config per installation, with routes as Clash modes and protocols in a selector                  | Decided                                    |
+| Configs are built in code and pass `sing-box check` before release                                                 | Implemented                                |
+| Nodes run the official sing-box build                                                                              | Proposed                                   |
+| Per-user traffic comes from the sing-box API stream only                                                           | Deferred; requires accounting parity       |
+| Nodes apply user changes by reloading sing-box in batches                                                          | Proposed, revisit if reloads disturb users |
+| Support trojan, hysteria2, naive and optional Snell v6. VLESS-Reality remains an option for nodes without a domain | Snell decided. VLESS-Reality open until M6 |
+| The subscription envelope carries the Linux TUN config beside the mixed config                                     | Decided                                    |
+| Linux TUN answers DNS through its route rules, not through the systemd-resolved stub                               | Decided                                    |
+| Linux TUN is refused in WSL2, containers and remote shells                                                         | Decided                                    |
+| Linux TUN uses IPv4-only DNS and rejects public IPv6 without removing capture                                      | Decided                                    |
 
 sing-box 1.14.0 supports VLESS-Reality as both server and client, and `sing-box check`
 accepts a server config and a client config that use it.
@@ -215,7 +215,9 @@ current location.
    import provide a unified multi-protocol profile. Mobile shares the five PC route
    strategies and uses real DNS answers. Per-protocol URLs return `400`.
    This consolidation does not rotate account tokens or protocol credentials.
-   Unified-profile device acceptance is incomplete on iOS and Android. See the
+   iOS unified-profile device acceptance is operator-reported complete, without
+   device or version details. Android acceptance is optional for Snell code
+   completion. Snell-specific iOS checks remain pending. See the
    [acceptance boundary](README_MOBILE.md#acceptance-boundary).
 5. **M1b: Linux TUN.** Complete within the [defined acceptance scope](#m1b-acceptance-scope).
    Workstation console checks cover activation with a private umask, five route
@@ -737,11 +739,13 @@ both pinned binaries; `Settings` validates settings and inventory together. Depl
 installs one `sing-box.service`, checks the node's real TLS files before stopping
 services, and restores the previous files and service state on installation failure.
 The old protocol units, JSON templates and experimental containers are removed.
-Naive is omitted when its enabled-user roster is empty. Default installs use all
+Naive and Snell are omitted when their enabled-user rosters are empty. Snell
+requires configured shared infrastructure. See [Snell v6](SNELL.md) for the
+explicit credential backfill and remaining acceptance. Default installs use all
 packaged inbounds; an explicitly selected inbound must exist in the package.
 
-The single counter listener uses protocol-qualified internal labels for Trojan and
-Hysteria2, while Naive retains its wire-visible username. The single connection
+The single counter listener uses protocol-qualified internal labels for Trojan,
+Hysteria2 and Snell, while Naive retains its wire-visible username. The single connection
 stream is partitioned by inbound, so existing per-protocol traffic history remains
 usable. Old listener keys are accepted for one release, using the Trojan addresses;
 new inventories use `api_listen` and `connection_api_listen`. The server route

@@ -33,6 +33,8 @@ from sing_box_manager.settings import (
     ProtocolUser,
     RuntimeInventory,
     Settings,
+    SnellInventory,
+    SnellUser,
     TrafficStatsSettings,
     TrojanInventory,
     TrojanUser,
@@ -71,6 +73,7 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
     trojan_users: list[TrojanUser] = []
     hysteria2_users: list[Hysteria2User] = []
     naive_users: list[NaiveUser] = []
+    snell_users: list[SnellUser] = []
     for account in accounts:
         by_protocol = {cred.protocol: cred for cred in account.credentials.all()}
         if (cred := by_protocol.get("trojan")) is not None:
@@ -97,6 +100,14 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
                     enabled=account.enabled and cred.enabled,
                 )
             )
+        if runtime.snell.psk and (cred := by_protocol.get("snell")) is not None:
+            snell_users.append(
+                SnellUser(
+                    username=account.username,
+                    password=cred.secret,
+                    enabled=account.enabled and cred.enabled,
+                )
+            )
     return runtime.model_copy(
         update={
             "web_portal_data": WebPortalInventory(users=portal_users),
@@ -108,6 +119,7 @@ def build_inventory_from_db(runtime: Settings) -> RuntimeInventory:
                 users=hysteria2_users,
             ),
             "naive_data": NaiveInventory(users=naive_users),
+            "snell": SnellInventory(psk=runtime.snell.psk, users=snell_users),
         }
     )
 
@@ -299,6 +311,52 @@ def ensure_default_credentials(account: Account) -> list[str]:
     return created
 
 
+def backfill_snell_credentials(
+    runtime: Settings, *, dry_run: bool = False
+) -> dict[str, int]:
+    """Add only missing Snell credentials. Preserve account and credential switches."""
+    if not runtime.control_plane.authoritative:
+        raise ControlPlaneError(
+            "Snell backfill requires authoritative account management"
+        )
+    if not runtime.snell.psk or runtime.deployment.snell_port is None:
+        raise ControlPlaneError(
+            "Configure snell.psk and deployment.snell_port before Snell backfill"
+        )
+    with transaction.atomic():
+        accounts = list(Account.objects.select_for_update().order_by("id"))
+        existing = set(
+            Credential.objects.filter(protocol="snell").values_list(
+                "account_id", flat=True
+            )
+        )
+        missing = [account for account in accounts if account.pk not in existing]
+        if not dry_run:
+            for account in missing:
+                credential = Credential(
+                    account=account, protocol="snell", secret=secrets.token_urlsafe(32)
+                )
+                credential.full_clean()
+                credential.save()
+            if missing:
+
+                def trigger() -> None:
+                    try:
+                        request_node_sync(runtime)
+                    except OSError as exc:
+                        raise ControlPlaneError(
+                            "Snell credentials were saved, but node sync could not be requested. "
+                            "Run sudo sbm control-plane sync on the server."
+                        ) from exc
+
+                transaction.on_commit(trigger)
+    return {
+        "accounts": len(accounts),
+        "existing": len(accounts) - len(missing),
+        "missing" if dry_run else "created": len(missing),
+    }
+
+
 def request_node_sync(runtime: Settings, *, trigger_path: Path | None = None) -> Path:
     """Write the trigger file watched by sing-box-manager-sync.path."""
     path = trigger_path or (runtime.generated_root / "node-sync.trigger")
@@ -342,6 +400,10 @@ def account_protocols(account: Account, runtime: Settings) -> UserProtocols:
         if "naive" not in by_proto
         else NaiveUser(username=username, password=by_proto["naive"], enabled=True),
         hysteria2_settings=runtime.hysteria2,
+        snell=SnellUser(username=username, password=by_proto["snell"])
+        if "snell" in by_proto and runtime.snell.psk
+        else None,
+        snell_settings=runtime.snell,
     )
 
 

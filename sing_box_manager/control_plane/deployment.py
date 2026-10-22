@@ -188,7 +188,7 @@ def install_wrapper(hostname: str, remote_root: str, *, dry_run: bool = False) -
 
 
 def management_command(
-    remote_root: str, action: str, *, service_user: bool = True
+    remote_root: str, action: str, *, service_user: bool = True, dry_run: bool = False
 ) -> str:
     python = str(Path(remote_root) / REMOTE_PIXI_PYTHON_RELATIVE_PATH)
     config = str(Path(remote_root) / "config/inventory/runtime.yaml")
@@ -202,6 +202,10 @@ def management_command(
         "--action",
         action,
     ]
+    if dry_run:
+        if action != "backfill-snell":
+            raise ValueError("--dry-run is supported only for backfill-snell")
+        argv.append("--dry-run")
     if service_user:
         argv = ["sudo", "-u", SERVICE_USER, "env", "PYTHONDONTWRITEBYTECODE=1", *argv]
     else:

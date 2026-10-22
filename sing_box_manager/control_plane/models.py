@@ -9,6 +9,7 @@ from django.db import models
 from sing_box_manager.settings import (
     SUPPORTED_PROTOCOLS,
     USERNAME_PATTERN,
+    SnellUser,
     _validate_password_hash,
 )
 
@@ -63,6 +64,7 @@ class Credential(models.Model):
         ("trojan", "Trojan"),
         ("hysteria2", "Hysteria2"),
         ("naive", "Naive"),
+        ("snell", "Snell v6"),
     ]
 
     account = models.ForeignKey(
@@ -78,7 +80,12 @@ class Credential(models.Model):
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
                 fields=["account", "protocol"], name="unique_account_protocol"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["secret"],
+                condition=models.Q(protocol="snell"),
+                name="unique_snell_userkey",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -88,6 +95,11 @@ class Credential(models.Model):
         secret = str(self.secret)
         if str(self.protocol) not in SUPPORTED_PROTOCOLS:
             raise ValidationError({"protocol": "Unsupported protocol."})
+        if str(self.protocol) == "snell":
+            try:
+                SnellUser.validate_userkey(secret)
+            except ValueError as exc:
+                raise ValidationError({"secret": str(exc)}) from exc
         if (
             not secret
             or secret.strip() != secret

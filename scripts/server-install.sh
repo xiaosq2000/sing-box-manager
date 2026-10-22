@@ -23,12 +23,12 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	-h | --help)
-		printf '%s\n' 'Usage: ./server-install.sh [-p trojan|hysteria2|naive]... [-V] [--package-dir DIR] [--preserve-config]' 'Without -p, installs all packaged protocol inbounds in sing-box.service.' '--preserve-config requires an existing node config and rejects -p.'
+		printf '%s\n' 'Usage: ./server-install.sh [-p trojan|hysteria2|naive|snell]... [-V] [--package-dir DIR] [--preserve-config]' 'Without -p, installs all packaged protocol inbounds in sing-box.service.' '--preserve-config requires an existing node config and rejects -p.'
 		exit 0
 		;;
 	-p | --protocol)
 		case "${2:-}" in
-		trojan | hysteria2 | naive) protocols+=("$2") ;;
+		trojan | hysteria2 | naive | snell) protocols+=("$2") ;;
 		*)
 			error "$(_t 'Missing or unsupported protocol')"
 			exit 1
