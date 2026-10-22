@@ -105,9 +105,11 @@ pixi run sbm --config config/inventory/runtime.sops.yaml release
 When traffic stats are enabled, the release build still downloads the official client
 archives for end users, but it swaps the server package over to a custom-built Linux
 `sing-box` binary so the single node config can use `experimental.v2ray_api`.
-It contains Trojan and Hysteria2 inbounds, plus Naive only when at least one
-`naive.users` entry is enabled. An empty or entirely disabled Naive roster omits
-that inbound: sing-box rejects a Naive listener without users.
+It contains Trojan and Hysteria2 inbounds, plus Naive and Snell when their
+rosters contain enabled users. Snell also requires its shared infrastructure
+settings. An empty or entirely disabled Naive roster omits that inbound:
+sing-box rejects a Naive listener without users. An empty Snell roster must
+omit the listener to prevent PSK-only authentication. See [Snell v6](SNELL.md).
 
 The config builders target [sing-box 1.14.3](https://github.com/SagerNet/sing-box/releases/tag/v1.14.3).
 Set `sing_box_version: 1.14.3` in the selected inventory and run `pixi install`
@@ -280,7 +282,7 @@ pixi run sbm --config config/inventory/runtime.sops.yaml serve
 ## Collect Traffic Stats
 
 When `traffic_stats.enabled: true`, collect per-user traffic deltas from the single
-node's Trojan, Hysteria2 and Naive inbounds with:
+node's Trojan, Hysteria2, Naive and Snell inbounds with:
 
 ```sh
 pixi run sbm --config config/inventory/runtime.sops.yaml stats-collect
@@ -326,8 +328,7 @@ Daily buckets only start accumulating when this version is deployed; the monthly
 and the protocol split work retroactively, because both read data already collected.
 That asymmetry bounds the recompute above: cycles that start before the first `daily_usage`
 row cannot be rebuilt from it, so they are left exactly as they were collected rather than
-being blanked. Roughly 10k daily rows accrue per year for nine users across three
-protocols, well under a megabyte, and nothing prunes them.
+being blanked. Daily rows grow with active users and protocols. Nothing prunes them.
 
 Deploy updates the remote environment when `pixi.lock` changes. If the portal shows
 tables but chart rendering fails, check the web service logs and confirm that the
@@ -350,7 +351,7 @@ carrying the username, the destination and the byte totals together. That join i
 the domain breakdown is built from. `sbm release` adds the service to each rendered
 node config when `traffic_stats.enabled` is true, one shared listener on
 `traffic_stats.connection_api_listen`. Events are partitioned by inbound into the
-existing protocol buckets. Trojan and Hysteria2 use protocol-qualified internal
+existing protocol buckets. Trojan, Hysteria2 and Snell use protocol-qualified internal
 authentication labels, which the collectors map back to usernames; Naive keeps
 its wire-visible username. Passwords and client credentials do not change. No extra build tag is needed; unlike
 `experimental.v2ray_api`, this one is in every sing-box build.
@@ -444,7 +445,7 @@ removes checkpoints absent from both the live set and the closed replay history.
 There is no full connection log.
 
 Note that `Connection.domain` arrives empty unless a sniff action is configured, which
-these server configs do not use. It does not need to be: trojan, hysteria2 and naive all
+these server configs do not use. It does not need to be: Trojan, Hysteria2, Naive and Snell all
 carry the target hostname in the proxy handshake, so sing-box puts it in `destination`
 and the daemon reads it from there.
 

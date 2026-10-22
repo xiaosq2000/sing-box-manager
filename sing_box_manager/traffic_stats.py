@@ -145,38 +145,15 @@ def open_store(database_path: Path) -> _TrafficStatsStore:
 def _build_service_targets(
     settings: Settings, inventory: RuntimeInventory
 ) -> tuple[_ServiceTarget, ...]:
-    trojan_users = tuple(
-        user.username for user in inventory.trojan.users if user.enabled
-    )
-    hysteria2_users = tuple(
-        user.username for user in inventory.hysteria2.users if user.enabled
-    )
-    naive_users = tuple(user.username for user in inventory.naive.users if user.enabled)
-    targets: list[_ServiceTarget] = []
-    if trojan_users:
-        targets.append(
-            _ServiceTarget(
-                protocol="trojan",
-                listen_address=settings.traffic_stats.api_listen,
-                usernames=trojan_users,
-            )
+    targets = []
+    for protocol in TRAFFIC_PROTOCOLS:
+        users = tuple(
+            user.username for user in getattr(inventory, protocol).users if user.enabled
         )
-    if hysteria2_users:
-        targets.append(
-            _ServiceTarget(
-                protocol="hysteria2",
-                listen_address=settings.traffic_stats.api_listen,
-                usernames=hysteria2_users,
+        if users:
+            targets.append(
+                _ServiceTarget(protocol, settings.traffic_stats.api_listen, users)
             )
-        )
-    if naive_users:
-        targets.append(
-            _ServiceTarget(
-                protocol="naive",
-                listen_address=settings.traffic_stats.api_listen,
-                usernames=naive_users,
-            )
-        )
     return tuple(targets)
 
 

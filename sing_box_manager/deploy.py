@@ -56,9 +56,8 @@ from sing_box_manager.release.store import (
     STORE_DIR_NAME,
     UPSTREAM_DIR_NAME,
 )
-from sing_box_manager.settings import Settings
+from sing_box_manager.settings import SUPPORTED_PROTOCOLS, Settings
 
-SUPPORTED_PROTOCOLS = ("trojan", "hysteria2", "naive")
 # The account the portal and the collectors run as. It reads the deployed tree
 # through its group and writes only its systemd StateDirectory.
 SERVICE_USER = "sbm"

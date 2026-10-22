@@ -168,7 +168,7 @@ read_bash_client() {
 		protocol=$(first_line "$old_config/selected-protocol")
 	fi
 	case "$protocol" in
-	trojan | hysteria2 | naive) ;;
+	trojan | hysteria2 | naive | snell) ;;
 	*) protocol="" ;;
 	esac
 	if [ -z "$no_rc" ] && [ "$(preference rc_enabled)" = false ]; then

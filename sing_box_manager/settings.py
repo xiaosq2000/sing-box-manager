@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_ROOT = Path("./config")
 RELEASES_ROOT = Path("./releases")
 UPSTREAM_CACHE_ROOT = Path("./.cache/sing-box-manager/upstream")
-SUPPORTED_PROTOCOLS = ("trojan", "hysteria2", "naive")
+SUPPORTED_PROTOCOLS = ("trojan", "hysteria2", "naive", "snell")
 CLIENT_UPGRADE_POLICIES = ("off", "suggested", "required")
 STATE_ROOT = Path("/var/lib/sing-box-manager")
 DEFAULT_TRAFFIC_STATS_DATABASE_PATH = STATE_ROOT / "traffic-stats.sqlite3"
@@ -48,6 +48,7 @@ INVENTORY_KEYS = {
     "trojan",
     "hysteria2",
     "naive",
+    "snell",
     "vps_info",
 }
 
@@ -228,6 +229,7 @@ class DeploymentConfig(StrictModel):
     hysteria2_port: int = Field(ge=1, le=65535)
     hysteria2_port_range: str | None = None
     naive_port: int = Field(ge=1, le=65535)
+    snell_port: int | None = Field(default=None, ge=1, le=65535)
     tls: TlsConfig
 
     @field_validator("direct_domain_suffixes")
@@ -309,6 +311,48 @@ class Hysteria2User(ProtocolUser):
 
 class NaiveUser(ProtocolUser):
     pass
+
+
+class SnellUser(ProtocolUser):
+    """The inventory password is the per-account Snell userkey, not the PSK."""
+
+    @field_validator("password")
+    @classmethod
+    def validate_userkey(cls, value: str) -> str:
+        if (
+            not 1 <= len(value.encode("utf-8")) <= 255
+            or value.strip() != value
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+        ):
+            raise ValueError(
+                "Snell userkey must be 1 to 255 UTF-8 bytes without outer whitespace or control characters"
+            )
+        return value
+
+
+class SnellInventory(StrictModel):
+    psk: str | None = Field(default=None, repr=False)
+    users: list[SnellUser] = Field(default_factory=list)
+
+    @field_validator("psk")
+    @classmethod
+    def validate_psk(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not 12 <= len(value.encode("utf-8")) <= 255
+            or value.strip() != value
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+        ):
+            raise ValueError(
+                "Snell v6 PSK must be 12 to 255 UTF-8 bytes without outer whitespace or control characters"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_users(self) -> Self:
+        _validate_unique_usernames(self.users)
+        if len({user.password for user in self.users}) != len(self.users):
+            raise ValueError("Snell userkeys must be unique")
+        return self
 
 
 class WebPortalInventory(StrictModel):
@@ -610,6 +654,7 @@ class Settings(StrictModel):
         default=None, alias="hysteria2", repr=False
     )
     naive_data: NaiveInventory | None = Field(default=None, alias="naive", repr=False)
+    snell: SnellInventory = Field(default_factory=SnellInventory, repr=False)
 
     @field_validator("sing_box_version", "client_signing_key")
     @classmethod
@@ -621,7 +666,7 @@ class Settings(StrictModel):
     def validate_protocol(cls, value: str) -> str:
         if value.strip() not in SUPPORTED_PROTOCOLS:
             raise ValueError(
-                "default_protocol must be one of: trojan, hysteria2, naive"
+                "default_protocol must be one of: trojan, hysteria2, naive, snell"
             )
         return value.strip()
 
@@ -644,6 +689,42 @@ class Settings(StrictModel):
             )
         if self.control_plane.port in ports:
             raise ValueError("control_plane.port must differ from configured TCP ports")
+        return self
+
+    @model_validator(mode="after")
+    def validate_snell(self) -> Self:
+        port = None if self.deployment_data is None else self.deployment_data.snell_port
+        configured = self.snell.psk is not None
+        if configured != (port is not None):
+            raise ValueError("Snell requires both snell.psk and deployment.snell_port")
+        if self.snell.users and not configured:
+            raise ValueError("Snell users require configured Snell infrastructure")
+        if self.default_protocol == "snell" and not configured:
+            raise ValueError(
+                "The Snell default protocol requires configured Snell infrastructure"
+            )
+        if configured:
+            version = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", self.sing_box_version)
+            if version is None or tuple(map(int, version.groups())) < (1, 14, 0):
+                raise ValueError("Snell v6 requires sing-box 1.14.0 or later")
+            deployment = self.deployment
+            ports = {80, 443, deployment.trojan_port, deployment.naive_port}
+            if self.control_plane.enabled:
+                ports.update(
+                    (self.control_plane.port, self.control_plane.database_port)
+                )
+            if self.traffic_stats.enabled:
+                ports.update(
+                    split_listen_address(address)[1]
+                    for address in (
+                        self.traffic_stats.api_listen,
+                        self.traffic_stats.connection_api_listen,
+                    )
+                )
+            if port in ports:
+                raise ValueError(
+                    "deployment.snell_port must differ from configured TCP ports"
+                )
         return self
 
     @model_validator(mode="after")
@@ -716,6 +797,7 @@ class Settings(StrictModel):
                 "trojan_data": TrojanInventory(users=[]),
                 "hysteria2_data": self.hysteria2.model_copy(update={"users": []}),
                 "naive_data": NaiveInventory(users=[]),
+                "snell": self.snell.model_copy(update={"users": []}),
             }
         )
 

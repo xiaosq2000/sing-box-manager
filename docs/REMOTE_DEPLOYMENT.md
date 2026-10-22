@@ -1,6 +1,6 @@
 # Remote Deployment
 
-Checked on 2026-10-18.
+Checked on 2026-10-21.
 
 `sbm deploy` ships two things in one command: the project **code** and the active
 **release artifacts**. The remote is a plain directory, not a git checkout — it needs
@@ -17,9 +17,10 @@ pixi run sbm --config config/inventory/runtime.sops.yaml deploy --hostname vpn-h
 
 - `--hostname` is required and is passed directly to `rsync` and `ssh`
 - `--remote-root` defaults to `/opt/sing-box-manager`
-- `--protocol` accepts one or more of `trojan`, `hysteria2`, `naive`; omitting it
-  selects all packaged inbounds in one `sing-box.service`. Naive is absent from a
-  release when its roster is empty or entirely disabled. An explicit list replaces
+- `--protocol` accepts one or more of `trojan`, `hysteria2`, `naive`, `snell`. Omitting it
+  selects all packaged inbounds in one `sing-box.service`. Naive and Snell are absent
+  when their rosters are empty or entirely disabled. Snell also requires its shared
+  infrastructure settings. An explicit list replaces
   the active protocol set; it does not add separate services. Explicitly selecting
   an absent inbound fails before the installer changes services
 - `--bootstrap` provisions a fresh Ubuntu/Debian host end-to-end: creates the service
@@ -199,6 +200,11 @@ uses an atomic replacement. Credentials are never placed in SSH command argument
 Ordinary deploys do not replace TLS files. They manage Nginx log redaction and,
 the whole-portal Django routes, including when node authority is disabled. `--bootstrap` creates
 the site and obtains certificates. Both flows install renewal units. Neither builds a release.
+
+For an authorized Snell rollout, follow [Snell setup and backfill](SNELL.md).
+Deployment migrates the credential schema but does not backfill existing users.
+Ordinary deploy does not open its new firewall port. Keep the existing three
+protocols available while adding and verifying Snell.
 
 ## Portal cutover acceptance
 

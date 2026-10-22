@@ -42,7 +42,7 @@ func ProxyOnlyProbePort(config []byte) (int, bool) {
 			choices = outbound.Choices
 		}
 		switch outbound.Type {
-		case "trojan", "hysteria2", "naive", "socks", "http":
+		case "trojan", "hysteria2", "naive", "snell", "socks", "http":
 			remote[outbound.Tag] = true
 		}
 	}

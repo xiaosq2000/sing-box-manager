@@ -1,0 +1,450 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "google",
+        "server": "8.8.8.8",
+        "detour": "proxy"
+      },
+      {
+        "type": "udp",
+        "tag": "aliyun",
+        "server": "223.5.5.5"
+      },
+      {
+        "tag": "system",
+        "type": "local"
+      }
+    ],
+    "rules": [
+      {
+        "clash_mode": "direct",
+        "server": "system"
+      },
+      {
+        "clash_mode": "ai-only",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "system"
+      },
+      {
+        "clash_mode": "ai",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "system"
+      },
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "server": "aliyun"
+      },
+      {
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "china",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
+      },
+      {
+        "clash_mode": "china",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "server": "aliyun"
+      },
+      {
+        "clash_mode": "china-direct",
+        "server": "google"
+      },
+      {
+        "clash_mode": "china",
+        "server": "google"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "gfw",
+        "rule_set": ["GFWList"],
+        "server": "google"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "server": "aliyun"
+      },
+      {
+        "clash_mode": "gfw",
+        "server": "aliyun"
+      },
+      {
+        "clash_mode": "ai-only",
+        "server": "system"
+      },
+      {
+        "clash_mode": "ai",
+        "server": "system"
+      },
+      {
+        "clash_mode": "global",
+        "server": "google"
+      }
+    ],
+    "final": "google",
+    "optimistic": false
+  },
+  "ntp": {
+    "enabled": true,
+    "server": "time.apple.com",
+    "server_port": 123,
+    "interval": "30m",
+    "detour": "direct"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed",
+      "listen": "127.0.0.1",
+      "listen_port": 1080,
+      "set_system_proxy": false
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": ["trojan", "hysteria2", "naive", "snell"],
+      "default": "trojan",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "trojan",
+      "tag": "trojan",
+      "server": "8.8.8.8",
+      "server_port": 8443,
+      "password": "change-me",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hysteria2",
+      "server": "8.8.8.8",
+      "server_port": 58080,
+      "password": "change-me",
+      "obfs": {
+        "type": "salamander",
+        "password": "change-me-obfs"
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "naive",
+      "tag": "naive",
+      "server": "8.8.8.8",
+      "server_port": 9443,
+      "username": "alice",
+      "password": "change-me",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com"
+      },
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "snell",
+      "tag": "snell",
+      "server": "8.8.8.8",
+      "server_port": 10443,
+      "version": 6,
+      "psk": "synthetic-shared-snell-psk",
+      "userkey": "synthetic-snell-alice",
+      "mode": "default",
+      "reuse": false,
+      "domain_resolver": {
+        "server": "google"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct",
+      "domain_resolver": {
+        "server": "aliyun"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct-system",
+      "domain_resolver": {
+        "server": "system"
+      }
+    }
+  ],
+  "route": {
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "AdGuard-DNS-Filter",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/filter.txt.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/be923102d393b70598cc08a57abdde878aae666c9c5116a56da8167a9728b777.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "AI-Anthropic",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/8f8c33ffe1d8831043298dc039861d8f505b4c74a265de95e94ceaeb106ea1ae.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "AI-Geosite",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ai-!cn.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/26532516f1b4f6ca8f95a66fa62cb27808eecbabebd8aee1b7c533335a734b60.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "GFWList",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/gfwlist.txt.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/6f37c053125cea788f3d9bd82b9ac3610653cce3db66bbd32324ff51d7098737.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "GeoSite-CN",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/accelerated-domains.china.conf.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/56a3c0517911ad27c0c3665c7215f87a907d71e33b450344534a24d1312f42f5.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "GeoSite-Apple-CN",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/Dreista/sing-box-rule-set-cn/rule-set/apple.china.conf.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/e14b39f826a08b567fd0856766a01641f76975953d634f310aa21ac7f041e527.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "GeoIP-CN",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
+        "update_interval": "1d",
+        "http_client": "rule-downloads",
+        "initial_path": "rules/b46fbd1a365ed9c81e82ee4ef119ebe2e1464a33876f8e2c8300dc45a9e350fd.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "protocol": "dns"
+          },
+          {
+            "port": 53
+          }
+        ],
+        "action": "hijack-dns"
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "port": 853
+          },
+          {
+            "network": "udp",
+            "port": 443
+          },
+          {
+            "protocol": "stun"
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "clash_mode": "ai-only",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "ai",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "direct",
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct-system"
+      },
+      {
+        "domain": ["vpn.example.com"],
+        "domain_suffix": ["portal.example.net"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "direct",
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "direct",
+        "rule_set": ["AdGuard-DNS-Filter"],
+        "action": "reject"
+      },
+      {
+        "clash_mode": "direct",
+        "outbound": "direct-system"
+      },
+      {
+        "rule_set": ["AI-Anthropic", "AI-Geosite"],
+        "outbound": "proxy"
+      },
+      {
+        "rule_set": ["AdGuard-DNS-Filter"],
+        "action": "reject"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GFWList"],
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "china",
+        "rule_set": ["GFWList"],
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "china",
+        "rule_set": ["GeoSite-CN", "GeoSite-Apple-CN"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "china-direct",
+        "rule_set": ["GeoIP-CN"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "china",
+        "rule_set": ["GeoIP-CN"],
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "china-direct",
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "china",
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "rule_set": ["GFWList"],
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "gfw",
+        "rule_set": ["GFWList"],
+        "outbound": "proxy"
+      },
+      {
+        "clash_mode": "gfw-proxy",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "gfw",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "ai-only",
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "ai",
+        "outbound": "direct-system"
+      },
+      {
+        "clash_mode": "global",
+        "outbound": "proxy"
+      }
+    ],
+    "final": "proxy",
+    "default_http_client": "rule-downloads"
+  },
+  "http_clients": [
+    {
+      "tag": "rule-downloads",
+      "detour": "proxy"
+    }
+  ],
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "store_dns": true,
+      "path": "cache.db"
+    },
+    "clash_api": {
+      "default_mode": "china-direct"
+    }
+  }
+}
