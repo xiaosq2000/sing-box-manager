@@ -153,7 +153,9 @@ func runTunMaintenance(env Env, layout paths.Layout, action string, background b
 		return failTunMaintenance(env, layout, plan, err)
 	}
 	if err = plan.Publish(); err == nil {
+		inboundTag, ipv6Policy := tun.DiagnosticMetadata(plan.Envelope.ConfigTun)
 		err = tun.WriteState(layout, tun.State{APIPort: port, APISecret: secret, Interface: tun.InterfaceName,
+			Transaction: transaction, InboundTag: inboundTag, IPv6Policy: ipv6Policy,
 			Since: time.Now().UTC().Format(time.RFC3339), SourceHash: sourceHash})
 	}
 	if err == nil {

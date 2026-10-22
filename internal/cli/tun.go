@@ -99,7 +99,9 @@ func runTunOn(env Env) int {
 	if err := env.Sudo(self, args); err != nil {
 		return fail(env, i18n.Errorf("Linux TUN setup failed: %w; the mixed proxy remains off", err))
 	}
+	inboundTag, ipv6Policy := tun.DiagnosticMetadata(config)
 	state := tun.State{
+		Transaction: transaction, InboundTag: inboundTag, IPv6Policy: ipv6Policy,
 		APIPort:    apiPort,
 		APISecret:  secret,
 		Interface:  tun.InterfaceName,

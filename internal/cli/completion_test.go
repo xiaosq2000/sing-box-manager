@@ -268,7 +268,7 @@ compopt() { :; }
 [[ $(complete -p sbc) != *'-o default'* ]] || exit 1
 COMP_WORDS=(sbc pro); COMP_CWORD=1; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc route c); COMP_CWORD=2; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
-COMP_WORDS=(sbc ip --a); COMP_CWORD=2; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
+COMP_WORDS=(sbc ip --j); COMP_CWORD=2; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc install --shell z); COMP_CWORD=3; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc install --shell = z); COMP_CWORD=4; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(sbc install --route = g); COMP_CWORD=4; __start_sbc; printf '%s\n' "${COMPREPLY[@]}"
@@ -277,7 +277,7 @@ COMP_WORDS=(sbc install --shell z ignored); COMP_CWORD=3; __start_sbc; printf '%
 				command = exec.Command(path, "--noprofile", "--norc", "-c", script)
 				command.Env = env
 				output, err := command.CombinedOutput()
-				if err != nil || string(output) != "protocol\nchina-direct\n--ai\n--allow-direct-ai\nzsh\nzsh\ngfw-proxy\nglobal\nzsh\n" {
+				if err != nil || string(output) != "protocol\nchina-direct\n--json\nzsh\nzsh\ngfw-proxy\nglobal\nzsh\n" {
 					t.Fatalf("Bash completion: %v\n%s", err, output)
 				}
 			} else {
@@ -347,10 +347,10 @@ func TestCompletionNativePowerShell(t *testing.T) {
 					script := `$ErrorActionPreference = 'Stop'
 Set-PSReadLineKeyHandler -Key Tab -Function __MODE__
 sbc completion powershell | Out-String | Invoke-Expression
-foreach ($line in @('sbc pro', 'sbc route c', 'sbc route g', 'sbc ip --a', 'sbc install --shell z', 'sbc install --shell=z', 'sbc.exe protocol n')) {
+foreach ($line in @('sbc pro', 'sbc route c', 'sbc route g', 'sbc ip --j', 'sbc install --shell z', 'sbc install --shell=z', 'sbc.exe protocol n')) {
     $result = [System.Management.Automation.CommandCompletion]::CompleteInput($line, $line.Length, $null)
     if ($line -eq 'sbc route c' -and $result.CompletionMatches[0].ToolTip -notmatch 'Direct recognized China destinations') { throw 'Route tooltip missing' }
-    if ($line -eq 'sbc ip --a' -and $result.CompletionMatches[0].ToolTip -notmatch 'Also probe Gemini, ChatGPT, and Claude') { throw 'Flag tooltip missing' }
+    if ($line -eq 'sbc ip --j' -and $result.CompletionMatches[0].ToolTip -notmatch 'Print a versioned JSON result') { throw 'Flag tooltip missing' }
     $result.CompletionMatches | ForEach-Object {
         $text = $_.CompletionText.Trim()
         if ('__MODE__' -eq 'Complete' -and $result.CompletionMatches.Count -gt 1) {
@@ -373,7 +373,7 @@ foreach ($line in @('sbc pro', 'sbc route c', 'sbc route g', 'sbc ip --a', 'sbc 
 					command.Env = slices.DeleteFunc(slices.Clone(env), func(value string) bool { return strings.HasPrefix(strings.ToUpper(value), "PSMODULEPATH=") })
 					output, err := command.CombinedOutput()
 					got := strings.ReplaceAll(string(output), "\r\n", "\n")
-					if err != nil || got != "protocol\nchina-direct\ngfw-proxy\nglobal\n--ai\n--allow-direct-ai\nzsh\n--shell=zsh\nnaive\n" {
+					if err != nil || got != "protocol\nchina-direct\ngfw-proxy\nglobal\n--json\nzsh\n--shell=zsh\nnaive\n" {
 						t.Fatalf("PowerShell completion: %v\n%s", err, output)
 					}
 				})

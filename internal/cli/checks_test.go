@@ -1,10 +1,17 @@
 package cli
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,18 +20,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/xiaosq2000/sing-box-manager/internal/api"
+	"github.com/xiaosq2000/sing-box-manager/internal/diagnostic"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
+	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
-// useSites points the proxy at a stand-in that answers for the sites 'sbc ip'
-// asks, with pages by host, and returns the Proxy-Authorization headers it
-// saw. A host without a page answers 502, as a site that is down.
 func (h *harness) useSites(t *testing.T, pages map[string]string) *[]string {
 	t.Helper()
 	var lock sync.Mutex
@@ -42,7 +50,7 @@ func (h *harness) useSites(t *testing.T, pages map[string]string) *[]string {
 			return
 		}
 		if !ok {
-			http.Error(w, "down", http.StatusBadGateway)
+			http.Error(w, "down", 502)
 			return
 		}
 		io.WriteString(w, page)
@@ -51,271 +59,392 @@ func (h *harness) useSites(t *testing.T, pages map[string]string) *[]string {
 	address, _ := url.Parse(proxy.URL)
 	port, _ := strconv.Atoi(address.Port())
 	h.writeLocal(t, func(local *singbox.Local) { local.ListenPort = port })
-	h.env.Sites = probe.Sites{
-		Gemini: "http://gemini.test/", IPify4: "http://ipify4.test/", IPify6: "http://ipify6.test/",
-		IdentMe4: "http://ident4.test/", IdentMe6: "http://ident6.test/", IPDetails: "http://details.test/",
-	}
+	h.env.Sites = probe.Sites{IPify4: "http://ipify4.test/", IPify6: "http://ipify6.test/", IdentMe4: "http://ident4.test/", IdentMe6: "http://ident6.test/", IPDetails: "http://details.test/"}
 	return &seen
 }
 
-func TestIPShowsSourcesIPv4AndDatabaseDetailsThroughTheActiveRoute(t *testing.T) {
-	for _, args := range [][]string{{"ip"}, {"ip", "--dual-stack=false"}} {
-		h := newHarness(t)
-		h.writeLocal(t, func(local *singbox.Local) { local.Username, local.Password = "sbc", "s3cret" })
-		seen := h.useSites(t, map[string]string{
-			"ipify4.test": "203.0.113.7", "ident4.test": "198.51.100.20",
-			"details.test/203.0.113.7": `{"success":true,"ip":"203.0.113.7","country":"US","region":"California","city":"Los Angeles","connection":{"asn":64500,"org":"Example Network"}}`,
-		})
-		code := Run(h.env, args)
-		text := strings.Join(strings.Fields(h.out.String()), " ")
-		for _, want := range []string{
-			"route: china-direct", "IP checks follow the active route", "IP details: ipwho.is (database estimates)",
-			"Source Family Exit IP Location ASN / organization",
-			"IPify IPv4 203.0.113.7 US / California / Los Angeles AS64500 / Example Network",
-			"ident.me IPv4 198.51.100.20 unknown unknown / unknown",
-		} {
-			if !strings.Contains(text, want) {
-				t.Errorf("missing %q in %s", want, h.out)
-			}
-		}
-		if code != 0 || len(*seen) != 4 || strings.Contains(text, "IPv6") || strings.Contains(text, "gemini:") || h.api.mode != "china" || h.api.protocol != "trojan" || len(h.api.speedTests) != 0 {
-			t.Fatalf("code %d, %d requests, output %s%s", code, len(*seen), h.out, h.errOut)
-		}
-		password := "Basic " + base64.StdEncoding.EncodeToString([]byte("sbc:s3cret"))
-		for _, header := range *seen {
-			if header != password {
-				t.Errorf("wrong proxy authentication")
-			}
-		}
-	}
-}
-
-func TestIPReportsASiteThatFailsWithoutContactingAI(t *testing.T) {
-	h := newHarness(t)
-	seen := h.useSites(t, map[string]string{"ident4.test": "198.51.100.20"})
-	code := Run(h.env, []string{"ip"})
-	text := strings.Join(strings.Fields(h.out.String()), " ")
-	if code != 1 || len(*seen) != 3 || !strings.Contains(text, "IPify IPv4 failed unknown unknown / unknown") || !strings.Contains(text, "ident.me IPv4 198.51.100.20") || !strings.Contains(text, "IPify IPv4: failed: the site answered 502 Bad Gateway") || strings.Contains(text, "gemini:") {
-		t.Fatalf("code %d, %d requests, got\n%s%s", code, len(*seen), h.out, h.errOut)
-	}
-}
-
-func TestIPDualStackKeepsIPv4ResultsWhenOneIPv6SourceFails(t *testing.T) {
-	h := newHarness(t)
-	seen := h.useSites(t, map[string]string{
-		"ipify4.test": "203.0.113.7", "ident4.test": "198.51.100.20", "ipify6.test": "2001:db8::7",
-	})
-	code := Run(h.env, []string{"ip", "--dual-stack"})
-	text := strings.Join(strings.Fields(h.out.String()), " ")
-	for _, want := range []string{"IPify IPv4 203.0.113.7", "ident.me IPv4 198.51.100.20", "IPify IPv6 2001:db8::7", "ident.me IPv6 failed", "ident.me IPv6: failed:", "An IPv6 check failure does not prove that IPv6 is unavailable."} {
-		if !strings.Contains(text, want) {
-			t.Errorf("missing %q in %s", want, h.out)
-		}
-	}
-	if code != 1 || len(*seen) != 7 {
-		t.Fatalf("code %d, %d requests: %s%s", code, len(*seen), h.out, h.errOut)
-	}
-}
-
-func TestIPDetailsFailureIsNonFatalAndReportedOnce(t *testing.T) {
-	h := newHarness(t)
-	seen := h.useSites(t, map[string]string{
-		"ipify4.test": "203.0.113.7", "ident4.test": "203.0.113.7", "details.test": "not JSON",
-	})
-	code := Run(h.env, []string{"ip"})
-	text := strings.Join(strings.Fields(h.out.String()), " ")
-	if code != 0 || len(*seen) != 3 || !strings.Contains(text, "IPify IPv4 203.0.113.7 unknown unknown / unknown") || !strings.Contains(text, "ident.me IPv4 203.0.113.7 unknown unknown / unknown") || strings.Count(text, "the IP database returned an invalid response") != 1 {
-		t.Fatalf("code %d, %d requests: %s%s", code, len(*seen), h.out, h.errOut)
-	}
-}
-
-func TestIPSourceTableAndFailuresAreChinese(t *testing.T) {
-	i18n.SetChinese(true)
-	defer i18n.SetChinese(false)
-	h := newHarness(t)
-	h.useSites(t, nil)
-	if code := Run(h.env, []string{"ip", "--dual-stack"}); code != 1 {
-		t.Fatal(code)
-	}
-	for _, want := range []string{"来源", "地址族", "出口 IP", "ASN / 运营组织", "未知", "IPify IPv4: 失败：", "IPv6 检查失败不能证明 IPv6 不可用。"} {
-		if !strings.Contains(h.out.String(), want) {
-			t.Errorf("missing %q in %s", want, h.out)
-		}
-	}
-}
-
-func TestSpeedAllTimesEveryProtocolAndListsTheFastestFirst(t *testing.T) {
-	h := newHarness(t)
-	h.api.protocols = []string{"trojan", "naive", "hysteria2", "tuic"}
-	h.api.delays = map[string][]int{"trojan": {300, 140, 150}, "hysteria2": {95, 90, 100}, "tuic": {-1, 80, 85}}
-
-	code := Run(h.env, []string{"speed", "--all"})
-
-	// Latency matters little for downloads, so it suggests no switch.
-	want := "Time to load a small page through each protocol, the median of 3 tries:\n" +
-		"  tuic       80 ms, 1 of 3 tries failed\n" +
-		"  hysteria2  95 ms\n" +
-		"  trojan     150 ms (current)\n" +
-		"  naive      failed\n"
-	if code != 0 || h.out.String() != want {
-		t.Errorf("code %d, got\n%s%s", code, h.out, h.errOut)
-	}
-	if h.api.protocol != "trojan" {
-		t.Errorf("the test switched the protocol to %s", h.api.protocol)
-	}
-}
-
-// useDownloads gives the harness a speed test port with a password, and
-// downloads that take, for each protocol the speed test's selector points
-// at, the time took gives, or fail with failures' error. It returns the
-// requests the downloads saw.
-func (h *harness) useDownloads(t *testing.T, took map[string]time.Duration, failures map[string]error) *[]string {
+func reportFrom(t *testing.T, h *harness) diagnosticReport {
 	t.Helper()
-	h.writeLocal(t, func(local *singbox.Local) {
-		local.SpeedPort, local.Username, local.Password = 3080, "sbc", "s3cret"
-	})
-	h.env.Sites.Download = "http://speed.test/__down"
-	var seen []string
-	h.env.TimeDownload = func(client *http.Client, page string, limit time.Duration) (int64, time.Duration, error) {
-		request, _ := http.NewRequest(http.MethodGet, page, nil)
-		proxy, _ := client.Transport.(*http.Transport).Proxy(request)
-		protocol := h.api.speedTest()
-		seen = append(seen, protocol+" "+proxy.String()+" "+page+" "+limit.String())
-		if err := failures[protocol]; err != nil {
-			return 0, 0, err
-		}
-		size, _ := strconv.Atoi(strings.TrimPrefix(request.URL.RawQuery, "bytes="))
-		return int64(size), took[protocol], nil
+	var report diagnosticReport
+	if err := json.Unmarshal(h.out.Bytes(), &report); err != nil {
+		t.Fatalf("%v: %s%s", err, h.out, h.errOut)
 	}
-	return &seen
+	return report
 }
 
-func TestSpeedDownloadAllTimesEachProtocolThroughTheSpeedTest(t *testing.T) {
+func TestIPUsesOrdinaryAuthenticatedProxyAndRetainsSources(t *testing.T) {
 	h := newHarness(t)
-	h.api.protocols = []string{"trojan", "naive", "hysteria2"}
-	seen := h.useDownloads(t,
-		map[string]time.Duration{"trojan": 4 * time.Second, "naive": 2 * time.Second},
-		map[string]error{"hysteria2": errors.New("no answer within 30s")},
-	)
-
-	code := Run(h.env, []string{"speed", "--download", "--all"})
-
-	want := "Downloading 20 MB through each protocol, which adds up to 120 MB to the server's monthly transfer:\n" +
-		"  trojan     40.0 Mbit/s (current)\n" +
-		"  naive      80.0 Mbit/s\n" +
-		"  hysteria2  failed: no answer within 30s\n" +
-		"naive downloads faster; to switch: sbc protocol naive\n"
-	if code != 0 || h.out.String() != want {
-		t.Fatalf("code %d, got\n%s%s", code, h.out, h.errOut)
+	h.writeLocal(t, func(local *singbox.Local) { local.Username, local.Password = "sbc", "s3cret" })
+	seen := h.useSites(t, map[string]string{"ipify4.test": "203.0.113.7", "ident4.test": "198.51.100.20", "details.test/203.0.113.7": `{"success":true,"ip":"203.0.113.7","country":"US","connection":{"asn":64500,"org":"Example Network"}}`})
+	before, _ := os.ReadFile(h.layout.ConfigFile())
+	if code := Run(h.env, []string{"ip", "--json"}); code != 0 {
+		t.Fatalf("%d: %s%s", code, h.out, h.errOut)
 	}
-	through := "http://sbc:s3cret@127.0.0.1:3080 http://speed.test/__down?bytes=20000000 15s"
-	if len(*seen) != 3 || (*seen)[0] != "trojan "+through || (*seen)[1] != "naive "+through || (*seen)[2] != "hysteria2 "+through {
-		t.Errorf("the downloads saw %q", *seen)
+	report := reportFrom(t, h)
+	if report.SchemaVersion != 1 || report.Scope != "sbc" || *report.Mode != "mixed" || *report.Route != "china-direct" || !report.ContextValid || len(report.Observations) != 2 {
+		t.Fatalf("%+v", report)
 	}
-	if h.api.protocol != "trojan" {
-		t.Errorf("the test switched the protocol in use to %s", h.api.protocol)
+	if report.Observations[0].IP != "203.0.113.7" || report.Observations[1].IP != "198.51.100.20" || report.Observations[0].Details.ASN != 64500 {
+		t.Fatal(h.out)
 	}
-}
-
-func TestSpeedDownloadTakesASizeAndSuggestsNoSwitchForASmallGain(t *testing.T) {
-	h := newHarness(t)
-	h.useDownloads(t, map[string]time.Duration{"trojan": time.Second, "naive": 800 * time.Millisecond}, nil)
-
-	Run(h.env, []string{"speed", "--download", "5", "--all"})
-
-	want := "Downloading 5 MB through each protocol, which adds up to 20 MB to the server's monthly transfer:\n" +
-		"  trojan  40.0 Mbit/s (current)\n" +
-		"  naive   50.0 Mbit/s\n"
-	if h.out.String() != want {
-		t.Errorf("got\n%s%s", h.out, h.errOut)
+	if len(*seen) != 4 {
+		t.Fatal(*seen)
 	}
-}
-
-func TestSpeedDownloadSaysWhatItNeeds(t *testing.T) {
-	h := newHarness(t)
-	for _, entry := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"--download", "0"}, "an optional size from 1 to 99 MB"},
-		{[]string{"--download", "100"}, "an optional size from 1 to 99 MB"},
-		{[]string{"--download", "5", "6"}, "an optional size from 1 to 99 MB"},
-		{[]string{"--download", "-5"}, "unknown flag"},
-		{[]string{"--all", "--all"}, "flag --all must not be repeated"},
-		{[]string{"--download", "--download"}, "flag --download must not be repeated"},
-		{[]string{"--upload"}, "unknown flag"},
-	} {
-		h.errOut.Reset()
-		if code := Run(h.env, append([]string{"speed"}, entry.args...)); code != 2 || !strings.Contains(h.errOut.String(), entry.want) {
-			t.Errorf("%q: code %d, %s", entry.args, code, h.errOut)
+	for _, header := range *seen {
+		if header != "Basic "+base64.StdEncoding.EncodeToString([]byte("sbc:s3cret")) {
+			t.Fatal("proxy authentication missing")
 		}
 	}
-
-	h.errOut.Reset()
-	if code := Run(h.env, []string{"speed", "--download"}); code != 1 || !strings.Contains(h.errOut.String(), "'sbc refresh' adds it") {
-		t.Errorf("without a speed test port: code %d, %s", code, h.errOut)
+	after, _ := os.ReadFile(h.layout.ConfigFile())
+	if string(before) != string(after) || len(h.svc.calls) != 0 || h.api.mode != "china" || h.api.protocol != "trojan" {
+		t.Fatal("diagnostic mutated runtime")
 	}
-
-	h.useDownloads(t, nil, nil)
-	h.api.noSpeedTest = true
-	h.errOut.Reset()
-	if code := Run(h.env, []string{"speed", "--download"}); code != 1 || !strings.Contains(h.errOut.String(), "'sbc restart' loads the new one") {
-		t.Errorf("sing-box without the speed test: code %d, %s", code, h.errOut)
+	if strings.Contains(h.out.String(), "s3cret") || strings.Contains(h.out.String(), "api_port") {
+		t.Fatal("private runtime data escaped")
 	}
 }
 
-func TestSpeedFailsWhenNoProtocolLoadsThePage(t *testing.T) {
-	h := newHarness(t)
-	h.api.unreachable = true
-
-	code := Run(h.env, []string{"speed"})
-
-	if code != 1 || h.out.String() != "Time to load a small page through the protocol in use, the median of 3 tries:\n  trojan  failed\n" || !strings.Contains(h.errOut.String(), "trojan did not load the page; check this network, or test the other protocols with 'sbc speed --all'") {
-		t.Errorf("the protocol in use: code %d, got\n%s%s", code, h.out, h.errOut)
-	}
-	h.out.Reset()
-	h.errOut.Reset()
-	code = Run(h.env, []string{"speed", "--all"})
-	if code != 1 || !strings.Contains(h.out.String(), "  trojan  failed (current)\n") || !strings.Contains(h.errOut.String(), "no protocol loaded the page") {
-		t.Errorf("every protocol: code %d, got\n%s%s", code, h.out, h.errOut)
-	}
-}
-
-func TestSpeedTestsOnlyTheProtocolInUseUnlessAskedForAll(t *testing.T) {
-	h := newHarness(t)
-	h.api.delays = map[string][]int{"trojan": {150}, "naive": {90}}
-	seen := h.useDownloads(t, map[string]time.Duration{"trojan": 4 * time.Second, "naive": time.Second}, nil)
-
-	Run(h.env, []string{"speed"})
-	Run(h.env, []string{"speed", "--download"})
-
-	want := "Time to load a small page through the protocol in use, the median of 3 tries:\n" +
-		"  trojan  150 ms\n" +
-		"Downloading 20 MB through trojan, the protocol in use, which adds up to 40 MB to the server's monthly transfer:\n" +
-		"  trojan  40.0 Mbit/s\n"
-	if h.out.String() != want {
-		t.Errorf("got\n%s%s", h.out, h.errOut)
-	}
-	if h.api.tries["naive"] != 0 || len(*seen) != 1 || !strings.HasPrefix((*seen)[0], "trojan ") {
-		t.Errorf("tested naive %d times, and downloaded %q", h.api.tries["naive"], *seen)
+func TestIPPartialFamiliesAndOptionalDetails(t *testing.T) {
+	for _, brokenDetails := range []bool{false, true} {
+		h := newHarness(t)
+		pages := map[string]string{"ipify4.test": "203.0.113.7", "ident4.test": "203.0.113.7", "ipify6.test": "2001:db8::7"}
+		if brokenDetails {
+			pages["details.test"] = "not JSON"
+		}
+		seen := h.useSites(t, pages)
+		args := []string{"ip", "--json"}
+		want := 0
+		if !brokenDetails {
+			args = append(args, "--dual-stack")
+			want = 1
+		}
+		if code := Run(h.env, args); code != want {
+			t.Fatalf("%d: %s%s", code, h.out, h.errOut)
+		}
+		report := reportFrom(t, h)
+		if report.Observations[0].IP != "203.0.113.7" {
+			t.Fatal(h.out)
+		}
+		if brokenDetails && (len(*seen) != 3 || len(report.Warnings) != 1) {
+			t.Fatalf("%d: %+v", len(*seen), report)
+		}
+		if !brokenDetails && (len(report.Observations) != 4 || report.Observations[2].IP != "2001:db8::7" || report.Observations[3].IP != "") {
+			t.Fatal(h.out)
+		}
 	}
 }
 
-func TestIPAndSpeedSayWhenSingBoxIsNotRunning(t *testing.T) {
-	h := newHarness(t)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+// TLS fixture certificates trust only synthetic destinations. No skip-verify
+// option or public endpoint is used by these tests.
+func diagnosticSite(t *testing.T, handler http.Handler) (*httptest.Server, *x509.CertPool) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	closed := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	h.writeLocal(t, func(local *singbox.Local) { local.APIPort = closed })
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"fixture.test"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IsCA: true, BasicConstraintsValid: true}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _ := x509.ParseCertificate(der)
+	roots := x509.NewCertPool()
+	roots.AddCert(cert)
+	site := httptest.NewUnstartedServer(handler)
+	site.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+	site.StartTLS()
+	t.Cleanup(site.Close)
+	return site, roots
+}
 
-	for _, command := range []string{"ip", "speed"} {
-		h.errOut.Reset()
-		if code := Run(h.env, []string{command}); code != 1 || !strings.Contains(h.errOut.String(), "sing-box is not running") {
-			t.Errorf("%s: code %d, %s", command, code, h.errOut)
+func tunnelProxy(t *testing.T, h *harness, site *httptest.Server) {
+	t.Helper()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "CONNECT" {
+			t.Error("expected CONNECT")
+			w.WriteHeader(502)
+			return
 		}
+		upstream, err := net.Dial("tcp", site.Listener.Addr().String())
+		if err != nil {
+			w.WriteHeader(502)
+			return
+		}
+		client, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			upstream.Close()
+			return
+		}
+		defer client.Close()
+		defer upstream.Close()
+		io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		done := make(chan struct{})
+		go func() { io.Copy(upstream, client); upstream.Close(); close(done) }()
+		io.Copy(client, upstream)
+		client.Close()
+		<-done
+	}))
+	t.Cleanup(proxy.Close)
+	u, _ := url.Parse(proxy.URL)
+	port, _ := strconv.Atoi(u.Port())
+	h.writeLocal(t, func(local *singbox.Local) { local.ListenPort = port })
+}
+
+func TestWebsiteChecksDistinguishHTTPAndTransportGoals(t *testing.T) {
+	for _, status := range []int{200, 204, 302, 403, 429, 503} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			h := newHarness(t)
+			var calls atomic.Int32
+			site, roots := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Location", "https://must-not-follow.test/private?secret=fixture")
+				w.WriteHeader(status)
+				fmt.Fprint(w, "body")
+			}))
+			h.env.DiagnosticRoots = roots
+			tunnelProxy(t, h, site)
+			u, _ := url.Parse(site.URL)
+			target := "https://fixture.test:" + u.Port() + "/private-fixture-path?secret=fixture-query-value"
+			code := Run(h.env, []string{"check", target, "--samples", "3", "--json"})
+			want := 1
+			if status < 300 {
+				want = 0
+			}
+			if code != want || calls.Load() != 3 {
+				t.Fatalf("%d, %d: %s%s", code, calls.Load(), h.out, h.errOut)
+			}
+			report := reportFrom(t, h)
+			if len(report.Observations) != 1 || len(report.Observations[0].Samples) != 3 {
+				t.Fatal(h.out)
+			}
+			for _, sample := range report.Observations[0].Samples {
+				if sample.HTTPStatus == nil || *sample.HTTPStatus != status || sample.FirstResponseMS == nil || sample.Transport != "responded" {
+					t.Fatalf("%+v", sample)
+				}
+			}
+			for _, secret := range []string{"private-fixture-path", "fixture-query-value", "must-not-follow", "s3cret"} {
+				if strings.Contains(h.out.String()+h.errOut.String(), secret) {
+					t.Fatalf("report contains %s", secret)
+				}
+			}
+		})
+	}
+}
+
+func TestWebsiteTLSFailureAndEmptyListAreNotSilentSuccess(t *testing.T) {
+	h := newHarness(t)
+	site, _ := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "body") }))
+	tunnelProxy(t, h, site)
+	u, _ := url.Parse(site.URL)
+	if code := Run(h.env, []string{"check", "https://fixture.test:" + u.Port(), "--json"}); code != 1 {
+		t.Fatal(code)
+	}
+	if reportFrom(t, h).Observations[0].Samples[0].Issue != "tls" {
+		t.Fatal(h.out)
+	}
+	h.out.Reset()
+	h.errOut.Reset()
+	paths.WriteFile(targetPath(h.layout), []byte(`{"schema_version":1,"targets":[]}`), 0o600)
+	if code := Run(h.env, []string{"check"}); code != 2 || h.out.Len() != 0 {
+		t.Fatal(code, h.out)
+	}
+}
+
+func TestDownloadIsExplicitBoundedAndReportsActualBytes(t *testing.T) {
+	h := newHarness(t)
+	var calls atomic.Int32
+	site, roots := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Query().Get("bytes") != "1000000" || r.Header.Get("Accept-Encoding") != "identity" {
+			t.Error("wrong download budget or encoding")
+		}
+		fmt.Fprint(w, strings.Repeat("x", 1_000_000))
+	}))
+	h.env.DiagnosticRoots = roots
+	h.env.Sites.Download = site.URL + "/download"
+	tunnelProxy(t, h, site)
+	if code := Run(h.env, []string{"speed"}); code != 0 || calls.Load() != 0 {
+		t.Fatal(code, calls.Load())
+	}
+	h.out.Reset()
+	if code := Run(h.env, []string{"speed", "download", "--size", "1MB", "--json"}); code != 0 {
+		t.Fatalf("%d: %s%s", code, h.out, h.errOut)
+	}
+	sample := reportFrom(t, h).Observations[0].Samples[0]
+	if calls.Load() != 1 || sample.PayloadBytes != 1_000_000 || sample.MbitPerSecond == nil || sample.TransferMS == nil || sample.FirstResponseMS == nil || sample.StopReason != "payload-complete" {
+		t.Fatalf("%+v", sample)
+	}
+	h.out.Reset()
+	if code := Run(h.env, []string{"speed", "download", "--size", "1MB"}); code != 0 || !strings.Contains(h.out.String(), "Downloaded 1000000 bytes; transfer ") || !strings.Contains(h.out.String(), "stop: payload budget complete") {
+		t.Fatalf("%d: %s%s", code, h.out, h.errOut)
+	}
+}
+
+func TestNativeTUNReportsMissingEvidenceWithoutFallingBack(t *testing.T) {
+	f := newRuntimeFixture(t)
+	var calls atomic.Int32
+	site, roots := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if strings.HasPrefix(r.URL.Path, "/details/") {
+			fmt.Fprintf(w, `{"success":true,"ip":%q}`, strings.TrimPrefix(r.URL.Path, "/details/"))
+			return
+		}
+		fmt.Fprint(w, "203.0.113.7")
+	}))
+	f.state.Transaction, f.state.InboundTag, f.state.IPv6Policy = f.capture.Transaction, "fixture-tun", "public-ipv6-disabled-v1"
+	tun.WriteState(f.h.layout, f.state)
+	f.h.env.DiagnosticRoots = roots
+	f.h.env.Sites = probe.Sites{IPify4: site.URL, IdentMe4: site.URL, IPify6: "https://must-not-probe.test/", IdentMe6: "https://must-not-probe.test/", IPDetails: site.URL + "/details"}
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	if code := Run(f.h.env, []string{"ip", "--dual-stack", "--json"}); code != 1 {
+		t.Fatal(code)
+	}
+	report := reportFrom(t, f.h)
+	if report.Observations[0].IP != "203.0.113.7" || report.Observations[0].Samples[0].Capture.Verified || report.Observations[2].Policy != "policy-skipped-not-verified" || calls.Load() != 3 {
+		t.Fatal(f.h.out, calls.Load())
+	}
+	f.untouched(t)
+}
+
+func TestNativeTUNMatchesOnlyItsOwnSourceSockets(t *testing.T) {
+	f := newRuntimeFixture(t)
+	var mu sync.Mutex
+	active := map[net.Conn]int{}
+	nextID := 0
+	site, roots := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(40 * time.Millisecond)
+		if strings.HasPrefix(r.URL.Path, "/details/") {
+			fmt.Fprintf(w, `{"success":true,"ip":%q}`, strings.TrimPrefix(r.URL.Path, "/details/"))
+		} else {
+			fmt.Fprint(w, "203.0.113.7")
+		}
+	}))
+	site.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+		if state == http.StateNew || state == http.StateActive {
+			if _, ok := active[conn]; !ok {
+				nextID++
+				active[conn] = nextID
+			}
+		}
+		if state == http.StateClosed {
+			delete(active, conn)
+		}
+	}
+	port := site.Listener.Addr().(*net.TCPAddr).Port
+	original := f.server.Config.Handler
+	f.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/connections" {
+			original.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+f.state.APISecret {
+			w.WriteHeader(401)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		var connections []api.Connection
+		for conn, id := range active {
+			host, sourcePort, _ := net.SplitHostPort(conn.RemoteAddr().String())
+			connections = append(connections, api.Connection{ID: fmt.Sprint(id), Metadata: api.ConnectionMetadata{Type: "tun/fixture-tun", Network: "tcp", SourceIP: host, SourcePort: sourcePort, DestinationIP: "127.0.0.1", DestinationPort: strconv.Itoa(port)}, Chains: []string{"direct"}})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"connections": connections})
+	})
+	f.state.Transaction, f.state.InboundTag = f.capture.Transaction, "fixture-tun"
+	tun.WriteState(f.h.layout, f.state)
+	f.h.env.DiagnosticRoots = roots
+	f.h.env.Sites = probe.Sites{IPify4: site.URL, IdentMe4: site.URL, IPDetails: site.URL + "/details"}
+	if code := Run(f.h.env, []string{"ip", "--json"}); code != 0 {
+		t.Fatalf("%d: %s%s", code, f.h.out, f.h.errOut)
+	}
+	for _, row := range reportFrom(t, f.h).Observations {
+		if !row.Samples[0].Capture.Verified || row.Samples[0].Capture.Path != "direct" {
+			t.Fatal(f.h.out)
+		}
+	}
+	f.untouched(t)
+}
+
+func TestDiagnosticCancellationAndObservedRouteChanges(t *testing.T) {
+	for _, changeRoute := range []bool{false, true} {
+		h := newHarness(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		h.env.Context = ctx
+		site, roots := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if changeRoute {
+				h.api.lock.Lock()
+				h.api.mode = "direct"
+				h.api.lock.Unlock()
+			} else {
+				cancel()
+			}
+			<-r.Context().Done()
+		}))
+		h.env.DiagnosticRoots = roots
+		tunnelProxy(t, h, site)
+		u, _ := url.Parse(site.URL)
+		code := Run(h.env, []string{"check", "https://fixture.test:" + u.Port(), "--json"})
+		report := reportFrom(t, h)
+		if changeRoute && (code != 1 || report.ContextValid || report.Issue != "runtime-changed") {
+			t.Fatalf("%d: %+v", code, report)
+		}
+		if !changeRoute && (code != 130 || !report.Interrupted) {
+			t.Fatalf("%d: %+v", code, report)
+		}
+	}
+}
+
+func TestTargetOperationsAreOfflinePrivateAndRoundTrip(t *testing.T) {
+	h := newHarness(t)
+	h.env.TunCapture = func() tun.CaptureState { t.Fatal("list operation inspected capture"); return tun.CaptureState{} }
+	if code := Run(h.env, []string{"check", "targets", "list"}); code != 0 {
+		t.Fatal(code)
+	}
+	if _, err := os.Stat(targetPath(h.layout)); !os.IsNotExist(err) {
+		t.Fatal("read-only default wrote a file")
+	}
+	h.out.Reset()
+	if code := Run(h.env, []string{"check", "targets", "add", "https://fixture.test/private?secret=fixture"}); code != 0 {
+		t.Fatal(code)
+	}
+	info, _ := os.Stat(targetPath(h.layout))
+	if info.Mode().Perm() != 0o600 {
+		t.Fatal(info.Mode())
+	}
+	h.out.Reset()
+	Run(h.env, []string{"check", "targets", "export"})
+	list, err := diagnostic.DecodeList(strings.NewReader(h.out.String()))
+	if err != nil || len(list.Targets) != 5 {
+		t.Fatal(err, h.out)
+	}
+	if list.Targets[4].URL != "https://fixture.test/private?secret=fixture" {
+		t.Fatal("export lost URL semantics")
+	}
+	before, _ := os.ReadFile(targetPath(h.layout))
+	bad := targetPath(h.layout) + ".bad"
+	os.WriteFile(bad, []byte(`{"schema_version":1,"targets":[{"id":"bad","url":"file:///secret"}]}`), 0o600)
+	if code := Run(h.env, []string{"check", "targets", "import", bad}); code != 2 {
+		t.Fatal(code)
+	}
+	after, _ := os.ReadFile(targetPath(h.layout))
+	if string(before) != string(after) {
+		t.Fatal("failed import changed the list")
+	}
+}
+
+func TestDiagnosticChineseOutput(t *testing.T) {
+	i18n.SetChinese(true)
+	defer i18n.SetChinese(false)
+	h := newHarness(t)
+	h.useSites(t, map[string]string{"ipify4.test": "203.0.113.7", "ident4.test": "203.0.113.7"})
+	if code := Run(h.env, []string{"ip"}); code != 0 {
+		t.Fatal(code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "首响应") || !strings.Contains(h.out.String(), "未验证") {
+		t.Fatal(h.out)
 	}
 }
 
@@ -324,31 +453,17 @@ func TestStatusShowsTheTrafficCountOfTheLastRefresh(t *testing.T) {
 	paths.WriteFile(h.layout.Usage(), []byte("upload=734003200; download=16428249907\n"), 0o600)
 	at := time.Date(2026, 10, 3, 14, 5, 0, 0, time.Local)
 	os.Chtimes(h.layout.Usage(), at, at)
-
 	Run(h.env, []string{"status"})
-
-	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\n" +
-		"traffic:  700.00 MiB up, 15.30 GiB down this billing cycle, as of 2026-10-03 14:05\n" +
-		"refresh: auto on, interval 6h, last attempt not run yet\nupgrade: auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\n" +
-		"route:    china-direct\nprotocol: trojan\n"
+	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\ntraffic:  700.00 MiB up, 15.30 GiB down this billing cycle, as of 2026-10-03 14:05\nrefresh: auto on, interval 6h, last attempt not run yet\nupgrade: auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\nroute:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out)
 	}
 }
 
 func TestFormatBytesUsesBinaryUnitsAsThePortalDoes(t *testing.T) {
-	cases := map[int64]string{
-		0:           "0 B",
-		1023:        "1023 B",
-		1536:        "1.50 KiB",
-		734003200:   "700.00 MiB",
-		16428249907: "15.30 GiB",
-		5 << 40:     "5.00 TiB",
-		5000 << 40:  "5000.00 TiB",
-	}
-	for count, want := range cases {
+	for count, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1536: "1.50 KiB", 734003200: "700.00 MiB", 16428249907: "15.30 GiB", 5 << 40: "5.00 TiB", 5000 << 40: "5000.00 TiB"} {
 		if got := formatBytes(count); got != want {
-			t.Errorf("%d: got %q, want %q", count, got, want)
+			t.Errorf("%d: %s", count, got)
 		}
 	}
 }

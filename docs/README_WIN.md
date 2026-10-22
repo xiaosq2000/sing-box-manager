@@ -1,6 +1,6 @@
 # Sing-box VPN Client for Windows
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 `sbc` is the Sing-box client CLI for Windows. It runs unelevated, manages background
 services via Windows Task Scheduler, and configures user and desktop proxy settings.
@@ -69,7 +69,8 @@ If installation fails, the legacy client remains active and untouched.
 | `sbc port <number>`               | Move local proxy listen port and update associated settings                           |
 | `sbc status`                      | Show proxy state, active protocol and route, and monthly traffic usage                |
 | `sbc ip`                          | Query exit IP addresses and geo-location through the proxy                            |
-| `sbc speed`                       | Test latency; add `--download` to test download throughput                            |
+| `sbc check [URL...]`              | Check website first responses and HTTP access                                         |
+| `sbc speed download --size 20MB`  | Measure a bounded download through the current rules                                  |
 | `sbc refresh`                     | Fetch subscription configuration and check the signed release                         |
 | `sbc upgrade`                     | Install signed binary upgrades and matching configuration                             |
 | `sbc refresh auto [on\|off]`      | Show or change automatic configuration refresh                                        |
@@ -126,10 +127,12 @@ for `direct`, `ai-only`, `gfw-proxy`, `china-direct`, and `global`.
 Plain `sbc ip` checks IPv4 through IPify and ident.me, with location and ASN
 estimates from ipwho.is. `sbc ip --dual-stack` also checks IPv6. IP probes and
 detail lookups follow the active route. Plain `sbc ip` contacts no AI provider.
-`sbc ip --ai` adds unauthenticated Gemini, ChatGPT, and Claude checks through a
-proxy-only diagnostic inlet. Direct AI
-requests require `--ai --allow-direct-ai`. See
-[IP and AI checks](README_SBC.md#exit-ip-and-ai-checks) for scope and risks.
+`sbc check` measures website first responses and HTTP access. `sbc speed download`
+measures bounded throughput. They use the ordinary authenticated sbc inlet and
+follow active destination rules, even with shell proxies off. AI targets need an
+explicit URL or `--preset ai` and can expose the direct public IP. Retired `--ai`
+and `--allow-direct-ai` flags are rejected. See
+[network diagnostics](README_SBC.md#network-diagnostics) for scope and risks.
 
 ## Architecture and runtime
 

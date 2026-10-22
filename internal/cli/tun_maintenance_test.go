@@ -228,8 +228,8 @@ func (f *tunMaintenanceFixture) sudo(t *testing.T, args []string) error {
 		}
 	case "_tun-commit":
 		state, err := tun.ReadState(f.h.layout)
-		if err != nil || state.SourceHash == "" {
-			t.Fatal("root commit preceded user API-state publication")
+		if err != nil || state.SourceHash == "" || state.Transaction != f.capture.Transaction || state.InboundTag != "tun" {
+			t.Fatal("root commit preceded generation-bound user API-state publication")
 		}
 		if _, err = os.Stat(install.RecoveryFile(f.h.layout)); err != nil {
 			t.Fatal("root commit had no user recovery record")
@@ -346,6 +346,10 @@ func TestLostTunCommitReplyKeepsTheCommittedGeneration(t *testing.T) {
 	}
 	if _, err := os.Stat(install.RecoveryFile(f.h.layout)); !os.IsNotExist(err) {
 		t.Fatal("committed journal was not retired")
+	}
+	state, err := tun.ReadState(f.h.layout)
+	if err != nil || state.Transaction != f.capture.Transaction || state.InboundTag != "tun" {
+		t.Fatal("lost acknowledgement discarded diagnostic ownership", state, err)
 	}
 	if !strings.Contains(f.h.errOut.String(), "new TUN generation is committed") {
 		t.Fatalf("incorrect commit boundary: %s", f.h.errOut)

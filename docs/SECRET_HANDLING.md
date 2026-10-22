@@ -172,7 +172,8 @@ published directories use the same modes. A private `umask 077` must not make
 binaries inaccessible or hide public transaction metadata. Do not use recursive
 chmod or expose private configuration to repair a failed start.
 
-IP and AI diagnostics support mixed mode only. TUN refuses these checks before requests.
+IP, website, and download diagnostics support mixed mode and committed Linux TUN.
+They use the ordinary sbc path and never fall back after an uncertain TUN state.
 IP diagnostics send each observed exit IP to ipwho.is over HTTPS for location and
 ASN estimates. Probe and detail requests follow the active route, which can be
 direct. The probe sources can therefore see the local network's public IP. The
@@ -180,10 +181,16 @@ database also receives the explicit observed IP in the lookup path. Diagnostics
 use no account credentials or persistent result cache. Keep real diagnostic output
 out of committed fixtures.
 
-AI diagnostics use no browser cookies, API keys, or account credentials.
-`sbc ip --ai --allow-direct-ai` permits requests through the active route and can
-expose the local network's public IP. Do not use this check to claim that an
-account is eligible or protected from provider enforcement.
+Website diagnostics use no browser cookies, API keys, or account credentials.
+Only explicit AI URLs or the `ai` preset contact AI providers. Active rules can
+route them directly and expose the local network's public IP. No page scraping
+claims region or account eligibility. Post-connect capture evidence cannot prevent
+an initial uncaptured connection from exposing its source IP.
+
+The private `diagnostic-targets.json` can contain secret URL query values. Exports
+preserve those URLs for import and must remain private. Reports hide paths and
+queries, API credentials, and unrelated connections. No automatic result history
+or report upload is used. See [the diagnostic contract](CLIENT_DIAGNOSTICS.md).
 
 Usernames may appear in one section, two sections, or all protocol sections. The sections are
 related by username, but they are stored independently.

@@ -18,7 +18,9 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 DIRECT = "198.18.0.10"
 PROXY = "198.18.0.20"
@@ -33,6 +35,12 @@ NAMES = {
     "ordinary.fixture.test",
     "portal.fixture.test",
     "dns-path.fixture.test",
+    "api.ipify.org",
+    "api6.ipify.org",
+    "4.ident.me",
+    "6.ident.me",
+    "ipwho.is",
+    "speed.cloudflare.com",
 }
 
 
@@ -114,12 +122,54 @@ def context(assets: Path) -> ssl.SSLContext:
     return tls
 
 
+def download_response(handler: http.server.BaseHTTPRequestHandler, query: str) -> None:
+    try:
+        size = int(parse_qs(query).get("bytes", ["0"])[0])
+    except ValueError:
+        size = 0
+    if not 1 <= size <= 1_000_000:
+        handler.send_error(400)
+        return
+    handler.send_response(200)
+    handler.send_header("Content-Length", str(size))
+    handler.end_headers()
+    while size:
+        count = min(size, 32768)
+        handler.wfile.write(b"x" * count)
+        handler.wfile.flush()
+        size -= count
+        time.sleep(0.002)
+
+
 def target(
     assets: Path, address: str, identity: str
 ) -> http.server.ThreadingHTTPServer:
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            body = (identity + " " + self.path + "\n").encode()
+            parsed = urlsplit(self.path)
+            name = self.headers.get("Host", "").split(":")[0]
+            if parsed.path == "/diagnostic-empty":
+                self.send_response(204)
+                self.end_headers()
+                return
+            if parsed.path == "/diagnostic-slow":
+                time.sleep(0.05)
+            if name in {"api.ipify.org", "4.ident.me"}:
+                time.sleep(0.05)
+                body = (
+                    b"203.0.113.7" if identity.startswith("proxy") else b"198.51.100.7"
+                )
+            elif name in {"api6.ipify.org", "6.ident.me"}:
+                body = b"2001:db8::7"
+            elif name == "ipwho.is":
+                body = json.dumps(
+                    {"success": True, "ip": parsed.path.lstrip("/")}
+                ).encode()
+            elif name == "speed.cloudflare.com" and parsed.path == "/__down":
+                download_response(self, parsed.query)
+                return
+            else:
+                body = (identity + " " + self.path + "\n").encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

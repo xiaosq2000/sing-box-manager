@@ -1,361 +1,472 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"os/signal"
 	"slices"
-	"sort"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
-	"github.com/xiaosq2000/sing-box-manager/internal/api"
+	"github.com/xiaosq2000/sing-box-manager/internal/diagnostic"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
-	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 )
 
-type ipOptions struct {
-	ai            bool
-	allowDirectAI bool
-	dualStack     bool
+type diagnosticOptions struct {
+	json, dualStack    bool
+	samples, megabytes int
+	preset             string
 }
 
-// runIP checks general exit IPs through the active route. AI checks are opt-in
-// and use a validated proxy-only inlet unless direct access is permitted.
-func runIP(env Env, options ipOptions) int {
-	if err := mixedDiagnostic(env, "ip"); err != nil {
-		return fail(env, err)
+type diagnosticObservation struct {
+	ID           string              `json:"id"`
+	Host         string              `json:"host"`
+	Source       string              `json:"source,omitempty"`
+	Family       int                 `json:"family,omitempty"`
+	Policy       string              `json:"policy,omitempty"`
+	IP           string              `json:"ip,omitempty"`
+	IPValidation string              `json:"ip_validation,omitempty"`
+	Details      *probe.IPDetails    `json:"details,omitempty"`
+	Samples      []diagnostic.Sample `json:"samples"`
+}
+
+type diagnosticReport struct {
+	SchemaVersion int                     `json:"schema_version"`
+	Command       string                  `json:"command"`
+	Scope         string                  `json:"scope"`
+	Mode          *string                 `json:"mode"`
+	Route         *string                 `json:"route"`
+	Protocol      *string                 `json:"protocol"`
+	ContextValid  bool                    `json:"context_valid"`
+	Interrupted   bool                    `json:"interrupted"`
+	Observations  []diagnosticObservation `json:"observations"`
+	Warnings      []string                `json:"warnings"`
+	Issue         string                  `json:"issue,omitempty"`
+}
+
+func runDiagnostic(env Env, command string, targets []diagnostic.Target, options diagnosticOptions) int {
+	report := diagnosticReport{SchemaVersion: 1, Command: command, Scope: "sbc", Observations: []diagnosticObservation{}, Warnings: []string{}}
+	parent := env.Context
+	if parent == nil {
+		parent = context.Background()
 	}
-	layout, err := env.Layout()
-	if err != nil {
-		return fail(env, err)
-	}
-	client, local, err := localAPI(layout)
-	if err != nil {
-		return fail(env, err)
-	}
-	route, _, err := client.Modes()
-	if err != nil {
-		return fail(env, err)
-	}
-	web := probe.IPClient(local.ListenPort, local.Username, local.Password, 5*time.Second)
-	var checks []struct {
-		line string
-		ask  func() (string, error)
-	}
-	fmt.Fprintf(env.Stdout, i18n.T("route:    %s\n"), route)
-	fmt.Fprintln(env.Stdout, i18n.T("IP checks follow the active route. Each source can see a different exit."))
-	if options.ai {
-		port := local.ListenPort
-		skipped := ""
-		if options.allowDirectAI {
-			fmt.Fprintln(env.Stdout, i18n.T("AI checks follow the active route. Direct network IP exposure is permitted."))
-		} else if route == "direct" {
-			skipped = i18n.T("skipped: direct route (use --ai --allow-direct-ai to permit exposure)")
-		} else {
-			config, err := os.ReadFile(layout.ConfigFile())
-			var safe bool
-			if err == nil {
-				port, safe = singbox.ProxyOnlyProbePort(config)
+	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
+	defer cancel()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	var interrupted atomic.Int32
+	watchSignals := make(chan struct{})
+	go func() {
+		defer close(watchSignals)
+		select {
+		case sig := <-signals:
+			code := 130
+			if sig == syscall.SIGTERM {
+				code = 143
 			}
-			if !safe {
-				skipped = i18n.T("skipped: proxy-only inlet unavailable (run sbc refresh)")
-			} else {
-				fmt.Fprintln(env.Stdout, i18n.T("AI checks use the remote proxy, not the active route's destination rules."))
+			interrupted.Store(int32(code))
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	defer func() { cancel(); <-watchSignals }()
+	runtime, err := openDiagnostic(ctx, env)
+	if err != nil {
+		report.Issue = err.Error()
+		if interrupted.Load() != 0 || parent.Err() == context.Canceled {
+			report.Interrupted = true
+			code := int(interrupted.Load())
+			if code == 0 {
+				code = 130
+			}
+			return renderDiagnostic(env, report, options.json, code)
+		}
+		return renderDiagnostic(env, report, options.json, 1)
+	}
+	report.Mode, report.Route, report.Protocol = &runtime.mode, &runtime.route, &runtime.protocol
+	var entries []diagnostic.Target
+	if command == "ip" {
+		entries = []diagnostic.Target{{ID: "ipify4", URL: env.Sites.IPify4}, {ID: "ident4", URL: env.Sites.IdentMe4}}
+		if options.dualStack {
+			entries = append(entries, diagnostic.Target{ID: "ipify6", URL: env.Sites.IPify6}, diagnostic.Target{ID: "ident6", URL: env.Sites.IdentMe6})
+		}
+	} else if command == "speed.download" {
+		page, parseErr := url.Parse(env.Sites.Download)
+		if parseErr != nil {
+			runtime.observer.Stop()
+			report.Issue = "invalid-target"
+			return renderDiagnostic(env, report, options.json, 2)
+		}
+		query := page.Query()
+		query.Set("bytes", strconv.Itoa(options.megabytes*1_000_000))
+		page.RawQuery = query.Encode()
+		entries = []diagnostic.Target{{ID: "download", URL: page.String()}}
+		fmt.Fprintf(env.Stderr, i18n.T("Download budget: at most %d MB of payload. Network and proxy overhead add traffic.\n"), options.megabytes)
+	} else {
+		entries = targets
+	}
+	if command == "check" && options.preset == "ai" {
+		report.Warnings = append(report.Warnings, "direct-exposure")
+	}
+	// The same notice applies to arbitrary explicit URLs, not only known AI names.
+	if command == "check" {
+		report.Warnings = append(report.Warnings, "active-rules")
+	}
+	samples := options.samples
+	if samples == 0 {
+		samples = 1
+	}
+	for _, entry := range entries {
+		row := diagnosticObservation{ID: entry.ID, Host: diagnostic.Host(entry.URL), Samples: []diagnostic.Sample{}}
+		if command == "ip" {
+			row.IPValidation = "not-tested"
+			row.Family = 4
+			if strings.HasSuffix(entry.ID, "6") {
+				row.Family = 6
+			}
+			row.Source = "ident.me"
+			if strings.HasPrefix(entry.ID, "ipify") {
+				row.Source = "IPify"
+			}
+			if row.Family == 6 && runtime.mode == "tun" && runtime.policy == "public-ipv6-disabled-v1" {
+				row.Policy = "policy-skipped-not-verified"
+				row.IPValidation = "policy-skipped"
 			}
 		}
-		aiWeb := probe.AIClient(port, local.Username, local.Password, 10*time.Second)
-		for _, entry := range []struct{ provider, page, line string }{
-			{"gemini", env.Sites.Gemini, i18n.T("gemini:   %s\n")},
-			{"chatgpt", env.Sites.ChatGPT, i18n.T("chatgpt:  %s\n")},
-			{"claude", env.Sites.Claude, i18n.T("claude:   %s\n")},
-		} {
-			checks = append(checks, struct {
-				line string
-				ask  func() (string, error)
-			}{entry.line, func() (string, error) {
-				if skipped != "" {
-					return skipped, nil
+		for range samples {
+			row.Samples = append(row.Samples, diagnostic.Sample{Transport: "not-tested", HTTPOutcome: "not-tested", Issue: "not-started", Capture: diagnostic.Evidence{Path: "unknown"}, Socket: -1})
+		}
+		report.Observations = append(report.Observations, row)
+	}
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if !runtime.check(ctx) {
+					cancel()
+					return
 				}
-				return probe.AI(aiWeb, entry.provider, entry.page)
-			}})
+			}
+		}
+	}()
+	var workers sync.WaitGroup
+	jobs := make(chan int)
+	for range min(4, len(entries)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				row := &report.Observations[index]
+				if row.Policy != "" {
+					continue
+				}
+				for attempt := range samples {
+					if !runtime.check(ctx) {
+						cancel()
+						break
+					}
+					limit := int64(8 << 10)
+					if command == "ip" {
+						limit = 64 << 10
+					}
+					if command == "speed.download" {
+						limit = int64(options.megabytes) * 1_000_000
+					}
+					row.Samples[attempt] = runtime.requester.Fetch(ctx, entries[index].URL, limit, command == "speed.download")
+					if !runtime.check(ctx) {
+						cancel()
+						break
+					}
+				}
+			}
+		}()
+	}
+	for index := range entries {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+	// Parse every completed source independently of cancellation or optional lookups.
+	// Raw response bodies do not enter JSON, so parsing cannot wait for detail I/O.
+	if command == "ip" {
+		for index := range report.Observations {
+			row := &report.Observations[index]
+			if row.Policy != "" || len(row.Samples) == 0 {
+				continue
+			}
+			sample := &row.Samples[0]
+			if sample.HTTPStatus == nil || *sample.HTTPStatus != 200 || sample.Issue != "" {
+				continue
+			}
+			row.IP, err = probe.ParseExitIP(sample.Body, row.Family)
+			if err != nil {
+				row.IPValidation = "failed"
+				sample.Issue = "invalid-ip"
+			} else {
+				row.IPValidation = "valid"
+			}
 		}
 	}
-	answers := make([]string, len(checks))
-	errs := make([]error, len(checks))
-	var wait sync.WaitGroup
-	var exits []probe.IPResult
-	wait.Go(func() { exits = probe.CheckIPs(web, env.Sites, options.dualStack) })
-	for index, check := range checks {
-		wait.Go(func() { answers[index], errs[index] = check.ask() })
-	}
-	wait.Wait()
-	code := showIPs(env, exits)
-	for index, check := range checks {
-		answer := answers[index]
-		if errs[index] != nil {
-			answer, code = fmt.Sprintf(i18n.T("failed: %v"), errs[index]), 1
+	// Optional lookups never prevent retaining an already observed address.
+	if command == "ip" && ctx.Err() == nil {
+		details := map[string]*probe.IPDetails{}
+		for index := range report.Observations {
+			row := &report.Observations[index]
+			if row.Policy != "" {
+				continue
+			}
+			if row.IPValidation != "valid" {
+				continue
+			}
+			if found, ok := details[row.IP]; ok {
+				row.Details = found
+				continue
+			}
+			if !runtime.check(ctx) {
+				cancel()
+				break
+			}
+			page, joinErr := url.JoinPath(env.Sites.IPDetails, row.IP)
+			if joinErr != nil {
+				report.Warnings = append(report.Warnings, "details-unavailable")
+				details[row.IP] = nil
+				continue
+			}
+			lookup := runtime.requester.Fetch(ctx, page, 64<<10, false)
+			var value probe.IPDetails
+			if lookup.HTTPStatus != nil && *lookup.HTTPStatus == 200 && lookup.Issue == "" {
+				value, err = probe.ParseIPDetails(lookup.Body, row.IP)
+			} else {
+				err = fmt.Errorf("details-unavailable")
+			}
+			if err != nil {
+				report.Warnings = append(report.Warnings, "details-unavailable")
+				details[row.IP] = nil
+			} else {
+				details[row.IP] = &value
+				row.Details = &value
+			}
 		}
-		fmt.Fprintf(env.Stdout, check.line, answer)
 	}
-	return code
-}
-
-// showIPs retains source rows even when a probe or its database lookup fails.
-// Database failures do not change the exit status of successful IP probes.
-func showIPs(env Env, results []probe.IPResult) int {
-	fmt.Fprintf(env.Stdout, i18n.T("IP details: %s (database estimates)\n"), probe.IPDetailsSource)
-	table := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprint(table, i18n.T("Source\tFamily\tExit IP\tLocation\tASN / organization\n"))
-	unknown := i18n.T("unknown")
-	known := func(value string) string {
-		if value == "" {
-			return unknown
-		}
-		return value
+	if ctx.Err() == nil && !runtime.check(ctx) {
+		cancel()
 	}
-	for _, result := range results {
-		address := result.IP
-		if result.Err != nil {
-			address = i18n.T("failed")
-		}
-		asn := unknown
-		if result.Details.ASN != 0 {
-			asn = fmt.Sprintf("AS%d", result.Details.ASN)
-		}
-		fmt.Fprintf(table, "%s\tIPv%d\t%s\t%s\t%s / %s\n", result.Source, result.Family, address,
-			known(result.Details.Location()), asn, known(result.Details.Organization))
+	commandExpired := ctx.Err() == context.DeadlineExceeded
+	if parent.Err() != nil && interrupted.Load() == 0 {
+		interrupted.Store(130)
 	}
-	table.Flush()
+	runtime.observer.Stop()
+	cancel()
+	<-watchDone
+	report.ContextValid = runtime.isValid()
+	if !report.ContextValid {
+		report.Issue = "runtime-changed"
+	}
+	if commandExpired {
+		report.Issue = "command-timeout"
+	}
 	code := 0
-	ipv6Failed := false
-	reported := map[string]bool{}
-	for _, result := range results {
-		if result.Err != nil {
-			fmt.Fprintf(env.Stdout, "%s IPv%d: %s\n", result.Source, result.Family, fmt.Sprintf(i18n.T("failed: %v"), result.Err))
-			code = 1
-			ipv6Failed = ipv6Failed || result.Family == 6
-		}
-		if result.DetailsErr != nil && !reported[result.IP] {
-			fmt.Fprintf(env.Stdout, "%s (%s): %s\n", probe.IPDetailsSource, result.IP, fmt.Sprintf(i18n.T("failed: %v"), result.DetailsErr))
-			reported[result.IP] = true
-		}
-	}
-	if ipv6Failed {
-		fmt.Fprintln(env.Stdout, i18n.T("An IPv6 check failure does not prove that IPv6 is unavailable."))
-	}
-	return code
-}
-
-// speedTries is how often 'sbc speed' times each protocol. It reports the
-// median, so one slow answer does not decide.
-const speedTries = 3
-
-type timing struct {
-	protocol string
-	delay    time.Duration
-	// failures counts the tries that failed, and err is set when all did.
-	failures int
-	err      error
-}
-
-// runSpeed times a small page through the protocol in use with sing-box's
-// delay test, or with --download, measures how fast it downloads. --all tests
-// every protocol instead. Neither switches the protocol in use.
-func runSpeed(env Env, options speedOptions) int {
-	if err := mixedDiagnostic(env, "speed"); err != nil {
-		return fail(env, err)
-	}
-	layout, err := env.Layout()
-	if err != nil {
-		return fail(env, err)
-	}
-	client, local, err := localAPI(layout)
-	if err != nil {
-		return fail(env, err)
-	}
-	current, protocols, err := client.Selected(api.ProxySelector)
-	if err != nil {
-		return fail(env, err)
-	}
-	tested := []string{current}
-	if options.all {
-		tested = protocols
-	}
-	if options.megabytes > 0 {
-		return runDownloadTest(env, client, local, current, tested, options)
-	}
-	timings := make([]timing, len(tested))
-	var wait sync.WaitGroup
-	for index, protocol := range tested {
-		wait.Go(func() { timings[index] = timeProtocol(client, protocol) })
-	}
-	wait.Wait()
-	// The fastest first, and the protocols that failed last.
-	sort.SliceStable(timings, func(a, b int) bool {
-		if (timings[a].err == nil) != (timings[b].err == nil) {
-			return timings[a].err == nil
-		}
-		return timings[a].delay < timings[b].delay
-	})
-	width := 0
-	for _, timed := range timings {
-		width = max(width, len(timed.protocol))
-	}
-	if options.all {
-		fmt.Fprintf(env.Stdout, i18n.T("Time to load a small page through each protocol, the median of %d tries:\n"), speedTries)
-	} else {
-		fmt.Fprintf(env.Stdout, i18n.T("Time to load a small page through the protocol in use, the median of %d tries:\n"), speedTries)
-	}
-	for _, timed := range timings {
-		result := i18n.T("failed")
-		if timed.err == nil {
-			result = fmt.Sprintf(i18n.T("%d ms"), timed.delay.Milliseconds())
-		}
-		if options.all && timed.protocol == current {
-			result += i18n.T(" (current)")
-		}
-		if timed.err == nil && timed.failures > 0 {
-			result += fmt.Sprintf(i18n.T(", %d of %d tries failed"), timed.failures, speedTries)
-		}
-		fmt.Fprintf(env.Stdout, "  %-*s  %s\n", width, timed.protocol, result)
-	}
-	if len(timings) == 0 || timings[0].err != nil {
-		return fail(env, noPage(options, current))
-	}
-	return 0
-}
-
-// noPage says that no tested protocol loaded the page.
-func noPage(options speedOptions, current string) error {
-	if options.all {
-		return i18n.New("no protocol loaded the page; check this network")
-	}
-	return i18n.Errorf("%s did not load the page; check this network, or test the other protocols with 'sbc speed --all'", current)
-}
-
-// defaultMegabytes is how much 'sbc speed --download' fetches through each
-// protocol unless told otherwise, and maxMegabytes is the most Cloudflare
-// sends at a time.
-const (
-	defaultMegabytes = 20
-	maxMegabytes     = 99
-)
-
-// speedOptions are what 'sbc speed' was asked for.
-type speedOptions struct {
-	// all tests every protocol instead of the one in use, which costs more
-	// for a download.
-	all bool
-	// megabytes, when above zero, asks for a download of that size instead
-	// of the latency test.
-	megabytes int
-}
-
-const (
-	// downloadLimit ends each download, which then counts what arrived, and
-	// connectAllowance is how long a protocol may take to start one.
-	downloadLimit    = 15 * time.Second
-	connectAllowance = 15 * time.Second
-	// downloadGain is how much faster another protocol must download before
-	// 'sbc speed --download' suggests it, since one download is noisy.
-	downloadGain = 1.5
-)
-
-// runDownloadTest downloads through each tested protocol in turn, so they do
-// not share the line, and prints each speed as it is known.
-func runDownloadTest(env Env, client *api.Client, local singbox.Local, current string, tested []string, options speedOptions) int {
-	if local.SpeedPort == 0 {
-		return fail(env, i18n.New("this config has no speed test yet; 'sbc refresh' adds it"))
-	}
-	if _, _, err := client.Selected(singbox.SpeedTestTag); err != nil {
-		return fail(env, i18n.New("sing-box runs a config without the speed test; 'sbc restart' loads the new one"))
-	}
-	page := env.Sites.Download + "?bytes=" + strconv.Itoa(options.megabytes*1_000_000)
-	// The server receives each byte and sends it on, and both count.
-	transfer := 2 * options.megabytes * len(tested)
-	if options.all {
-		fmt.Fprintf(env.Stdout, i18n.T("Downloading %d MB through each protocol, which adds up to %d MB to the server's monthly transfer:\n"), options.megabytes, transfer)
-	} else {
-		fmt.Fprintf(env.Stdout, i18n.T("Downloading %d MB through %s, the protocol in use, which adds up to %d MB to the server's monthly transfer:\n"), options.megabytes, current, transfer)
-	}
-	width := 0
-	for _, protocol := range tested {
-		width = max(width, len(protocol))
-	}
-	rates := map[string]float64{}
-	for _, protocol := range tested {
-		var result string
-		if rate, err := downloadThrough(env, client, local, protocol, page); err != nil {
-			result = fmt.Sprintf(i18n.T("failed: %v"), err)
-		} else {
-			rates[protocol] = rate
-			result = fmt.Sprintf(i18n.T("%.1f Mbit/s"), rate)
-		}
-		if options.all && protocol == current {
-			result += i18n.T(" (current)")
-		}
-		fmt.Fprintf(env.Stdout, "  %-*s  %s\n", width, protocol, result)
-	}
-	if len(rates) == 0 {
-		return fail(env, noPage(options, current))
-	}
-	if !options.all {
-		return 0
-	}
-	best := ""
-	for _, protocol := range tested {
-		if rate, ok := rates[protocol]; ok && (best == "" || rate > rates[best]) {
-			best = protocol
-		}
-	}
-	// A current protocol that failed has no rate, which any rate beats.
-	if best != current && rates[best] >= rates[current]*downloadGain {
-		fmt.Fprintf(env.Stdout, i18n.T("%s downloads faster; to switch: sbc protocol %s\n"), best, best)
-	}
-	return 0
-}
-
-// downloadThrough points the speed test's selector at protocol and times a
-// download through the speed test's inbound. Each protocol gets a new client,
-// so a connection through the one before cannot be reused.
-func downloadThrough(env Env, client *api.Client, local singbox.Local, protocol, page string) (float64, error) {
-	if err := client.Select(singbox.SpeedTestTag, protocol); err != nil {
-		return 0, err
-	}
-	web := probe.Client(local.SpeedPort, local.Username, local.Password, downloadLimit+connectAllowance)
-	defer web.CloseIdleConnections()
-	received, took, err := env.TimeDownload(web, page, downloadLimit)
-	if err != nil {
-		return 0, err
-	}
-	return float64(received) * 8 / took.Seconds() / 1e6, nil
-}
-
-// timeProtocol makes every try, so one lost packet does not mark a protocol
-// that works as failed.
-func timeProtocol(client *api.Client, protocol string) timing {
-	result := timing{protocol: protocol}
-	var delays []time.Duration
-	for range speedTries {
-		delay, err := client.Delay(protocol, 5*time.Second)
-		if err != nil {
-			result.failures, result.err = result.failures+1, err
+	for index := range report.Observations {
+		row := &report.Observations[index]
+		if row.Policy != "" {
 			continue
 		}
-		delays = append(delays, delay)
+		for attempt := range row.Samples {
+			sample := &row.Samples[attempt]
+			sample.Capture = runtime.observer.Evidence(sample.Socket)
+			if !sample.Passed(runtime.mode == "tun", command == "speed.download") {
+				code = 1
+			}
+		}
+		if command == "ip" && row.IP == "" {
+			code = 1
+		}
 	}
-	if len(delays) > 0 {
-		slices.Sort(delays)
-		result.delay, result.err = delays[(len(delays)-1)/2], nil
+	if report.Issue != "" {
+		code = 1
 	}
-	return result
+	if interrupted.Load() != 0 {
+		report.Interrupted = true
+		code = int(interrupted.Load())
+	}
+	return renderDiagnostic(env, report, options.json, code)
 }
 
-// formatBytes writes a byte count in binary units with two decimals, as the
-// portal's pages do.
+func renderDiagnostic(env Env, report diagnosticReport, asJSON bool, code int) int {
+	if asJSON {
+		if json.NewEncoder(env.Stdout).Encode(report) != nil {
+			return 1
+		}
+		return code
+	}
+	if report.Mode != nil {
+		fmt.Fprintf(env.Stdout, i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol))
+	}
+	for _, warning := range slices.Compact(report.Warnings) {
+		fmt.Fprintln(env.Stderr, diagnosticMessage(warning))
+	}
+	table := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprint(table, i18n.T("Target / source\tFirst response\tResponses\tHTTP\tCapture\tPath\tExit IP / rate\n"))
+	for _, row := range report.Observations {
+		name := row.ID + " (" + row.Host + ")"
+		if row.Source != "" {
+			name = fmt.Sprintf("%s IPv%d", row.Source, row.Family)
+		}
+		if row.Policy != "" {
+			fmt.Fprintf(table, "%s\t-\t-\t-\t%s\t-\t-\n", name, i18n.T("policy-skipped, not verified"))
+			continue
+		}
+		var durations []float64
+		var statuses []string
+		verified, responses, path := true, 0, "unknown"
+		for _, sample := range row.Samples {
+			if sample.FirstResponseMS != nil {
+				durations = append(durations, *sample.FirstResponseMS)
+			}
+			if sample.HTTPStatus != nil {
+				responses++
+				statuses = append(statuses, strconv.Itoa(*sample.HTTPStatus))
+			}
+			verified = verified && sample.Capture.Verified
+			if sample.Capture.Path != "unknown" {
+				path = sample.Capture.Path
+			}
+		}
+		latency := "-"
+		if len(durations) > 0 {
+			slices.Sort(durations)
+			middle := len(durations) / 2
+			median := durations[middle]
+			if len(durations)%2 == 0 {
+				median = (median + durations[middle-1]) / 2
+			}
+			latency = fmt.Sprintf("%.1f ms", median)
+		}
+		capture := i18n.T("unverified")
+		if verified {
+			capture = i18n.T("verified")
+		}
+		value := row.IP
+		if value == "" {
+			value = i18n.T("unknown")
+		}
+		if len(row.Samples) == 1 && row.Samples[0].MbitPerSecond != nil {
+			value = fmt.Sprintf("%.1f Mbit/s", *row.Samples[0].MbitPerSecond)
+		}
+		fmt.Fprintf(table, "%s\t%s\t%d/%d\t%s\t%s\t%s\t%s\n", name, latency, responses, len(row.Samples), strings.Join(slices.Compact(statuses), "/"), capture, diagnostic.SafeText(path), value)
+	}
+	table.Flush()
+	for _, row := range report.Observations {
+		if row.Policy != "" {
+			continue
+		}
+		if row.Details != nil {
+			location, org, asn := diagnostic.SafeText(row.Details.Location()), diagnostic.SafeText(row.Details.Organization), i18n.T("unknown")
+			if location == "" {
+				location = i18n.T("unknown")
+			}
+			if org == "" {
+				org = i18n.T("unknown")
+			}
+			if row.Details.ASN != 0 {
+				asn = fmt.Sprintf("AS%d", row.Details.ASN)
+			}
+			fmt.Fprintf(env.Stdout, i18n.T("%s: %s; %s / %s (database estimates)\n"), row.ID, location, asn, org)
+		}
+		for _, sample := range row.Samples {
+			if report.Command == "speed.download" {
+				duration := i18n.T("unknown")
+				if sample.TransferMS != nil {
+					duration = fmt.Sprintf("%.3f s", *sample.TransferMS/1000)
+				}
+				fmt.Fprintf(env.Stdout, i18n.T("Downloaded %d bytes; transfer %s; stop: %s.\n"), sample.PayloadBytes, duration, diagnosticStopLabel(sample.StopReason))
+			}
+			if sample.Issue != "" {
+				fmt.Fprintf(env.Stdout, "%s: %s\n", row.ID, diagnosticMessage(sample.Issue))
+			}
+			if report.Mode != nil && *report.Mode == "tun" && sample.HTTPStatus != nil && !sample.Capture.Verified {
+				fmt.Fprintf(env.Stdout, "%s: %s\n", row.ID, i18n.T("TUN scope is unverified. The HTTP observation does not prove that TUN captured this request."))
+			}
+		}
+	}
+	if report.Issue != "" {
+		fmt.Fprintln(env.Stderr, diagnosticMessage(report.Issue))
+	}
+	if report.Interrupted {
+		fmt.Fprintln(env.Stderr, i18n.T("Interrupted. Results are partial."))
+	}
+	return code
+}
+
+func diagnosticStopLabel(reason string) string {
+	switch reason {
+	case "payload-complete":
+		return i18n.T("payload budget complete")
+	case "time-window-ended":
+		return i18n.T("transfer time window ended")
+	case "stalled":
+		return i18n.T("download stalled")
+	default:
+		return i18n.T("download did not complete")
+	}
+}
+
+func diagnosticMessage(code string) string {
+	switch code {
+	case "unsafe-runtime":
+		return i18n.T("TUN state is unsafe or unavailable for this owner. Run 'sbc tun off' locally to recover.")
+	case "missing-diagnostic-state":
+		return i18n.T("The active TUN has no generation-bound diagnostic metadata. Run 'sbc refresh' locally first.")
+	case "unavailable-runtime":
+		return i18n.T("The installed sbc runtime or its authenticated API is unavailable.")
+	case "runtime-changed":
+		return i18n.T("Runtime context changed or became unavailable. Results are not comparable. Run the check again.")
+	case "command-timeout", "timeout":
+		return i18n.T("The diagnostic time limit expired.")
+	case "dns":
+		return i18n.T("DNS resolution failed.")
+	case "tls":
+		return i18n.T("TLS verification failed.")
+	case "connection":
+		return i18n.T("The connection or HTTP response failed.")
+	case "canceled":
+		return i18n.T("The request was canceled.")
+	case "not-started":
+		return i18n.T("The request did not start.")
+	case "invalid-ip":
+		return i18n.T("The source returned an invalid address or address family.")
+	case "empty-payload":
+		return i18n.T("The download returned no payload.")
+	case "invalid-download", "short-payload":
+		return i18n.T("The download response did not match the requested payload.")
+	case "stalled":
+		return i18n.T("The download stopped receiving data.")
+	case "details-unavailable":
+		return i18n.T("IP details are unavailable. Observed IP addresses remain valid.")
+	case "active-rules", "direct-exposure":
+		return i18n.T("Checks follow active rules. Direct destinations can see this network's public IP. No account eligibility is tested.")
+	default:
+		return i18n.T("Invalid diagnostic target or configuration.")
+	}
+}
+
+// formatBytes is shared with status and traffic output.
 func formatBytes(count int64) string {
 	size, unit := float64(count), "B"
 	for _, larger := range []string{"KiB", "MiB", "GiB", "TiB"} {
