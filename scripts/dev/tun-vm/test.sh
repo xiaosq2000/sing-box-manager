@@ -41,6 +41,8 @@ phase() { python3 -c 'import json; print(json.load(open("/etc/sbc/tun-control/tr
 generation() { python3 -c 'import json; print(json.load(open("/etc/sbc/tun-control/transaction.json"))["id"])'; }
 assert_off() {
 	[ "$(phase)" = off ]
+	# The process-free hook must accept the root publisher's actual time zone.
+	_sbc_capture_off
 	absent /usr/bin/systemctl is-active --quiet sbc-tun.service
 	absent ip link show sbc-tun0
 	absent test -e /etc/sbc/tun-control/blocked
@@ -75,6 +77,11 @@ sudo visudo -cf /etc/sudoers.d/sbc-fixture-umask
 root_umask=$(sudo sh -c umask)
 printf 'user umask=%s; root umask=%s\n' "$(umask)" "$root_umask"
 [ "$root_umask" = 0077 ]
+step "non-UTC root transaction timestamps"
+# Only the disposable guest changes time zone. TLS uses the same absolute clock.
+[ -f /usr/share/zoneinfo/Etc/GMT-8 ]
+sudo ln -sfn /usr/share/zoneinfo/Etc/GMT-8 /etc/localtime
+[ "$(sudo date +%z)" = +0800 ]
 step "prepare an isolated router and direct target"
 for tool in ip nft dig curl python3 update-ca-certificates; do command -v "$tool" >/dev/null; done
 # A restricted QEMU network supplies an address but no default route.
@@ -144,9 +151,56 @@ if [ -f "$ASSETS/libcronet.so" ]; then cp "$ASSETS/libcronet.so" "$XDG_DATA_HOME
 cp "$ASSETS"/rules/*.srs "$XDG_DATA_HOME/sbc/rules/"
 install -m 600 "$ASSETS/subscription" "$XDG_CONFIG_HOME/sbc/subscription"
 portal=$(sed 's,/sub/.*$,,' "$ASSETS/subscription")
+step "Mixed environment migration with a persistent parent negative control"
+sbc env >"$XDG_CONFIG_HOME/sbc/env.sh"
+# shellcheck disable=SC1091
+. "$XDG_CONFIG_HOME/sbc/env.sh"
+python3 - "$HOME" <<'PY' &
+import os, subprocess, sys, time
+from pathlib import Path
+home = Path(sys.argv[1])
+assert os.environ.get("http_proxy")
+(home / "environment-parent-ready").touch()
+deadline = time.monotonic() + 180
+while not (home / "environment-parent-check").exists():
+    assert time.monotonic() < deadline, "parent did not receive the check signal"
+    time.sleep(0.1)
+# This child starts after activation and still inherits the closed Mixed inlet.
+probe = subprocess.run(["curl", "-fsS", "--max-time", "3", "https://china.fixture.test/stale-parent"], capture_output=True)
+assert probe.returncode != 0, "stale parent unexpectedly connected"
+print("TUN_ENV_STALE_PARENT=PASS", flush=True)
+PY
+environment_parent=$!
+background+=("$environment_parent")
+for _ in $(seq 50); do
+	[ -f "$HOME/environment-parent-ready" ] && break
+	sleep 0.1
+done
+[ -f "$HOME/environment-parent-ready" ]
 sbc tun on >"$HOME/tun-on.log" 2>&1
 [ "$(phase)" = active ]
-sbc status
+python3 -c 'import json; assert json.load(open("/etc/sbc/tun-control/transaction.json"))["deadline"].endswith("+08:00")'
+grep 'Running programs can retain Mixed proxy settings' "$HOME/tun-on.log" >/dev/null
+sbc status 2>"$HOME/environment-status.log"
+grep 'this command inherits Mixed proxy variables' "$HOME/environment-status.log" >/dev/null
+touch "$HOME/environment-parent-check"
+wait "$environment_parent"
+absent sbc env >"$HOME/refused-exports" 2>"$HOME/environment-refusal.log"
+[ ! -s "$HOME/refused-exports" ]
+# Reload integration in the actual source shell. No exported ownership marker
+# or preemptive unset is used to remove the inherited sbc variables.
+eval "$(sbc init bash)"
+set -a
+_sbc_apply
+python3 - <<'PY'
+import os, subprocess
+assert not [name for name in os.environ if name.lower().endswith("_proxy")]
+assert not [name for name in os.environ if "_sbc_" in name]
+probe = subprocess.run(["curl", "-fsS", "--max-time", "10", "https://china.fixture.test/environment-clean"], capture_output=True, text=True, check=True)
+assert probe.stdout == "direct /environment-clean\n"
+print("TUN_ENV_CLEAN_RESTART=PASS", flush=True)
+PY
+set +a
 load_api() {
 	assert_modes
 	port=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_port"])' "$XDG_CONFIG_HOME/sbc/tun.json")

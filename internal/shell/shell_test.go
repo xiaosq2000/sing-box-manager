@@ -41,7 +41,7 @@ func newSetup(t *testing.T, shellName string) setup {
 	}
 	os.MkdirAll(s.cli, 0o755)
 	os.WriteFile(filepath.Join(s.cli, "sbc"), []byte("#!/bin/sh\necho fake sbc \"$@\"\n"), 0o755)
-	code, err := Init(shellName, s.cli, s.env, s.region, s.hint)
+	code, err := Init(shellName, s.cli, s.env, s.region, s.hint, ProxyState{Known: Values(4321, "", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestEnvOnPutsThePasswordInTheURLs(t *testing.T) {
 }
 
 func TestInitRejectsOtherShells(t *testing.T) {
-	if _, err := Init("fish", "/cli", "/env", "/region", "/hint"); err == nil {
+	if _, err := Init("fish", "/cli", "/env", "/region", "/hint", ProxyState{}); err == nil {
 		t.Error("fish was accepted")
 	}
 }

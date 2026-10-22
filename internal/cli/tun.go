@@ -183,9 +183,9 @@ func runTunOffRoot(env Env) int {
 }
 
 // clearMixedProxy stops the mixed service and removes the proxy settings sbc
-// owns. The TUN captures everything, so a leftover local proxy would make
-// programs bypass the tunnel.
+// owns. Existing processes can retain exports for the port this stops.
 func clearMixedProxy(env Env, layout paths.Layout) error {
+	warnMixedMigration(env, layout)
 	if manager, err := env.Service(layout.SBC()); err == nil && manager.Active() {
 		if err := manager.Stop(); err != nil {
 			return i18n.Errorf("stop the mixed service: %w", err)

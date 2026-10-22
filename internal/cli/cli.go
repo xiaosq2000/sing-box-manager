@@ -82,6 +82,10 @@ type Env struct {
 	TunHost func() tun.Host
 	// TunCapture reads public root transaction metadata. Tests replace it.
 	TunCapture func() tun.CaptureState
+	// TunPaths names public capture metadata for shell integration.
+	TunPaths func() tun.Paths
+	// Getenv supplies the current command's inherited environment, not other processes.
+	Getenv func(string) string
 	// Sudo runs this sbc as root and may prompt on the terminal.
 	Sudo func(self string, args []string) error
 }
@@ -127,6 +131,8 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 		Sites:        probe.DefaultSites,
 		TimeDownload: probe.Download,
 		TunHost:      tun.SystemHost,
+		TunPaths:     tun.DefaultPaths,
+		Getenv:       os.Getenv,
 	}
 	env.Sudo = func(self string, args []string) error {
 		command := exec.Command("sudo", append([]string{"--", self}, args...)...)
@@ -326,6 +332,7 @@ func runStatus(env Env) int {
 	}
 	capture := tunCapture(env)
 	if !captureOff(capture) {
+		warnProxyEnvironment(env, layout)
 		if !activeTunGeneration(capture) {
 			fmt.Fprintln(env.Stdout, i18n.T("tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'"))
 			return 1

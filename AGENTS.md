@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 This repo builds `sing-box` releases, serves authenticated downloads, and deploys
 the code and an already-built release directory to a VPS. Use Pixi and Python 3.12.
@@ -35,6 +35,7 @@ surrounding context.
 | Release, portal, client configs, traffic stats   | [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md), [CONTROL_PLANE.md](docs/CONTROL_PLANE.md)                                                                                                                                                                                                        |
 | Deploy, provisioning, SSH, server installers     | [VPS_DEPLOYMENT.md](docs/VPS_DEPLOYMENT.md), [REMOTE_DEPLOYMENT.md](docs/REMOTE_DEPLOYMENT.md)                                                                                                                                                                                                        |
 | Unix installer and legacy migration              | [README_SBC.md](docs/README_SBC.md#unix-installation-and-migration), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#subscription-links)                                                                                                                                                           |
+| Mixed-to-TUN environment migration               | [TUN_ENV_MIGRATION.md](docs/TUN_ENV_MIGRATION.md), [README_SBC.md](docs/README_SBC.md#linux-tun), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                                                               |
 | Linux TUN                                        | [REFACTOR_SPEC.md](docs/REFACTOR_SPEC.md#m1b-linux-tun), [README_SBC.md](docs/README_SBC.md#linux-tun), [SECRET_HANDLING.md](docs/SECRET_HANDLING.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                          |
 | Client region matching (time zone and language)  | [README_SBC.md](docs/README_SBC.md#region-matching), [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#subscription-links)                                                                                                                                                                           |
 | Privacy: Chrome WebRTC, geolocation and language | [WEBRTC.md](docs/WEBRTC.md), [README_SBC.md](docs/README_SBC.md#chrome-webrtc-protection), [Chrome language matching](docs/README_SBC.md#chrome-language-matching), [Geolocation blocking](docs/README_SBC.md#chrome-geolocation-blocking)                                                            |

@@ -1,6 +1,6 @@
 # Refactoring spec
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
 move the repo there. Milestones preserve current access until the planned
@@ -558,8 +558,13 @@ Routing:
   direct and proxy branches with synthetic rule-set contents.
 - Do not check interface packet counters: `auto_redirect` redirects captured
   TCP to a local socket before routing. Read capture from the Clash API instead.
-- Stop the mixed service and clear owned proxy settings before publishing. `sbc on`,
-  `desktop on` and `docker on` refuse while TUN is active.
+- Stop the mixed service and clear owned proxy settings before publishing. Warn
+  about inherited Mixed variables before shutdown. Existing processes can need
+  a restart from a clean environment. Shell hooks remove recognized values without
+  exporting ownership or capture markers. They preserve unrelated values and
+  block exports during active or uncertain capture. `sbc env` also refuses exports.
+  See [environment migration](TUN_ENV_MIGRATION.md). `sbc on`, `desktop on` and
+  `docker on` refuse while TUN is active.
 - Prepare a complete candidate before replacing live files. Retain superseded
   config and binary directories with `.prev-` suffixes. Keep the transaction
   journal and persistent mixed-mode block under root-owned `/etc/sbc/tun-control`,

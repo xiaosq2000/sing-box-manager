@@ -4,6 +4,10 @@ package i18n
 // keeps the English message's values in the same order, so the same arguments
 // fill it. Names of programs and commands stay as they are.
 var zh = map[string]string{
+	"TUN capture is active or unconfirmed. Mixed proxy exports are unavailable. 'sbc env off' still prints explicit cleanup code.":                                  "TUN 捕获正在运行或状态未确认，不能输出 Mixed 代理环境变量。'sbc env off' 仍可输出显式清理命令。",
+	"sbc: this command inherits Mixed proxy variables: %s. Clean the source environment, then restart affected programs. Other processes were not checked.\n":       "sbc: 当前命令继承了 Mixed 代理变量：%s。请先清理启动环境，再重启受影响的程序。未检查其他进程。\n",
+	"sbc: this command inherits unrelated or unknown proxy variables: %s. Automatic cleanup preserves them. Check their source before using transparent TUN.\n":     "sbc: 当前命令继承了其他或来源不明的代理变量：%s。自动清理会保留这些变量。使用透明 TUN 前请检查其来源。\n",
+	"Running programs can retain Mixed proxy settings after the switch to TUN. Clean the environment used to start affected programs. Then restart those programs.": "切换到 TUN 后，已运行的程序可能仍保留 Mixed 代理环境。请先清理启动环境，再重启受影响的程序。",
 	"Chrome geolocation protection is available on Linux only":                                                                                            "Chrome 定位防护仅支持 Linux",
 	"Chrome browser privacy is available on Linux only":                                                                                                   "Chrome 浏览器隐私防护仅支持 Linux",
 	"Show or block Chrome website geolocation (Linux, all accounts)":                                                                                      "查看或禁止 Chrome 网站定位（Linux，所有账户）",

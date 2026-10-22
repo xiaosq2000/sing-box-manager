@@ -4,7 +4,6 @@ package shell
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,24 +25,10 @@ func Quote(text string) string {
 // EnvOn returns the lines that point a shell at the local proxy. A username
 // and password, when the proxy asks for them, go in the URLs.
 func EnvOn(port int, username, password string) string {
-	address := fmt.Sprintf("127.0.0.1:%d", port)
-	if username != "" {
-		address = url.UserPassword(username, password).String() + "@" + address
-	}
-	http := "http://" + address
-	values := [][2]string{
-		{"http_proxy", http},
-		{"https_proxy", http},
-		// curl has no ftp:// proxy scheme; an HTTP proxy carries FTP.
-		{"ftp_proxy", http},
-		{"socks_proxy", "socks5://" + address},
-		{"no_proxy", NoProxy},
-	}
+	values := Values(port, username, password)
 	var lines strings.Builder
-	for _, pair := range values {
-		for _, name := range []string{pair[0], strings.ToUpper(pair[0])} {
-			fmt.Fprintf(&lines, "export %s=%s\n", name, Quote(pair[1]))
-		}
+	for _, name := range proxyNames() {
+		fmt.Fprintf(&lines, "export %s=%s\n", name, Quote(values[name]))
 	}
 	return lines.String()
 }
@@ -63,7 +48,7 @@ func EnvOff() string {
 // region choice, which is independent of the proxy. A program cannot change
 // the shell that started it, so this hook is the whole shell integration.
 // `export SBC_PROXY=off` keeps one shell off.
-func Init(shellName, cliDir, envFile, regionFile, hintFile string) (string, error) {
+func Init(shellName, cliDir, envFile, regionFile, hintFile string, state ProxyState) (string, error) {
 	var hook string
 	switch shellName {
 	case "bash":
@@ -79,19 +64,37 @@ esac
 	}
 	cli, env, region, hint := Quote(cliDir), Quote(envFile), Quote(regionFile), Quote(hintFile)
 	notice := Quote(i18n.T("sbc: a newer version is available; run 'sbc upgrade'"))
+	unexportFunctions := ""
+	if shellName == "bash" {
+		unexportFunctions = "export -n -f _sbc_apply _sbc_apply_local _sbc_private _sbc_capture_off _sbc_valid_deadline _sbc_before_proxy _sbc_forget_proxy _sbc_remember_proxy _sbc_clear_proxy\n"
+	}
 	return `# sbc shell integration, printed by 'sbc init ` + shellName + `'.
+case $- in
+*a*) set +a; unset _sbc_init_allexport; _sbc_init_allexport=1 ;;
+*) unset _sbc_init_allexport ;;
+esac
+unset _sbc_applied
 case ":$PATH:" in
 *:` + cli + `:*) ;;
 *) PATH=` + cli + `:$PATH; export PATH ;;
 esac
-_sbc_apply() {
-    if [ "${SBC_PROXY-}" != off ] && [ -f ` + env + ` ]; then
-        . ` + env + `
-        _sbc_applied=1
-    elif [ -n "${_sbc_applied-}" ]; then
-        ` + strings.TrimSuffix(EnvOff(), "\n") + `
-        unset _sbc_applied
+` + proxyHelpers(shellName, state) + `_sbc_apply() {
+    case $- in
+    *a*) set +a; _sbc_apply_local; set -a ;;
+    *) _sbc_apply_local ;;
+    esac
+}
+_sbc_apply_local() {
+    _sbc_private
+    if [ "${SBC_PROXY-}" != off ] && _sbc_capture_off && [ -f ` + env + ` ]; then
+        _sbc_before_proxy
+        if [ -r ` + env + ` ] && . ` + env + `; then
+            _sbc_remember_proxy
+        fi
+    else
+        _sbc_clear_proxy
     fi
+    _sbc_forget_proxy
     if [ -f ` + region + ` ]; then
         . ` + region + `
         case "${_sbc_region_prev-}" in
@@ -107,13 +110,17 @@ _sbc_apply() {
         unset _sbc_region_prev _sbc_region_tz _sbc_region_lang
     fi
 }
-` + hook + `_sbc_apply
+` + unexportFunctions + hook + `_sbc_apply
 case $- in
 *i*)
     if [ -f ` + hint + ` ]; then
         printf '%s\n' ` + notice + ` >&2
     fi
     ;;
+esac
+case "${_sbc_init_allexport-}" in
+1) unset _sbc_init_allexport; set -a ;;
+*) unset _sbc_init_allexport ;;
 esac
 `, nil
 }

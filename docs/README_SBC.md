@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -81,6 +81,21 @@ active. Run `sbc tun off` first. The service is enabled at boot only
 after activation checks pass. `sbc tun off` stops and disables the service and
 leaves the mixed proxy off; run `sbc on` to restore it. There is no fail-open: if
 the proxy fails, captured traffic has no exit, so run `sbc tun off` at the machine.
+
+Switching from Mixed can leave proxy variables in existing applications.
+`sbc tun on` warns before it stops Mixed. `sbc status` reports residual proxy
+variable names inherited by that command, not a system-wide process check.
+`sbc env` refuses exports during active or uncertain capture. Explicit
+`sbc env off` remains available, but its cleanup includes foreign proxy values.
+
+Reload the current shell integration with `eval "$(sbc init bash)"` in Bash or
+`eval "$(sbc init zsh)"` in Zsh. The hook removes recognized sbc values without
+exporting a new ownership or capture marker. It preserves unrelated proxy values.
+Then restart affected applications from a clean environment. With persistent
+sessions such as tmux or Herdr, check the environment used to create new panes.
+Reconnecting alone does not change existing processes. Do not automatically stop
+an entire session service. Pure TUN use needs no routine application restart.
+See [environment migration](TUN_ENV_MIGRATION.md) for boundaries and acceptance.
 
 Activation requires a captured HTTPS request under the current route mode.
 The check never changes that mode. `direct` does not require an unused proxy;
