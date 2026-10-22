@@ -51,7 +51,10 @@ migrates it automatically:
 4. Runs the legacy uninstaller to remove old scheduled tasks and PowerShell modules.
 5. Hands the original port and owned desktop proxy settings over to `sbc`.
 
-If installation fails, the legacy client remains active and untouched.
+After selecting the requested protocol, the installer runs `sbc check` against
+`https://www.gstatic.com/generate_204` before legacy cleanup. This HTTP check follows
+the active rules. A direct result does not prove remote-proxy access.
+If installation or this check fails, the legacy client remains active and untouched.
 
 ## Commands
 

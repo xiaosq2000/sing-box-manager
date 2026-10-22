@@ -206,6 +206,9 @@ control-plane = [
 
 "docs/CLIENT_DIAGNOSTICS.md" = [
   "@sbc",
+  "internal/e2e/e2e_test.go",
+  "sing_box_manager/web/client/install.ps1",
+  "scripts/dev/test-install-ps1.ps1",
   "sing_box_manager/desktop_config.py",
   "scripts/dev/test-tun-vm.sh",
   "scripts/dev/tun-vm/",
