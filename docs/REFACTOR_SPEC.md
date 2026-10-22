@@ -45,7 +45,7 @@ complexity comes from machinery built around premises that the target design dro
 | The subscription envelope carries the Linux TUN config beside the mixed config                    | Decided                                    |
 | Linux TUN answers DNS through its route rules, not through the systemd-resolved stub              | Decided                                    |
 | Linux TUN is refused in WSL2, containers and remote shells                                        | Decided                                    |
-| The Linux TUN uses `auto_redirect`, prefers IPv4, and rejects UDP except DNS and NTP              | Decided                                    |
+| Linux TUN uses IPv4-only DNS and rejects public IPv6 without removing capture                     | Decided                                    |
 
 sing-box 1.14.0 supports VLESS-Reality as both server and client, and `sing-box check`
 accepts a server config and a client config that use it.
@@ -538,8 +538,10 @@ Routing:
   `SO_BINDTODEVICE` traffic remain outside the validated compatibility scope.
 - Use `172.19.0.1/30` and `fdfe:dcba:9876::1/126`, and refuse activation when a
   foreign interface or route claims them.
-- Capture every destination. Send `ip_is_private` traffic to `direct`; do not
-  exclude private ranges.
+- Capture every destination, including IPv6. Send `ip_is_private` traffic to
+  `direct`; do not exclude private ranges. Reject remaining IPv6 before every
+  direct exception, route mode and protocol selection. Do not disable system
+  IPv6 or remove IPv6 capture. Public IPv6 access is disabled.
 - Keep the five Clash modes and the protocol selector through the local API.
   `sbc tun on` generates the API port and secret and writes them to the owner's
   state (0600) and the root config (0640 `root:sbc-tun`). `sbc route` and
@@ -587,7 +589,10 @@ DNS:
   TUN config: captured upstream queries would loop back into it.
 - Give the direct outbound the Aliyun resolver, and keep the deployment host and
   `direct_domain_suffixes` exceptions direct.
-- Set `dns.strategy: prefer_ipv4` in the TUN config.
+- Set `dns.strategy: ipv4_only` in the TUN config. Return successful empty AAAA
+  answers even when the upstream offers both address families. Keep mixed and
+  mobile DNS unchanged. Reject captured public IPv6 independently of DNS, so
+  cached addresses, IPv6 literals and encrypted DNS cannot select an IPv6 exit.
 - Route NTP (UDP 123) direct and reject every other non-private UDP destination
   after DNS and NTP. The proxy's own UDP connections are unaffected.
 - Verify with `auto_redirect` and `dns_mode: hijack` that DNS from applications
@@ -661,9 +666,10 @@ The VM uses ephemeral signing trust in test builds only. It does not change
 production trust or contact the operator portal. Its alternate protocol selector
 is a SOCKS fixture, not another real-protocol acceptance claim.
 
-TUN IP/speed diagnostics remain explicitly unsupported. End-to-end IPv6,
-Docker bridge and interface-bound traffic are unvalidated compatibility areas,
-not M1b completion gates. Document these limits rather than treating missing
+TUN IP/speed diagnostics remain explicitly unsupported. Public IPv6 access is
+disabled. Isolated checks cover AAAA suppression and public IPv6 rejection, not
+full IPv6 connectivity. Docker bridge and interface-bound traffic are unvalidated
+compatibility areas, not M1b completion gates. Document these limits rather than treating missing
 tests as passes. Physical workstation reboot, production timer migration and a
 published client release are not implied by isolated lifecycle acceptance.
 

@@ -336,7 +336,15 @@ The proxy-only target is unreachable directly. SOCKS forwards only allowlisted
 fixture destinations. TLS uses an ephemeral test CA inside the guest only.
 Reserved `.test` names reach the resolver, unlike locally rejected `.invalid`
 names. Distinct DNS answers and nonce-bearing responses distinguish direct and
-proxy paths in all five modes. The suite drives route and protocol changes through
+proxy paths in all five modes. The upstream DNS fixtures supply both A and AAAA.
+Local real-engine checks verify successful empty AAAA answers and unchanged A
+answers in every mode and alias. A negative control restores `prefer_ipv4` and
+must receive the fixture's AAAA answer. The VM checks DNS suppression and rejects
+forced public IPv6 destinations in every mode, including direct exceptions.
+A routed documentation-prefix IPv6 TLS target works before capture, so failed
+requests under TUN cannot pass merely because the target has no route. These
+checks establish the captured-flow policy, not protection for interface-bound
+sockets or Docker bridges. The suite drives route and protocol changes through
 the native CLI, including a route alias and round-trip selector changes.
 Generation, process ID and installed files stay unchanged across switching.
 Distinct responses prove both selector paths. Invalid choices and mixed-only
@@ -427,9 +435,10 @@ pixi run go test ./internal/tun ./internal/cli ./internal/api ./internal/service
 Each VM run retains its disk, generated assets, guest-only packet trace and
 serial log under the image cache's `runs/` directory. These contain synthetic private keys and credentials.
 Do not upload them wholesale. The script prints the run directory and failure
-markers. TUN IP and speed diagnostics remain unsupported. End-to-end IPv6,
-Docker bridge and `SO_BINDTODEVICE` compatibility remain unvalidated. VM selector
-transports remain SOCKS fixtures. Physical workstation reboot, production timer
+markers. TUN IP and speed diagnostics remain unsupported. Public IPv6 access is
+disabled. The IPv6 fixture checks establish DNS suppression and rejection, not
+full IPv6 connectivity. Docker bridge and `SO_BINDTODEVICE` compatibility remain
+unvalidated. VM selector transports remain SOCKS fixtures. Physical workstation reboot, production timer
 migration and a production client release are not established by these suites.
 
 Core acceptance passes locally with sing-box 1.14.3 and the Noble fixture under

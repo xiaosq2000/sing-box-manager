@@ -252,7 +252,7 @@ def test_linux_tun_config_replaces_the_mixed_inbound_and_resolved_stub() -> None
     assert outbounds[DIRECT_TAG]["domain_resolver"] == {"server": "aliyun"}
 
     dns = config["dns"]
-    assert dns["strategy"] == "prefer_ipv4"
+    assert dns["strategy"] == "ipv4_only"
     assert set(_by_tag(dns["servers"])) == {"google", "aliyun"}
     assert all(rule.get("server") != "system" for rule in dns["rules"])
     assert config["experimental"]["clash_api"] == {"default_mode": "china-direct"}
@@ -263,17 +263,23 @@ def test_linux_tun_config_replaces_the_mixed_inbound_and_resolved_stub() -> None
         index for index, rule in enumerate(rules) if rule.get("action") == "hijack-dns"
     )
     private = next(
-        index
-        for index, rule in enumerate(rules)
-        if rule.get("ip_is_private") is True
+        index for index, rule in enumerate(rules) if rule.get("ip_is_private") is True
     )
     assert hijack < private
-    assert rules[private + 1] == {
+    assert rules[private + 1] == {"ip_version": 6, "action": "reject"}
+    assert rules[private + 2] == {
         "network": "udp",
         "port": 123,
         "outbound": DIRECT_TAG,
     }
-    assert rules[private + 2] == {"network": "udp", "action": "reject"}
+    assert rules[private + 3] == {"network": "udp", "action": "reject"}
+    assert all(
+        "clash_mode" not in rule
+        and "domain" not in rule
+        and "domain_suffix" not in rule
+        and "ip_cidr" not in rule
+        for rule in rules[: private + 2]
+    )
     assert any(rule.get("clash_mode") == "china-direct" for rule in rules)
 
     # The mixed config keeps the mixed inbound and the system resolver.
@@ -286,6 +292,8 @@ def test_linux_tun_config_replaces_the_mixed_inbound_and_resolved_stub() -> None
     )
     assert mixed["inbounds"][0]["type"] == "mixed"
     assert "system" in _by_tag(mixed["dns"]["servers"])
+    assert "strategy" not in mixed["dns"]
+    assert not any(rule.get("ip_version") == 6 for rule in mixed["route"]["rules"])
 
 
 def test_linux_tun_config_passes_sing_box_check(

@@ -58,6 +58,22 @@ readable, while config and rule directories remain service-group-only and the
 engine state directory remains private. See [TUN file protection](SECRET_HANDLING.md).
 
 TUN answers DNS through its route rules and never uses the systemd-resolved stub.
+Linux TUN uses IPv4-only DNS and rejects captured public IPv6 traffic in every
+route mode, including configured direct exceptions. Dual-stack capture stays
+enabled so IPv6 traffic does not escape by losing its TUN route. Captured
+private IPv6 destinations retain LAN access. This policy supports IPv4-only
+networks without changing system IPv6 settings. Mixed and mobile profiles are
+unchanged.
+
+Cached addresses, IPv6 literals and independent encrypted DNS do not
+bypass the public IPv6 rejection. This is not a guarantee for unvalidated paths
+such as interface-bound sockets. China-direct still exposes the local public
+IPv4 address to direct destinations by design.
+
+Apply a new portal TUN policy with manual `sbc refresh` at the machine's console.
+Automatic jobs only report the update. A browser that retains old IPv6 answers
+may need a restart or DNS-cache clearing before it uses IPv4.
+
 Mixed mode and TUN never run together: `sbc on`, `sbc desktop on` and
 `sbc docker on` refuse while TUN is active, and the mixed user unit has a
 condition guard. `sbc install` and `sbc uninstall` also refuse while TUN is
@@ -140,9 +156,11 @@ the hosted installer, actual maintenance timer triggers, a signed engine upgrade
 from 1.14.2 to 1.14.3, and committed/pending/dirty state across reboot.
 These checks do not mean the workstation received a new release or rebooted.
 
-End-to-end IPv6, Docker bridge networking and interface-bound sockets remain
-unvalidated compatibility areas. Do not assume those paths behave like the
-verified application traffic. TUN IP and speed diagnostics remain unsupported.
+Public IPv6 access is disabled in Linux TUN. DNS suppression and captured public
+IPv6 rejection have isolated fixture checks, not full IPv6 connectivity acceptance.
+Docker bridge networking and interface-bound sockets remain unvalidated
+compatibility areas. Do not assume those paths behave like the verified
+application traffic. TUN IP and speed diagnostics remain unsupported.
 See the [acceptance scope](REFACTOR_SPEC.md#m1b-acceptance-scope).
 
 After `sbc tun off`, uninstall removes the user client and its maintenance

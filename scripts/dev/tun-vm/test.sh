@@ -96,12 +96,18 @@ sudo ip -n sbc-fixture link set sbcf-site up
 sudo ip -n sbc-fixture link set lo up
 sudo ip -n sbc-fixture addr add 198.18.0.10/32 dev lo
 sudo ip -n sbc-fixture route add blackhole 198.18.0.20/32
+# An explicitly routed public-scope fixture proves rejection, not a missing
+# upstream route. No public IPv6 default route or internet access is needed.
+sudo ip -6 addr add 2001:db8:77::1/126 dev sbcf-main nodad
+sudo ip -n sbc-fixture -6 addr add 2001:db8:77::2/126 dev sbcf-site nodad
+sudo ip -n sbc-fixture -6 addr add 2001:db8:100::10/128 dev lo nodad
+sudo ip -6 route add 2001:db8:100::10/128 via 2001:db8:77::2 dev sbcf-main
 sudo ip route replace default via 10.77.0.2 dev sbcf-main
 sudo ip netns exec sbc-fixture sysctl -q -w net.ipv4.ip_forward=1
 printf 'table ip fixture_nat {\n chain post {\n type nat hook postrouting priority srcnat;\n ip saddr 10.77.0.0/30 oifname "%s" masquerade;\n }\n}\n' "$iface" | sudo ip netns exec sbc-fixture nft -f -
 # Logs belong to the unelevated test user.
 # shellcheck disable=SC2024
-sudo ip netns exec sbc-fixture python3 "$ASSETS/fixtures.py" direct "$ASSETS" >"$HOME/direct.log" 2>&1 &
+sudo ip netns exec sbc-fixture python3 "$ASSETS/fixtures.py" direct "$ASSETS" --ipv6 >"$HOME/direct.log" 2>&1 &
 background+=("$!")
 # shellcheck disable=SC2024
 sudo ip netns exec sbc-fixture python3 "$ASSETS/fixtures.py" guest-dns "$ASSETS" --bind 10.77.0.2 --port 53 --baseline >"$HOME/baseline.log" 2>&1 &
@@ -118,6 +124,9 @@ for _ in $(seq 30); do
 done
 curl --noproxy '*' --resolve www.baidu.com:443:198.18.0.10 -fsS --max-time 3 https://www.baidu.com/control | grep 'direct /control' >/dev/null
 [ "$(dig +short +time=2 +tries=1 dns-path.fixture.test A)" = 198.18.0.99 ]
+step "positive controls: dual-stack DNS and a reachable public-scope IPv6 target"
+[ "$(dig @127.0.0.1 -p 5353 +short +time=2 +tries=1 www.baidu.com AAAA)" = 2001:db8:100::10 ]
+curl --noproxy '*' -6 --resolve 'china.fixture.test:443:[2001:db8:100::10]' -fsS --max-time 5 https://china.fixture.test/control | grep 'direct-v6 /control' >/dev/null
 step "negative control: the proxy target cannot be reached directly"
 absent curl --noproxy '*' --resolve ai.fixture.test:443:198.18.0.20 -fsS --max-time 3 https://ai.fixture.test/control
 step "stage the client and activate the real root service"
@@ -186,6 +195,15 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 	actual_dns=$(dig +short +time=2 +tries=1 dns-path.fixture.test A)
 	printf 'mode=%s DNS=%s expected=%s\n' "$mode" "$actual_dns" "$expected_dns"
 	[ "$actual_dns" = "$expected_dns" ]
+	# The upstream supplies AAAA, but TUN must return successful empty answers.
+	v6_dns=$(dig +time=2 +tries=1 +noall +comments www.baidu.com AAAA)
+	printf '%s\n' "$v6_dns" | grep 'status: NOERROR' >/dev/null
+	printf '%s\n' "$v6_dns" | grep 'ANSWER: 0' >/dev/null
+	# Forced addresses bypass DNS policy. Both ordinary and explicit direct
+	# exception hosts must still fail before any direct or proxy route.
+	for name in china.fixture.test portal.fixture.test; do
+		absent curl --noproxy '*' -6 --resolve "$name:443:[2001:db8:100::10]" -fsS --max-time 5 "https://$name/ipv6-blocked"
+	done
 	case "$mode" in
 	direct)
 		assert_path ai.fixture.test direct
