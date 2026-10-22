@@ -652,13 +652,18 @@ CI runners. Linux TUN end-to-end checks run in a disposable QEMU guest with
 ## Snell checks
 
 ```sh
-pixi run -e control-plane-test test tests/test_snell.py tests/test_snell_runtime.py tests/test_snell_operations.py tests/test_control_plane_snell.py tests/test_m3_runtime.py
+pixi run -e control-plane-test test tests/test_default_protocol.py tests/test_snell.py tests/test_snell_runtime.py tests/test_snell_operations.py tests/test_control_plane_snell.py tests/test_m3_runtime.py
 SBM_TEST_SING_BOX="$PWD/.cache/sing-box-manager/bin/sing-box" pixi run go test -tags e2e ./internal/e2e -run '^TestSnellV6Loopback$' -count=1
 ```
 
 The Python checks cover optional settings, all rendered platforms and modes,
 real TCP and UDP-over-TCP, authentication refusal, routing, selector persistence,
-PostgreSQL backfill and subscriptions. The accounting test requires
+PostgreSQL backfill and subscriptions. Default-selection checks cover implicit
+Snell, legacy Trojan fallback, explicit overrides, account-level fallback and
+serialization. Real-core checks retain cached desktop and mobile selections
+when a refreshed configuration changes its default to Snell. They also check
+that fresh and existing profiles without a saved selection use Snell.
+The accounting test requires
 `SBM_TEST_SING_BOX_SERVER` as described above. Keep the official client binary
 and custom server binary separate: the server build lacks Naive outbound support.
 The standalone Go loopback test changes no services or user settings. Native

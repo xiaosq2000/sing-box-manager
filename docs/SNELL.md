@@ -4,15 +4,15 @@ Checked on 2026-10-21.
 
 ## Scope
 
-| Item        | Behavior                                                                 |
-| ----------- | ------------------------------------------------------------------------ |
-| Core        | sing-box 1.14.3, with native Snell inbound and outbound support          |
-| Protocol    | v6 only, `mode: default`, connection reuse off                           |
-| Server      | One additional TCP listener in `sing-box.service`                        |
-| Clients     | Linux, macOS and Windows `sbc`, Linux TUN, official iOS and Android apps |
-| Credentials | One shared infrastructure PSK and one independent userkey per account    |
-| Defaults    | Trojan stays the default. Existing client selections stay unchanged      |
-| Routing     | Existing five strategies and transport restrictions stay unchanged       |
+| Item        | Behavior                                                                            |
+| ----------- | ----------------------------------------------------------------------------------- |
+| Core        | sing-box 1.14.3, with native Snell inbound and outbound support                     |
+| Protocol    | v6 only, `mode: default`, connection reuse off                                      |
+| Server      | One additional TCP listener in `sing-box.service`                                   |
+| Clients     | Linux, macOS and Windows `sbc`, Linux TUN, official iOS and Android apps            |
+| Credentials | One shared infrastructure PSK and one independent userkey per account               |
+| Defaults    | Snell when configured, Trojan otherwise. Explicit and saved choices take precedence |
+| Routing     | Existing five strategies and transport restrictions stay unchanged                  |
 
 Snell carries TCP and UDP through its TCP listener. Do not open a Snell UDP
 port. Linux TUN still rejects non-private UDP other than intercepted DNS and
@@ -45,6 +45,17 @@ New accounts receive independent random protocol secrets, including a Snell
 userkey. Without Snell infrastructure, that credential remains dormant and
 subscriptions omit Snell. Old inventories can omit both Snell fields.
 
+When `default_protocol` is omitted, configured Snell infrastructure selects Snell
+as the default. Without that infrastructure, the default remains Trojan.
+An explicit `default_protocol` overrides this choice. Explicit Snell without its
+infrastructure fails validation. An account without an enabled Snell credential
+uses its first enabled protocol. This is not automatic switching after connection
+failure. Install parameters and saved client choices take precedence over the
+subscription default. Refresh, upgrade and restart retain saved choices.
+A client without a saved choice follows the new default, including existing
+installations. Selecting the current core default does not create a saved record.
+A runtime inventory that explicitly sets Trojan continues to prefer Trojan.
+
 PostgreSQL owns accounts in authoritative mode. Do not import inventory again.
 For initial inventory import only, `snell.users` uses the existing protocol
 record shape: `username`, `password`, and `enabled`. The `password` value becomes
@@ -64,7 +75,8 @@ For an authorized rollout:
 
 1. Back up PostgreSQL, runtime settings, the active node configuration, SQLite
    usage history, and matching code and environment. Retain the backups.
-2. Add the shared PSK and port with SOPS. Keep Trojan as the default.
+2. Add the shared PSK and port with SOPS. Set `default_protocol: snell` to make
+   clients without saved choices prefer Snell. Saved selections remain unchanged.
 3. Build and deploy with that inventory using the normal deployment procedure.
    Migration `0005_snell` adds the credential choice and a unique userkey
    constraint. It does not create credentials or rotate existing values.

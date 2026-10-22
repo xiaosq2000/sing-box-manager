@@ -232,15 +232,23 @@ stdin, not command arguments. `sbc link set` also reads from stdin.
 
 ## Snell protocol
 
-After the operator enables [Snell v6](SNELL.md), refresh the subscription and
-run `sbc protocol snell`. Linux TUN owners must refresh locally at the console.
+New installs prefer [Snell v6](SNELL.md) when its infrastructure and account
+credential are enabled, unless the operator or installer selects another protocol.
+An omitted `default_protocol` uses Trojan when Snell infrastructure is absent.
+An explicit operator default takes precedence. Saved protocol choices survive
+refresh, upgrade and restart. A client without a saved choice follows the new
+default, even if it is already installed. To switch an existing client,
+refresh its subscription and run `sbc protocol snell`. Linux TUN owners must
+refresh locally at the console.
+
 New installs can use `-p snell` in the Unix installer or `--protocol snell` in
 `sbc install`. Completion reads the installed selector. Mixed-mode diagnostics
 recognize Snell. TUN IP and speed diagnostics remain unsupported.
 
 Snell uses a shared PSK and a separate userkey for each account. It does not
-use the deployment TLS certificate. Adding it does not change the default
-protocol, existing choices, route policy or Linux TUN UDP restrictions.
+use the deployment TLS certificate. Adding it does not change route policy or
+Linux TUN UDP restrictions. An account without the configured default uses its
+first enabled protocol. This is not automatic switching after connection failure.
 
 ## CLI language
 

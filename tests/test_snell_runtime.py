@@ -1,6 +1,7 @@
 """Real Snell v6 authentication and routing, never a substitute transport."""
 
 import copy
+import shutil
 import socket
 import socketserver
 from contextlib import contextmanager, nullcontext
@@ -201,6 +202,59 @@ def test_real_snell_selector_switch_and_restart_persistence(tmp_path, binary):
         ]
         with _running(binary, root, config):
             assert _api(api, secret, "GET", "/proxies/proxy")["now"] == "trojan"
+
+
+@pytest.mark.parametrize("mobile", [False, True])
+@pytest.mark.parametrize("selected", ["trojan", "hysteria2", "naive"])
+def test_new_snell_default_preserves_cached_protocol_and_route(
+    tmp_path, binary, mobile, selected
+):
+    inventory = with_snell(profile_inventory())
+    protocols = user_protocols(inventory, "alice")
+    if mobile:
+        config = build_mobile_config(
+            inventory.deployment, protocols, default_protocol="trojan"
+        )
+        config["inbounds"] = [{"type": "mixed"}]
+    else:
+        config = build_desktop_config(
+            inventory.deployment,
+            protocols,
+            os_name="linux",
+            default_protocol="trojan",
+            default_route="china-direct",
+        )
+    root = tmp_path / "client"
+    root.mkdir()
+    api, secret = _enable_api(config)
+    with routing_fixtures() as fixtures:
+        use_routing_fixtures(config, root, binary, fixtures)
+        with _running(binary, root, config):
+            assert _api(api, secret, "GET", "/proxies/proxy")["now"] == "trojan"
+            _api(api, secret, "PUT", "/proxies/proxy", {"name": "trojan"})
+        # Existing profiles without a saved selection follow the new default.
+        config["outbounds"][0]["default"] = "snell"
+        with _running(binary, root, config):
+            assert _api(api, secret, "GET", "/proxies/proxy")["now"] == "snell"
+        config["outbounds"][0]["default"] = "trojan"
+        with _running(binary, root, config):
+            # Selecting the current default is a core no-op. Switch away first
+            # so even a saved Trojan choice has a persistent selection record.
+            _api(api, secret, "PUT", "/proxies/proxy", {"name": "snell"})
+            _api(api, secret, "PUT", "/proxies/proxy", {"name": selected})
+            _api(api, secret, "PATCH", "/configs", {"mode": "ai-only"})
+        # A refresh or upgrade publishes a new default but keeps the same cache.
+        config["outbounds"][0]["default"] = "snell"
+        for _ in range(2):
+            with _running(binary, root, config):
+                assert _api(api, secret, "GET", "/proxies/proxy")["now"] == selected
+                assert _api(api, secret, "GET", "/configs")["mode"] == "ai-only"
+        # A fresh installation has no saved choice and follows the new default.
+        fresh = tmp_path / "fresh"
+        fresh.mkdir()
+        shutil.copytree(root / "rules", fresh / "rules")
+        with _running(binary, fresh, config):
+            assert _api(api, secret, "GET", "/proxies/proxy")["now"] == "snell"
 
 
 class _UDPEcho(socketserver.BaseRequestHandler):

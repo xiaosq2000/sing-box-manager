@@ -628,6 +628,14 @@ The JSON response holds:
 | `nodes`                             | Each server, the protocols the user holds on it, and its optional `region`                                    |
 | `latest.sing_box`                   | The sing-box version the inventory pins                                                                       |
 
+When `default_protocol` is omitted, configured Snell infrastructure selects Snell
+as the initial protocol. Without that infrastructure, it selects Trojan.
+An explicit value overrides this default. Explicit Snell requires its PSK and
+port. Accounts without the configured default use their first enabled protocol.
+Install parameters and saved client choices take precedence. Saved choices survive
+refresh, upgrade and restart. Existing clients without a saved choice follow the
+new default too. This is not connection-failure fallback.
+
 `nodes[].region` carries `deployment.client_region` when it is set.
 `timezone` is an IANA name and `language` is BCP 47 with a region, such as
 `zh-CN`. `sbc privacy region` applies it on Linux, either to one account or,
