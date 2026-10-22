@@ -630,7 +630,6 @@ class Settings(StrictModel):
     """
 
     sing_box_version: str = "1.14.3"
-    default_protocol: str = "trojan"
     web: WebSettings = Field(default_factory=WebSettings)
     control_plane: ControlPlaneSettings = Field(default_factory=ControlPlaneSettings)
     client_upgrade: ClientUpgradeSettings = Field(default_factory=ClientUpgradeSettings)
@@ -655,6 +654,10 @@ class Settings(StrictModel):
     )
     naive_data: NaiveInventory | None = Field(default=None, alias="naive", repr=False)
     snell: SnellInventory = Field(default_factory=SnellInventory, repr=False)
+    # The factory reads the validated Snell field above. Keep explicit choices.
+    default_protocol: str = Field(
+        default_factory=lambda data: "snell" if data["snell"].psk else "trojan"
+    )
 
     @field_validator("sing_box_version", "client_signing_key")
     @classmethod

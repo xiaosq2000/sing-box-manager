@@ -28,6 +28,7 @@ def portal_runtime(postgres, tmp_path_factory):
     example = yaml.safe_load((ROOT / "config/inventory/example.yaml").read_text())
     for name in ("deployment", "web_portal", "trojan", "hysteria2", "naive"):
         runtime[name] = example[name]
+    runtime["deployment"].pop("snell_port", None)
     runtime["control_plane"]["authoritative"] = True
     runtime["web"] = {
         "subscription_secret": "synthetic-subscription-secret-" + "2" * 24,

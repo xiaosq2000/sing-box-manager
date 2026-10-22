@@ -519,6 +519,8 @@ def test_inventory_import_subscriptions_admin_and_node_sync(postgres, tmp_path):
     assert psql(pg, "postgres", provision_sql("sbm_accounts_fixture")).returncode == 0
     path, _, env = config(pg, tmp_path, "sbm_accounts_fixture")
     example = yaml.safe_load((ROOT / "config/inventory/example.yaml").read_text())
+    # Keep this import fixture on its original three-protocol infrastructure.
+    example["deployment"].pop("snell_port", None)
     pw_hash = example["web_portal"]["users"][0]["password_hash"]
     sub_db = tmp_path / "subscriptions.sqlite3"
     from sing_box_manager.release.client_downloads import client_manifest

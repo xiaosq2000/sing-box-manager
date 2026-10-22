@@ -104,14 +104,21 @@ deployment secrets in an operator-owned encrypted runtime inventory. See
 [`docs/SECRET_HANDLING.md`](docs/SECRET_HANDLING.md) before editing any user
 credentials, obfs secrets, or TLS values.
 
-`default_protocol` controls which protocol a new client install starts with when
-no protocol is chosen. The server installer enables all packaged protocol inbounds
-by default. A Naive inbound is omitted when its roster is empty or entirely disabled.
-Subscriptions fall back to an enabled protocol when the account lacks the configured default.
+`default_protocol` controls the initial protocol for new client installs and mobile
+profile imports. When omitted, it prefers Snell if its infrastructure is configured,
+or Trojan otherwise. An explicit value overrides this default. Explicit Snell requires
+both `deployment.snell_port` and `snell.psk`. Subscriptions use the account's first
+enabled protocol when it lacks the configured default. This is not connection-failure
+fallback. Install parameters and saved client selections take precedence. Saved
+choices survive refresh, upgrade and restart. A client without a saved choice
+follows the new default, even if it is already installed.
 
-Optional Snell v6 uses `deployment.snell_port`, a shared `snell.psk`, and independent
+The server installer enables all packaged protocol inbounds by default. A Naive
+inbound is omitted when its roster is empty or entirely disabled.
+
+Snell v6 uses `deployment.snell_port`, a shared `snell.psk`, and independent
 PostgreSQL userkeys. No enabled users means no Snell listener. It supports all
-existing client platforms without changing the default protocol or routing rules.
+existing client platforms without changing routing rules.
 See [Snell setup and acceptance](docs/SNELL.md), including the explicit existing-account
 backfill and device-test limits.
 

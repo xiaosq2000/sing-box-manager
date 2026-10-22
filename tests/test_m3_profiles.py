@@ -16,7 +16,12 @@ from sing_box_manager.release.platforms import (
 from sing_box_manager.release.profiles import build_client_profile, build_server_config
 from sing_box_manager.release.renderers import apply_desktop_route_strategy
 from sing_box_manager.release.validation import check_config
-from sing_box_manager.settings import Settings, TrafficStatsSettings, load_settings
+from sing_box_manager.settings import (
+    Settings,
+    SnellInventory,
+    TrafficStatsSettings,
+    load_settings,
+)
 from sing_box_manager.subscription import user_protocols
 from tests.fetch_sing_box import EXAMPLE_INVENTORY, TEST_BINARY
 from tests.snell_fixtures import with_snell
@@ -27,8 +32,13 @@ GOLDENS = Path(__file__).parent / "fixtures/profiles"
 
 def profile_inventory() -> Settings:
     inventory = load_settings(EXAMPLE_INVENTORY)
-    # No live credentials: this is the checked-in example, expanded so one
-    # fixture user exercises every protocol. Disabled users must not leak in.
+    # Keep a pre-Snell inventory for legacy compatibility checks. The public
+    # example configures Snell infrastructure but has no Snell account users.
+    inventory.deployment.snell_port = None
+    inventory.snell = SnellInventory()
+    inventory.default_protocol = "trojan"
+    # Expand the example so one fixture user exercises every legacy protocol.
+    # Disabled users must not leak in.
     inventory.hysteria2.users[0].username = "alice"
     for protocol in ("trojan", "hysteria2", "naive"):
         section = getattr(inventory, protocol)
@@ -77,11 +87,11 @@ def golden_profiles() -> dict[str, dict]:
             inventory.deployment,
             protocols,
             os_name=os_name,
-            default_protocol="trojan",
+            default_protocol="snell",
             default_route="china-direct",
         )
     configs["mobile-snell"] = build_mobile_config(
-        inventory.deployment, protocols, default_protocol="trojan"
+        inventory.deployment, protocols, default_protocol="snell"
     )
     for route in ROUTE_STRATEGIES:
         config = build_client_profile(

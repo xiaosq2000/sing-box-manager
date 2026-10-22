@@ -1,5 +1,7 @@
 """PostgreSQL-only accounts, safe backfill, subscriptions and account revocation."""
 
+import pytest
+
 from tests.test_control_plane_integration import python
 from tests.test_control_plane_reliability import (
     SETUP,
@@ -9,10 +11,13 @@ from tests.test_control_plane_reliability import (
 )
 
 CONFIGURE = """
-from sing_box_manager.settings import SnellInventory
+from sing_box_manager.settings import Settings
 runtime.control_plane.authoritative = True
-runtime.deployment.snell_port = 10443
-runtime.snell = SnellInventory(psk='synthetic-shared-snell-psk')
+data = runtime.model_dump()
+data.pop('default_protocol')
+data['deployment']['snell_port'] = 10443
+data['snell'] = {'psk': 'synthetic-shared-snell-psk'}
+runtime = django_settings.runtime = Settings.model_validate(data)
 import os, yaml
 Path(os.environ['SBM_CONFIG']).write_text(yaml.safe_dump(runtime.model_dump(mode='json')))
 """
@@ -99,9 +104,10 @@ for os_name in ('linux', 'darwin', 'windows'):
     response = client.get(f'/sub/{token}?format=sbc&os={os_name}&sing-box=1.14.3')
     assert response.status_code == 200, response.content
     body = response.json()
-    assert body['default_protocol'] == 'trojan'
+    assert body['default_protocol'] == 'snell'
     assert body['nodes'][0]['protocols'] == ['trojan', 'hysteria2', 'naive', 'snell']
     for name in ('config', 'config_tun'):
+        assert body[name]['outbounds'][0]['default'] == 'snell'
         outbound = next(o for o in body[name]['outbounds'] if o['type'] == 'snell')
         assert outbound['userkey'] == credential.secret
         assert outbound['psk'] == runtime.snell.psk
@@ -109,6 +115,7 @@ for os_name in ('linux', 'darwin', 'windows'):
 mobile = client.get(f'/sub/{token}?format=mobile')
 assert mobile.status_code == 200
 assert mobile.json()['outbounds'][0]['outbounds'][-1] == 'snell'
+assert mobile.json()['outbounds'][0]['default'] == 'snell'
 assert mobile['Cache-Control'] == 'private, no-store'
 credential.enabled = False
 credential.save()
@@ -116,6 +123,12 @@ response = client.get(f'/sub/{token}?format=mobile')
 assert response.status_code == 200
 assert response['ETag'] != mobile['ETag']
 assert 'snell' not in response.json()['outbounds'][0]['outbounds']
+assert response.json()['outbounds'][0]['default'] == 'trojan'
+for os_name in ('linux', 'darwin', 'windows'):
+    body = client.get(f'/sub/{token}?format=sbc&os={os_name}&sing-box=1.14.3').json()
+    assert body['default_protocol'] == 'trojan'
+    assert body['config']['outbounds'][0]['default'] == 'trojan'
+    assert body['config_tun']['outbounds'][0]['default'] == 'trojan'
 assert 'snell' not in roster()
 credential.enabled = True
 credential.save()
@@ -132,6 +145,29 @@ account.subscription_counter += 1
 account.save()
 assert client.get(f'/sub/{token}?format=mobile').status_code == 404
 assert list(account.credentials.values()) == original
+""",
+    )
+
+
+@pytest.mark.parametrize("protocol", ["trojan", "hysteria2", "naive"])
+def test_explicit_default_wins_over_snell_for_every_subscription(
+    account_runtime, protocol
+):
+    _, env = account_runtime
+    python(
+        env,
+        SETUP
+        + CONFIGURE
+        + f"runtime.default_protocol = {protocol!r}\n"
+        + """
+with patch.object(services, 'request_node_sync'):
+    services.backfill_snell_credentials(runtime)
+for os_name in ('linux', 'darwin', 'windows'):
+    body = services.build_account_envelope(account, runtime, os_name=os_name)
+    assert body['default_protocol'] == runtime.default_protocol
+    for name in ('config', 'config_tun'):
+        assert body[name]['outbounds'][0]['default'] == runtime.default_protocol
+assert services.build_account_mobile_profile(account, runtime)['outbounds'][0]['default'] == runtime.default_protocol
 """,
     )
 

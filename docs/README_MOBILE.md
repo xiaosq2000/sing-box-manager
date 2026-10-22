@@ -56,10 +56,16 @@ has no bundled snapshots, so first-start rule downloads need a working proxy.
 Snell v6 appears when its shared infrastructure and the account credential are
 enabled. It requires a compatible embedded core, not a new import URL. Refresh
 the unified profile, then select `snell`. See [Snell v6](SNELL.md) for credential
-handling and acceptance limits. Existing route and protocol defaults stay unchanged.
+handling and acceptance limits. Route defaults stay unchanged.
 
 The `proxy` selector contains only enabled account protocols. Its default uses
-`default_protocol`, or the account's first enabled protocol. Changing the selector
+`default_protocol`, or the account's first enabled protocol. An omitted
+`default_protocol` prefers Snell when its infrastructure is configured, or Trojan
+otherwise. Explicit configuration overrides that default. New imports use this
+value when no saved selector choice exists. Profile refresh and restart retain
+saved choices. An existing profile without a saved choice follows the new
+default too. Selecting the current core default does not create a saved record.
+This is not automatic switching after connection failure. Changing the selector
 needs no core restart and interrupts existing inbound connections. A route change
 clears the core DNS cache but does not promise to close existing connections.
 The core cache retains mode and protocol choices across restarts. Native app

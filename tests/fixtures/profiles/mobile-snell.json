@@ -97,7 +97,7 @@
       "type": "selector",
       "tag": "proxy",
       "outbounds": ["trojan", "hysteria2", "naive", "snell"],
-      "default": "trojan",
+      "default": "snell",
       "interrupt_exist_connections": true
     },
     {

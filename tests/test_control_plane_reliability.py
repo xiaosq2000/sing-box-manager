@@ -56,6 +56,8 @@ def runtime_config(postgres, tmp_path):
     settings = yaml.safe_load(path.read_text())
     for name in ("deployment", "web_portal", "trojan", "hysteria2", "naive"):
         settings[name] = example[name]
+    # This fixture tests inventories without Snell infrastructure.
+    settings["deployment"].pop("snell_port", None)
     settings["web_portal"]["users"] = example["web_portal"]["users"][:1]
     for name in ("trojan", "hysteria2", "naive"):
         settings[name]["users"] = [

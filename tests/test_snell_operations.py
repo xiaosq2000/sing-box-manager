@@ -20,6 +20,7 @@ def test_release_validates_snell_for_every_client_without_account_keys(
     tmp_path, monkeypatch
 ):
     inventory = with_snell(profile_inventory())
+    inventory.default_protocol = "snell"
     inventory.releases_root = tmp_path / "releases"
     inventory.config_root = tmp_path / "config"
     inventory.upstream_cache_root = tmp_path / "upstream"
@@ -40,7 +41,7 @@ def test_release_validates_snell_for_every_client_without_account_keys(
         outbound = next(o for o in config["outbounds"] if o["type"] == "snell")
         assert outbound["userkey"] == "synthetic-validation-only"
         assert "synthetic-snell-alice" not in str(config)
-        assert config["outbounds"][0]["default"] == "trojan"
+        assert config["outbounds"][0]["default"] == "snell"
 
 
 def test_runtime_publication_keeps_shared_psk_but_not_account_secrets():
