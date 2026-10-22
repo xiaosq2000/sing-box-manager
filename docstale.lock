@@ -10,7 +10,7 @@
 
 "docs/CONTROL_PLANE.md" = "446f5e01f76acc64"
 
-"docs/DEVELOPMENT.md" = "0945a9d1692666d9"
+"docs/DEVELOPMENT.md" = "a9d8f946a070e0d4"
 
 "docs/README_MOBILE.md" = "48aac9bb21412fb2"
 
@@ -18,7 +18,7 @@
 
 "docs/README_WIN.md" = "a2860c04df11d8bb"
 
-"docs/REFACTOR_SPEC.md" = "9c9aa70c6ad84657"
+"docs/REFACTOR_SPEC.md" = "1f95533870e29b21"
 
 "docs/RELEASE_AND_PORTAL.md" = "735aed1252435f3c"
 
@@ -30,4 +30,4 @@
 
 "docs/VPS_DEPLOYMENT.md" = "f3c1e9e48cc9b4f0"
 
-"docs/WEBRTC.md" = "1d07ffe6c7419f20"
+"docs/WEBRTC.md" = "ba69d77fe0cfc107"

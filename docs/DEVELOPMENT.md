@@ -138,6 +138,15 @@ restart, policy defaults, old-task migration, interval changes without a proxy
 restart, failed refresh and upgrade recovery, first-upgrade notification cleanup,
 and uninstall.
 
+E2E fixture ports use `singbox.FreePort`, which checks both TCP and UDP.
+A TCP-only probe can select a port that `sbc port` rejects because UDP is busy.
+`TestE2EPortSelection` checks UDP-only occupancy and simultaneous TCP/UDP binds.
+It changes no client installation, service or system setting:
+
+```sh
+pixi run go test -tags e2e ./internal/e2e -run '^TestE2EPortSelection$' -count=100
+```
+
 Windows runs the full lifecycle under Windows PowerShell 5.1 and PowerShell 7.
 The harness supplies the hidden `Read-Host` answer; the downloaded installer,
 executable download and child processes run against the local portal. The
