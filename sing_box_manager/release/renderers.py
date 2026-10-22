@@ -9,6 +9,7 @@ from pathlib import Path
 from sing_box_manager.release.platforms import ROUTE_STRATEGIES, canonical_route
 from sing_box_manager.release.rule_sets import snapshot_filename
 from sing_box_manager.settings import (
+    SUPPORTED_PROTOCOLS,
     DeploymentConfig,
     Hysteria2Inventory,
     Hysteria2User,
@@ -185,7 +186,7 @@ def apply_desktop_route_strategy(
     if proxy is None:
         proxy = configured.get("outbounds", [{}])[0]
     protocol = proxy.get("type")
-    if protocol not in {"trojan", "hysteria2", "naive"}:
+    if protocol not in SUPPORTED_PROTOCOLS:
         raise ValueError("Missing supported proxy outbound")
     dns["optimistic"] = False
     configured.setdefault("experimental", {}).setdefault("cache_file", {}).update(

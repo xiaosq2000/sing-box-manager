@@ -13,11 +13,11 @@ from contextlib import closing
 from pathlib import Path
 
 from sing_box_manager.desktop_config import UserProtocols
-from sing_box_manager.settings import RuntimeInventory
+from sing_box_manager.settings import SUPPORTED_PROTOCOLS, RuntimeInventory
 
 ENVELOPE_VERSION = 1
 DEFAULT_ROUTE = "china-direct"
-PROTOCOLS = ("trojan", "hysteria2", "naive")
+PROTOCOLS = SUPPORTED_PROTOCOLS
 TOKEN_BYTES = 16
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{22}")
 _VERSION_PATTERN = re.compile(r"(\d+)\.(\d+)\.(\d+)")
@@ -75,6 +75,8 @@ def user_protocols(inventory: RuntimeInventory, username: str) -> UserProtocols:
         hysteria2=enabled(inventory.hysteria2.users),
         naive=enabled(inventory.naive.users),
         hysteria2_settings=inventory.hysteria2,
+        snell=enabled(inventory.snell.users),
+        snell_settings=inventory.snell,
     )
 
 

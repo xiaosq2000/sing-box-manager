@@ -1,0 +1,133 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "trojan",
+      "tag": "trojan",
+      "listen": "::",
+      "listen_port": 8443,
+      "users": [
+        {
+          "name": "trojan:alice",
+          "password": "change-me"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com",
+        "key_path": "/etc/letsencrypt/live/vpn.example.com/privkey.pem",
+        "certificate_path": "/etc/letsencrypt/live/vpn.example.com/fullchain.pem"
+      },
+      "multiplex": {
+        "enabled": true
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hysteria2",
+      "listen": "::",
+      "listen_port": 58080,
+      "users": [
+        {
+          "name": "hysteria2:alice",
+          "password": "change-me"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com",
+        "key_path": "/etc/letsencrypt/live/vpn.example.com/privkey.pem",
+        "certificate_path": "/etc/letsencrypt/live/vpn.example.com/fullchain.pem"
+      },
+      "obfs": {
+        "type": "salamander",
+        "password": "change-me-obfs"
+      }
+    },
+    {
+      "type": "naive",
+      "tag": "naive",
+      "listen": "::",
+      "listen_port": 9443,
+      "users": [
+        {
+          "username": "alice",
+          "password": "change-me"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.example.com",
+        "key_path": "/etc/letsencrypt/live/vpn.example.com/privkey.pem",
+        "certificate_path": "/etc/letsencrypt/live/vpn.example.com/fullchain.pem"
+      },
+      "network": "tcp"
+    },
+    {
+      "type": "snell",
+      "tag": "snell",
+      "listen": "::",
+      "listen_port": 10443,
+      "version": 6,
+      "psk": "synthetic-shared-snell-psk",
+      "mode": "default",
+      "users": [
+        {
+          "name": "snell:alice",
+          "userkey": "synthetic-snell-alice"
+        },
+        {
+          "name": "snell:bob",
+          "userkey": "synthetic-snell-bob"
+        }
+      ]
+    }
+  ],
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "server-local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "final": "direct",
+    "rules": [
+      {
+        "action": "resolve",
+        "server": "server-local"
+      },
+      {
+        "network": "udp",
+        "action": "route-options",
+        "udp_connect": true
+      },
+      {
+        "ip_is_private": true,
+        "action": "reject"
+      },
+      {
+        "ip_cidr": [
+          "0.0.0.0/8",
+          "100.64.0.0/10",
+          "240.0.0.0/4",
+          "::ffff:0:0/104",
+          "::ffff:6440:0/106",
+          "::ffff:f000:0/100"
+        ],
+        "action": "reject"
+      }
+    ]
+  }
+}

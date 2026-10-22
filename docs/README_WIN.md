@@ -35,6 +35,11 @@ To select a protocol during installation, pass `-Protocol`:
 & ([scriptblock]::Create((irm 'https://<portal>/install.ps1'))) -Protocol hysteria2
 ```
 
+Snell is available when the operator configures its shared infrastructure and
+enables the account credential. Select it with `sbc protocol snell` or install
+with `-Protocol snell`. Existing protocol selections remain unchanged.
+See [Snell v6](SNELL.md) for requirements and acceptance limits.
+
 ### Legacy client migration
 
 Running the installer on a machine with the legacy archive-based PowerShell client
@@ -50,32 +55,32 @@ If installation fails, the legacy client remains active and untouched.
 
 ## Commands
 
-| Command                           | Description                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------ |
-| `sbc on`                          | Set user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) |
-| `sbc off`                         | Clear user environment proxy variables; leaves sing-box running                |
-| `sbc desktop on`                  | Direct Windows system/browser proxy (WinINet) to the local proxy               |
-| `sbc desktop off`                 | Clear Windows system proxy settings                                            |
-| `sbc env`                         | Print PowerShell commands to apply proxy settings to the current session       |
-| `sbc env off`                     | Print PowerShell commands to clear proxy settings from the current session     |
-| `sbc lang [en\|zh\|auto]`         | Show or set the language of sbc messages                                       |
-| `sbc route <strategy>`            | Switch route strategy without restarting; `--list` shows names and meanings    |
-| `sbc protocol <name>`             | Switch outbound protocol (`trojan`, `hysteria2`, `naive`) without restarting   |
-| `sbc port <number>`               | Move local proxy listen port and update associated settings                    |
-| `sbc status`                      | Show proxy state, active protocol and route, and monthly traffic usage         |
-| `sbc ip`                          | Query exit IP addresses and geo-location through the proxy                     |
-| `sbc speed`                       | Test latency; add `--download` to test download throughput                     |
-| `sbc refresh`                     | Fetch subscription configuration and check the signed release                  |
-| `sbc upgrade`                     | Install signed binary upgrades and matching configuration                      |
-| `sbc refresh auto [on\|off]`      | Show or change automatic configuration refresh                                 |
-| `sbc upgrade auto [on\|off]`      | Show or change automatic binary upgrades                                       |
-| `sbc refresh interval [duration]` | Show or change the configuration refresh interval                              |
-| `sbc upgrade interval [duration]` | Show or change the binary upgrade interval                                     |
-| `sbc start` / `sbc stop`          | Start or stop the background service                                           |
-| `sbc restart`                     | Restart sing-box background service                                            |
-| `sbc link` / `sbc link set`       | Display or replace the active subscription URL                                 |
-| `sbc uninstall`                   | Remove scheduled tasks, files, PATH entry, and owned proxy settings            |
-| `sbc version`                     | Display `sbc` version and commit information                                   |
+| Command                           | Description                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| `sbc on`                          | Set user environment proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)        |
+| `sbc off`                         | Clear user environment proxy variables; leaves sing-box running                       |
+| `sbc desktop on`                  | Direct Windows system/browser proxy (WinINet) to the local proxy                      |
+| `sbc desktop off`                 | Clear Windows system proxy settings                                                   |
+| `sbc env`                         | Print PowerShell commands to apply proxy settings to the current session              |
+| `sbc env off`                     | Print PowerShell commands to clear proxy settings from the current session            |
+| `sbc lang [en\|zh\|auto]`         | Show or set the language of sbc messages                                              |
+| `sbc route <strategy>`            | Switch route strategy without restarting; `--list` shows names and meanings           |
+| `sbc protocol <name>`             | Switch outbound protocol (`trojan`, `hysteria2`, `naive`, `snell`) without restarting |
+| `sbc port <number>`               | Move local proxy listen port and update associated settings                           |
+| `sbc status`                      | Show proxy state, active protocol and route, and monthly traffic usage                |
+| `sbc ip`                          | Query exit IP addresses and geo-location through the proxy                            |
+| `sbc speed`                       | Test latency; add `--download` to test download throughput                            |
+| `sbc refresh`                     | Fetch subscription configuration and check the signed release                         |
+| `sbc upgrade`                     | Install signed binary upgrades and matching configuration                             |
+| `sbc refresh auto [on\|off]`      | Show or change automatic configuration refresh                                        |
+| `sbc upgrade auto [on\|off]`      | Show or change automatic binary upgrades                                              |
+| `sbc refresh interval [duration]` | Show or change the configuration refresh interval                                     |
+| `sbc upgrade interval [duration]` | Show or change the binary upgrade interval                                            |
+| `sbc start` / `sbc stop`          | Start or stop the background service                                                  |
+| `sbc restart`                     | Restart sing-box background service                                                   |
+| `sbc link` / `sbc link set`       | Display or replace the active subscription URL                                        |
+| `sbc uninstall`                   | Remove scheduled tasks, files, PATH entry, and owned proxy settings                   |
+| `sbc version`                     | Display `sbc` version and commit information                                          |
 
 Region matching (`sbc privacy region`) and Linux TUN (`sbc tun on`) are
 Linux-only. On Windows these commands report that they are unavailable; the

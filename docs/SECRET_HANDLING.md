@@ -180,6 +180,24 @@ account is eligible or protected from provider enforcement.
 Usernames may appear in one section, two sections, or all protocol sections. The sections are
 related by username, but they are stored independently.
 
+## Snell secrets
+
+[Snell v6](SNELL.md) uses `snell.psk` as a shared infrastructure secret and
+PostgreSQL `Credential.secret` as each account's independent userkey. Neither
+value is a TLS password. Client profiles contain both values. Keep them out of
+logs, screenshots, public fixtures and command arguments.
+
+Set `deployment.snell_port` and `snell.psk` together. Initial-import inventory
+can hold `snell.users[].password`, which maps to the wire `userkey`.
+Authoritative deployment strips those user records while retaining the PSK.
+New Snell credentials remain dormant without infrastructure settings.
+Do not reuse Trojan, Hysteria2, Naive or portal secrets as Snell userkeys.
+
+Backfill prints counts only and preserves existing secrets and switches.
+A userkey change affects one account after node sync. A PSK change affects every
+Snell client. Link rotation alone does not revoke downloaded proxy credentials.
+An empty active roster omits the inbound to prevent upstream PSK-only fallback.
+
 ## What Argon2id means
 
 `argon2id` is a password hashing algorithm.
@@ -395,7 +413,7 @@ The current split schema maps the old plaintext data like this:
 - keep `deployment.tls.self_signed_cert` at `false` for CA-signed TLS and set it to `true` only when the referenced PEM files should be embedded into rendered sing-box configs
 - treat generated server packages as sensitive when `deployment.tls.self_signed_cert` is `true`
 - do not restore authentication from an old `auth-users.json` file
-- do not reintroduce shared secret fields across portal, Trojan, Hysteria2, and Naive sections
+- do not reuse credential values across portal or protocol sections. Snell's infrastructure PSK is shared only within Snell
 - do not hardcode per-client certificate blobs in Hysteria2 or Naive configuration builders
 
 ## Common tasks

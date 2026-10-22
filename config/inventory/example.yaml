@@ -88,6 +88,8 @@ deployment:
   # unset to keep a single fixed port.
   # hysteria2_port_range: 20000:50000
   naive_port: 9443
+  # Optional Snell v6 TCP listener. Set snell.psk at the same time.
+  # snell_port: 10443
   tls:
     enabled: true
     key_path: /etc/letsencrypt/live/vpn.example.com/privkey.pem
@@ -127,6 +129,12 @@ naive:
     - username: alice
       password: change-me
       enabled: true
+# Optional Snell v6 infrastructure. Manage live userkeys in PostgreSQL.
+# New accounts receive dormant Snell credentials until this is configured.
+# See docs/SNELL.md for the explicit, idempotent existing-account backfill.
+# snell:
+#   psk: replace-with-a-random-private-psk
+#   users: []
 # Optional: KiwiVM API credentials for the VPS info dashboard widget.
 # Find your VEID and API key in the KiwiVM control panel.
 # vps_info:

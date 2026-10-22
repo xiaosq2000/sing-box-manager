@@ -501,7 +501,9 @@ def test_protocol_breakdown_keeps_protocols_separate(tmp_path: Path) -> None:
         "trojan",
         "hysteria2",
         "naive",
+        "snell",
     ]
+    assert by_protocol["snell"].total_bytes == 0
     assert by_protocol["trojan"].upload_bytes == 15
     assert by_protocol["naive"].upload_bytes == 7
     # A protocol that carried nothing keeps its slot rather than vanishing.

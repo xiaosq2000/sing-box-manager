@@ -398,6 +398,7 @@ def _derive_remote_config(settings: Settings, inventory: RuntimeInventory) -> st
             "trojan_data",
             "hysteria2_data",
             "naive_data",
+            "snell",
             "vps_info",
         },
         exclude_none=True,
@@ -453,6 +454,8 @@ def _configure_ufw(
         (f"{deployment.naive_port}/tcp", "Naive"),
     ]
 
+    if deployment.snell_port is not None:
+        rules.append((f"{deployment.snell_port}/tcp", "Snell"))
     if deployment.hysteria2_port_range:
         rules.append(
             (f"{deployment.hysteria2_port_range}/udp", "Hysteria2 port hopping")

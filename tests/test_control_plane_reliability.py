@@ -215,7 +215,7 @@ client.force_login(operator)
 data = {
     'username': 'new_user', 'enabled': 'on', 'portal_enabled': 'on',
     'subscription_counter': '0', 'credentials-TOTAL_FORMS': '0',
-    'credentials-INITIAL_FORMS': '0', 'credentials-MAX_NUM_FORMS': '3',
+    'credentials-INITIAL_FORMS': '0', 'credentials-MAX_NUM_FORMS': '4',
     'credentials-MIN_NUM_FORMS': '0', '_save': 'Save',
 }
 with patch.object(account_admin, 'request_node_sync') as sync:
@@ -224,8 +224,8 @@ with patch.object(account_admin, 'request_node_sync') as sync:
     sync.assert_called_once()
 new = Account.objects.get(username='new_user')
 assert new.portal_password_hash == ''
-assert new.credentials.count() == 3
-assert len({c.secret for c in new.credentials.all()}) == 3
+assert new.credentials.count() == 4
+assert len({c.secret for c in new.credentials.all()}) == 4
 before = list(new.credentials.values('protocol', 'secret', 'enabled'))
 token = subscription_token(runtime.web.subscription_secret, new.username, 0)
 assert client.get(f'/sub/{token}').status_code == 200
@@ -242,7 +242,7 @@ assert before == list(new.credentials.values('protocol', 'secret', 'enabled'))
 # Removing every credential must not silently generate replacements on edit.
 data.update({'username': new.username, 'subscription_counter': '0',
              'portal_password_hash': new.portal_password_hash,
-             'credentials-TOTAL_FORMS': '3', 'credentials-INITIAL_FORMS': '3'})
+             'credentials-TOTAL_FORMS': '4', 'credentials-INITIAL_FORMS': '4'})
 for index, credential in enumerate(new.credentials.all()):
     data.update({f'credentials-{index}-id': str(credential.pk),
                  f'credentials-{index}-account': str(new.pk),

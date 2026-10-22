@@ -84,6 +84,21 @@ control-plane = [
   "sing_box_manager/release/profiles.py",
   "sing_box_manager/release/renderers.py",
 ]
+"docs/SNELL.md" = [
+  "@control-plane",
+  "@traffic",
+  "@sbc",
+  "config/inventory/example.yaml",
+  "sing_box_manager/desktop_config.py",
+  "sing_box_manager/release/",
+  "scripts/server-install.sh",
+  "tests/snell_fixtures.py",
+  "tests/test_snell*.py",
+  "tests/test_server_egress.py",
+  "tests/test_m3_runtime.py",
+  "internal/e2e/snell_test.go",
+  "internal/e2e/e2e_test.go",
+]
 
 "docs/CONTROL_PLANE.md" = [
   "@control-plane",
@@ -121,6 +136,8 @@ control-plane = [
   "tests/test_route_rename.py",
   "tests/test_m3_profiles.py",
   "tests/test_m3_runtime.py",
+  "tests/snell_fixtures.py",
+  "tests/test_snell*.py",
   "tests/test_server_egress.py",
   "tests/test_server_install.py",
   "tests/test_inventory.py",

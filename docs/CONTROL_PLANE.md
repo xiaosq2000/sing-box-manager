@@ -55,8 +55,8 @@ and routes the portal through Django. Nginx rejects public `/admin` and `/admin/
 Deployment checks Django and reloads Nginx before it disables the retired FastAPI service.
 A failed Nginx check or reload attempts to restore the previous site.
 When creating a new `Account` in Django Admin (`http://127.0.0.1:47071/admin/`),
-leaving `Credentials` blank generates random credentials for all three protocols
-(`trojan`, `hysteria2`, `naive`) and a
+leaving `Credentials` blank generates random credentials for all four protocols
+(`trojan`, `hysteria2`, `naive`, `snell`) and a
 ready-to-share `https://<host>/sub/<token>/` user page URL.
 
 `secret_key` is optional for release and deploy. Deploy generates it when absent
@@ -82,7 +82,9 @@ Use one action form per command, not both.
 | `import`          | `import-inventory` |
 | `sync`            | `sync-node`        |
 
-Other actions are `migrate`, `collect-static`, `serve`, `health`, and `check`.
+Other actions are `migrate`, `collect-static`, `serve`, `health`, `check`, and
+`backfill-snell`. Only `backfill-snell` accepts `--dry-run`. See
+[Snell account backfill](SNELL.md#authorized-rollout) before enabling existing users.
 Both action forms accept concise and full names.
 
 When the control plane is enabled, deployment installs `/usr/local/bin/sbm` as a
@@ -125,7 +127,7 @@ that setting to repeat an import: inventory can overwrite Admin changes and disa
 accounts that exist only in PostgreSQL. Deploy never imports accounts automatically.
 
 In Django Admin (`/admin/`), **Operators** manages dashboard access. **Accounts**
-manages proxy users and inline `Credential` rows (`trojan`, `hysteria2`, `naive`):
+manages proxy users and inline `Credential` rows (`trojan`, `hysteria2`, `naive`, `snell`):
 
 | Switch                   | Effect                                                                   |
 | ------------------------ | ------------------------------------------------------------------------ |
@@ -149,7 +151,8 @@ Django operator authentication and permissions remain separate and are retained.
 
 - **New portal password** is optional legacy-client authentication. Blank preserves
   an existing hash. New accounts need no portal password or generated hash.
-- New accounts with no supplied credentials receive three random protocol secrets.
+- New accounts with no supplied credentials receive four random protocol secrets.
+  Snell credentials remain dormant until its shared infrastructure is configured.
   Deleting every credential from an existing account does not generate replacements.
 - Use **Reset subscription links for selected accounts** to advance the read-only
   `subscription_counter`. Old links fail, but downloaded proxy credentials remain valid.
@@ -211,6 +214,10 @@ Non-authoritative mode continues to read inventory users. Usage history remains 
 Deployment checks traffic collection after the final node sync.
 
 ## Schema upgrade
+
+Migration `0005_snell` adds the Snell credential choice and a unique userkey
+constraint. It does not populate accounts. Use the explicit
+[Snell backfill](SNELL.md#authorized-rollout) for existing accounts.
 
 Migration `0004_traffic_permission` adds the operator traffic permission.
 It does not change proxy credentials, passwords, counters, or operator grants.

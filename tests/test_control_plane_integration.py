@@ -778,7 +778,7 @@ assert new_form.is_valid(), new_form.errors
 frank = new_form.save()
 assert frank.portal_password_hash == ""
 created_protos = ensure_default_credentials(frank)
-assert set(created_protos) == {"trojan", "hysteria2", "naive"}
+assert set(created_protos) == {"trojan", "hysteria2", "naive", "snell"}
 frank_token = subscription_token(secret, "frank", 0)
 assert client.get(f"/sub/{frank_token}?format=sbc&os=linux&sing-box=1.14.2").status_code == 200
 trigger = request_node_sync(runtime)

@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/powershell"
+	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 )
 
 // token is the stand-in portal's subscription token, 22 characters as the
@@ -209,14 +210,14 @@ func buildSBC(t *testing.T, root, publicKey string) string {
 	return binary
 }
 
+// freePort uses the same TCP-and-UDP check as sbc install and sbc port.
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	port, err := singbox.FreePort(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
+	return port
 }
 
 // holdPort keeps a loopback port taken until the test ends.

@@ -6,7 +6,7 @@ Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
 The primary deployment target is a single VPS that runs:
 
-- one `sing-box.service` with Trojan, Hysteria2 and, when users are enabled, Naive inbounds
+- one `sing-box.service` with Trojan, Hysteria2 and optional Naive and Snell v6 inbounds
 - the authenticated download portal behind `nginx`
 - `certbot-nginx` for CA-signed certificates
 
@@ -99,7 +99,7 @@ See [server configuration](docs/VPS_DEPLOYMENT.md#2-server-configuration).
 `web.subscription_secret` keys the subscription links the `sbc` client fetches its
 config from. Without it, `sbm serve` turns those links off.
 
-The Trojan, Hysteria2, and Naive renderers build configurations in code and keep real
+The Trojan, Hysteria2, Naive and Snell renderers build configurations in code and keep real
 deployment secrets in an operator-owned encrypted runtime inventory. See
 [`docs/SECRET_HANDLING.md`](docs/SECRET_HANDLING.md) before editing any user
 credentials, obfs secrets, or TLS values.
@@ -108,6 +108,12 @@ credentials, obfs secrets, or TLS values.
 no protocol is chosen. The server installer enables all packaged protocol inbounds
 by default. A Naive inbound is omitted when its roster is empty or entirely disabled.
 Subscriptions fall back to an enabled protocol when the account lacks the configured default.
+
+Optional Snell v6 uses `deployment.snell_port`, a shared `snell.psk`, and independent
+PostgreSQL userkeys. No enabled users means no Snell listener. It supports all
+existing client platforms without changing the default protocol or routing rules.
+See [Snell setup and acceptance](docs/SNELL.md), including the explicit existing-account
+backfill and device-test limits.
 
 If `traffic_stats.enabled` is turned on in the config file, `sbm release` builds a
 custom Linux server `sing-box` binary from the upstream source tag with
@@ -160,6 +166,7 @@ or check out config state with git.
 
 ## Docs
 
+- [`docs/SNELL.md`](docs/SNELL.md): Snell v6 settings, userkey backfill, rollout and acceptance
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): focused checks, docstale, and agent instruction maintenance
 - [`docs/SECRET_HANDLING.md`](docs/SECRET_HANDLING.md): inventory creation, credentials, and TLS handling
 - [`docs/VPS_DEPLOYMENT.md`](docs/VPS_DEPLOYMENT.md): primary end-to-end VPS deployment guide
@@ -243,7 +250,8 @@ For import restrictions, account switches, and deployment modes, see
 [the control-plane guide](docs/CONTROL_PLANE.md).
 
 The full action names `create-admin`, `import-inventory`, and `sync-node` also work.
-Other actions are `collect-static`, `serve`, `health`, and `check`.
+Other actions are `collect-static`, `serve`, `health`, `check`, and `backfill-snell`.
+Only `backfill-snell` accepts `--dry-run`.
 Omitting the action runs `check`. Existing `control-plane --action ACTION` commands
 remain supported. Use one action form per command.
 

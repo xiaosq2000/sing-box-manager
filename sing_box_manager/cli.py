@@ -95,6 +95,8 @@ class ControlPlaneCommand:
     remote: str | None = None
     """Run this control-plane action on the remote host over SSH."""
     remote_root: str = "/opt/sing-box-manager"
+    dry_run: bool = False
+    """Preview backfill-snell without writing credentials or requesting node sync."""
 
 
 Command = (
@@ -283,6 +285,9 @@ def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None
         print("Use either a positional action or --action, not both.", file=sys.stderr)
         raise SystemExit(2)
     action = normalize_action(command.action_flag or command.action or "check")
+    if command.dry_run and action != "backfill-snell":
+        print("--dry-run is supported only for backfill-snell.", file=sys.stderr)
+        raise SystemExit(2)
     if command.remote is not None:
         from sing_box_manager.control_plane.deployment import management_command
         from sing_box_manager.deploy import DeploymentError, run_remote_command
@@ -295,6 +300,7 @@ def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None
                     command.remote_root,
                     action,
                     service_user=service_user,
+                    **({"dry_run": True} if command.dry_run else {}),
                 ),
                 f"Failed to run control-plane {action} on {command.remote}.",
             )
@@ -306,7 +312,7 @@ def _run_control_plane(command: ControlPlaneCommand, settings: Settings) -> None
     from sing_box_manager.control_plane.runner import ControlPlaneError, run
 
     try:
-        run(action, settings)
+        run(action, settings, **({"dry_run": True} if command.dry_run else {}))
     except ControlPlaneError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc

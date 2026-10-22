@@ -5,7 +5,7 @@
 [CmdletBinding()]
 param(
     [Alias('p')]
-    [ValidateSet('', 'trojan', 'hysteria2', 'naive')]
+    [ValidateSet('', 'trojan', 'hysteria2', 'naive', 'snell')]
     [string] $Protocol = '',
     [switch] $Help
 )
@@ -160,7 +160,7 @@ function Read-SbcLegacy {
         $protocol = Read-SbcLine (Join-Path $config 'selected-protocol')
         $route = Read-SbcLine (Join-Path $config 'selected-route')
         if (-not $route) { $route = 'china' }
-        if ($protocol -notin @('trojan', 'hysteria2', 'naive') -or $route -notin @('china', 'gfw', 'ai', 'global')) { throw 'Invalid settings' }
+        if ($protocol -notin @('trojan', 'hysteria2', 'naive', 'snell') -or $route -notin @('china', 'gfw', 'ai', 'global')) { throw 'Invalid settings' }
         $profile = [IO.File]::ReadAllText((Join-Path $config ($protocol + '\config.json'))) | ConvertFrom-Json
         $mixed = @($profile.inbounds | Where-Object { $_.type -eq 'mixed' })
         if ($mixed.Count -ne 1) { throw 'No mixed inbound' }
@@ -228,7 +228,7 @@ function Remove-SbcLegacy {
 function Install-Sbc {
     param([string] $Protocol = '', [switch] $Help)
     if ($Help) {
-        Write-Host 'Usage: & ([scriptblock]::Create((irm ''https://<portal>/install.ps1''))) [-Protocol trojan|hysteria2|naive]'
+        Write-Host 'Usage: & ([scriptblock]::Create((irm ''https://<portal>/install.ps1''))) [-Protocol trojan|hysteria2|naive|snell]'
         return
     }
     $ErrorActionPreference = 'Stop'

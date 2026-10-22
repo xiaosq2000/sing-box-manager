@@ -69,10 +69,12 @@ from sing_box_manager.release.ui import PlainReleaseReporter, ReleaseReporter
 from sing_box_manager.release.validation import check_config
 from sing_box_manager.runtime_env import load_local_env
 from sing_box_manager.settings import (
+    SUPPORTED_PROTOCOLS,
     Hysteria2User,
     NaiveUser,
     RuntimeInventory,
     Settings,
+    SnellUser,
     TrojanUser,
     load_runtime_inventory,
 )
@@ -727,7 +729,7 @@ class ReleaseBuilder:
     def _prepare_rule_sets(self) -> int:
         if self._settings.client_signing_key is None:
             return 0
-        protocols = ("trojan", "hysteria2", "naive")
+        protocols = SUPPORTED_PROTOCOLS
         configs = (
             apply_desktop_route_strategy(
                 client_base_config(protocol),
@@ -772,6 +774,8 @@ class ReleaseBuilder:
             hysteria2=Hysteria2User.model_validate(values),
             naive=NaiveUser.model_validate(values),
             hysteria2_settings=inventory.hysteria2,
+            snell=SnellUser.model_validate(values) if inventory.snell.psk else None,
+            snell_settings=inventory.snell,
         )
         for os_name in ("linux", "darwin", "windows"):
             config = build_desktop_config(

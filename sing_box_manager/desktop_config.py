@@ -35,6 +35,8 @@ from sing_box_manager.settings import (
     Hysteria2Inventory,
     Hysteria2User,
     NaiveUser,
+    SnellInventory,
+    SnellUser,
     TrojanUser,
 )
 
@@ -84,6 +86,8 @@ class UserProtocols:
     hysteria2: Hysteria2User | None = None
     naive: NaiveUser | None = None
     hysteria2_settings: Hysteria2Inventory | None = None
+    snell: SnellUser | None = None
+    snell_settings: SnellInventory | None = None
 
 
 def build_desktop_config(
@@ -324,7 +328,31 @@ def _protocol_outbounds(
                 password=protocols.naive.password,
             )
         )
+    if protocols.snell is not None and protocols.snell.enabled:
+        outbounds.append(
+            snell_outbound(deployment, protocols.snell, protocols.snell_settings)
+        )
     return outbounds
+
+
+def snell_outbound(
+    deployment: DeploymentConfig, user: SnellUser, settings: SnellInventory | None
+) -> dict:
+    """Build a v6 multi-user outbound without unrelated TLS or password fields."""
+    if settings is None or not settings.psk or deployment.snell_port is None:
+        raise ValueError("Snell requires shared settings and a port")
+    return {
+        "type": "snell",
+        "tag": "snell",
+        "server": deployment.ip,
+        "server_port": deployment.snell_port,
+        "version": 6,
+        "psk": settings.psk,
+        "userkey": user.password,
+        "mode": "default",
+        "reuse": False,
+        "domain_resolver": {"server": "google"},
+    }
 
 
 def _proxy_outbound(
