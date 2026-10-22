@@ -232,8 +232,8 @@ def build_linux_tun_config(
 
     The mixed config's selector, Clash modes and protocol outbounds stay the
     same. The mixed inbound becomes a TUN inbound, direct and AI DNS use
-    Aliyun instead of the systemd-resolved stub, and captured UDP other than
-    DNS and NTP is rejected.
+    Aliyun instead of the systemd-resolved stub. DNS returns IPv4 addresses
+    only. Public IPv6 and captured UDP other than DNS and NTP are rejected.
     """
     config = build_desktop_config(
         deployment,
@@ -258,7 +258,9 @@ def build_linux_tun_config(
     ]
 
     dns = config["dns"]
-    dns["strategy"] = "prefer_ipv4"
+    # Capturing IPv6 does not provide a native IPv6 exit. Keep DNS and direct
+    # domain lookups IPv4-only until public IPv6 has end-to-end acceptance.
+    dns["strategy"] = "ipv4_only"
     dns["servers"] = [
         server for server in dns["servers"] if server.get("tag") != "system"
     ]
@@ -278,8 +280,11 @@ def build_linux_tun_config(
             rule["outbound"] = DIRECT_TAG
 
     # DNS must be intercepted before the private-address shortcut: the
-    # systemd-resolved stub is a loopback address. Keep NTP direct, then reject
-    # the remaining non-private UDP; private UDP matched the direct rule.
+    # systemd-resolved stub is a loopback address. Preserve LAN access, then
+    # reject public IPv6 before any exception or mode can route it. This also
+    # covers cached addresses, IPv6 literals and independent encrypted DNS.
+    # Keep IPv6 capture enabled so these connections cannot bypass the policy.
+    # Keep IPv4 NTP direct, then reject the remaining non-private UDP.
     rules = route["rules"]
     hijack = next(
         index for index, rule in enumerate(rules) if rule.get("action") == "hijack-dns"
@@ -293,6 +298,7 @@ def build_linux_tun_config(
         index for index, rule in enumerate(rules) if rule.get("ip_is_private") is True
     )
     rules[private + 1 : private + 1] = [
+        {"ip_version": 6, "action": "reject"},
         {"network": "udp", "port": 123, "outbound": DIRECT_TAG},
         {"network": "udp", "action": "reject"},
     ]

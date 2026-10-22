@@ -701,13 +701,19 @@ etag = resp.headers["ETag"]
 payload = resp.json()
 assert payload["latest"] == {"sing_box": "1.14.2", "sbc": "0.2.0"}
 assert payload["config"]["inbounds"][0]["type"] == "mixed"
-assert payload["config_tun"]["inbounds"][0]["type"] == "tun"
-assert payload["config_tun"]["inbounds"][0]["dns_mode"] == "hijack"
-assert payload["config_tun"]["dns"]["strategy"] == "prefer_ipv4"
-assert all(
-    server["tag"] != "system"
-    for server in payload["config_tun"]["dns"]["servers"]
-)
+tun = payload["config_tun"]
+inbound = tun["inbounds"][0]
+assert inbound["type"] == "tun"
+assert inbound["dns_mode"] == "hijack"
+assert inbound["auto_route"] and inbound["strict_route"] and inbound["auto_redirect"]
+assert any(":" in address for address in inbound["address"])
+assert tun["dns"]["strategy"] == "ipv4_only"
+assert all(server["tag"] != "system" for server in tun["dns"]["servers"])
+rules = tun["route"]["rules"]
+private = next(i for i, rule in enumerate(rules) if rule.get("ip_is_private") is True)
+assert rules[private + 1] == {"ip_version": 6, "action": "reject"}
+assert payload["config"]["dns"].get("strategy") != "ipv4_only"
+assert not any(rule.get("ip_version") == 6 for rule in payload["config"]["route"]["rules"])
 assert client.get(
     f"/sub/{alice_token}?format=sbc&os=linux&sing-box=1.14.2",
     HTTP_IF_NONE_MATCH=etag,
@@ -723,6 +729,8 @@ mobile_resp = public_client.get(f"/sub/{alice_token}")
 assert mobile_resp.status_code == 200
 assert mobile_resp.json()["inbounds"][0]["type"] == "tun"
 assert mobile_resp.json()["outbounds"][0]["type"] == "selector"
+assert mobile_resp.json()["dns"].get("strategy") != "ipv4_only"
+assert not any(rule.get("ip_version") == 6 for rule in mobile_resp.json()["route"]["rules"])
 assert public_client.get(f"/sub/{alice_token}?protocol=hysteria2").status_code == 400
 assert public_client.get(f"/sub/{alice_token}?protocol=unknown").status_code == 400
 page_resp = public_client.get(f"/sub/{alice_token}/", HTTP_X_FORWARDED_PROTO="https")

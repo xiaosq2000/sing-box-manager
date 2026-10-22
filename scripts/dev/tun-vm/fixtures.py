@@ -22,6 +22,8 @@ from pathlib import Path
 
 DIRECT = "198.18.0.10"
 PROXY = "198.18.0.20"
+DIRECT_V6 = "2001:db8:100::10"
+PROXY_V6 = "2001:db8:100::20"
 NAMES = {
     "www.baidu.com",
     "www.gstatic.com",
@@ -44,15 +46,26 @@ def dns_answer(query: bytes, *, proxied: bool, baseline: bool = False) -> bytes:
     name = ".".join(labels).lower()
     end = offset + 5
     qtype = struct.unpack(">H", query[offset + 1 : offset + 3])[0]
-    found = name in NAMES and qtype == 1
-    address = PROXY if proxied else DIRECT
-    # The direct branch must remain reachable under china-direct.
-    if name in {"www.baidu.com", "china.fixture.test", "portal.fixture.test"}:
-        address = DIRECT
+    found = name in NAMES and qtype in {1, 28}
+    direct = not proxied or name in {
+        "www.baidu.com",
+        "china.fixture.test",
+        "portal.fixture.test",
+    }
+    address = (
+        (DIRECT if direct else PROXY)
+        if qtype != 28
+        else (DIRECT_V6 if direct else PROXY_V6)
+    )
     if baseline:
-        address = "198.18.0.99"
+        address = "198.18.0.99" if qtype != 28 else "2001:db8:100::99"
     header = query[:2] + struct.pack(">HHHHH", 0x8180, 1, int(found), 0, 0)
-    record = b"\xc0\x0c" + struct.pack(">HHIH", 1, 1, 1, 4) + socket.inet_aton(address)
+    packed = (
+        socket.inet_pton(socket.AF_INET6, address)
+        if qtype == 28
+        else socket.inet_aton(address)
+    )
+    record = b"\xc0\x0c" + struct.pack(">HHIH", qtype, 1, 1, len(packed)) + packed
     return header + query[12:end] + (record if found else b"")
 
 
@@ -79,6 +92,8 @@ def socks_destination(stream: socket.socket) -> tuple[str, int]:
         address = socket.inet_ntoa(exact(stream, 4))
     elif atyp == 3:
         address = exact(stream, exact(stream, 1)[0]).decode("ascii")
+    elif atyp == 4:
+        address = socket.inet_ntop(socket.AF_INET6, exact(stream, 16))
     else:
         raise ValueError("unsupported address type")
     return address, struct.unpack(">H", exact(stream, 2))[0]
@@ -113,8 +128,12 @@ def target(
         def log_message(self, format: str, *_args: object) -> None:  # noqa: A002
             pass
 
-    server = http.server.ThreadingHTTPServer(
-        (address, 443 if address == DIRECT else 0), Handler
+    class IPv6Server(http.server.ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    server_type = IPv6Server if ":" in address else http.server.ThreadingHTTPServer
+    server = server_type(
+        (address, 443 if address in {DIRECT, DIRECT_V6} else 0), Handler
     )
     server.socket = context(assets).wrap_socket(server.socket, server_side=True)
     start(server)
@@ -151,7 +170,10 @@ def host(assets: Path) -> None:  # noqa: C901 -- nested fixture server handlers
                 address, port = socks_destination(stream)
                 if address == "198.18.0.53" and port == 853:
                     destination = ("127.0.0.1", dns.server_address[1])
-                elif address in NAMES | {DIRECT, PROXY} and port == 443:
+                elif (
+                    address in NAMES | {DIRECT, PROXY, DIRECT_V6, PROXY_V6}
+                    and port == 443
+                ):
                     destination = ("127.0.0.1", self.site_port)
                 else:
                     stream.sendall(b"\x05\x02\x00\x01" + bytes(6))
@@ -313,6 +335,7 @@ def main() -> None:
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5353)
     parser.add_argument("--baseline", action="store_true")
+    parser.add_argument("--ipv6", action="store_true")
     args = parser.parse_args()
     if args.mode == "host":
         host(args.assets)
@@ -320,6 +343,8 @@ def main() -> None:
         guest_dns(args.bind, args.port, args.baseline)
     else:
         server = target(args.assets, DIRECT, "direct")
+        if args.ipv6:
+            target(args.assets, DIRECT_V6, "direct-v6")
         threading.Event().wait()
         server.server_close()
 

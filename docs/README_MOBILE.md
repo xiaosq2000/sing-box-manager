@@ -40,8 +40,9 @@ updates. Prefer the remote profile. App refresh settings are independent of the
 | `china-direct` | Direct recognized China destinations. Proxy the rest. AI and GFW matches take priority. |
 | `global`       | Proxy allowed traffic except LAN and configured direct exceptions.                      |
 
-Mobile and PC configs share routing rules, rule sources and DNS policy. Mobile
-shows only these five names, without PC aliases. All modes retain AdGuard,
+Mobile and mixed-mode PC configs share routing rules, rule sources and DNS policy.
+Linux TUN adds an [IPv4-only public-access policy](README_SBC.md#linux-tun) that does
+not apply to mobile. Mobile shows only these five names, without PC aliases. All modes retain AdGuard,
 DNS interception, configured direct exceptions and the transport restrictions.
 AI matches precede AdGuard. In `direct`, allowed AI traffic and its DNS go direct.
 This mode can expose the local network's public IP to AI services.

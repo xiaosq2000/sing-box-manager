@@ -236,8 +236,12 @@ unprivileged client service, failing every lookup the route sends direct.
 
 The Linux TUN config (`config_tun`) is the exception: it never uses the
 systemd-resolved stub, because captured upstream queries would loop back into
-it. It resolves direct and `ai-only` names through Aliyun, sets
-`dns.strategy: prefer_ipv4`, keeps NTP direct, and rejects other non-private UDP.
+it. It resolves direct and `ai-only` names through Aliyun and sets
+`dns.strategy: ipv4_only`. It keeps dual-stack capture and LAN access, but rejects
+public IPv6 before every direct exception and route mode. IPv4 NTP stays direct;
+other non-private UDP is rejected. The IPv6 policy changes no system settings
+and does not apply to mixed or mobile profiles. See [Linux TUN](README_SBC.md#linux-tun)
+for update and browser-cache handling.
 The TUN service reads the staged rule snapshots and does not download rule
 updates; `sbc tun on` stages the installed snapshots again.
 
