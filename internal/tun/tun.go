@@ -192,10 +192,13 @@ func ActiveAt(path string) bool {
 // State is the owner's copy of the TUN API address. It is a credential and
 // must be mode 0600.
 type State struct {
-	APIPort   int    `json:"api_port"`
-	APISecret string `json:"api_secret"`
-	Interface string `json:"interface"`
-	Since     string `json:"since,omitempty"`
+	APIPort     int    `json:"api_port"`
+	APISecret   string `json:"api_secret"`
+	Interface   string `json:"interface"`
+	Since       string `json:"since,omitempty"`
+	Transaction string `json:"transaction,omitempty"`
+	InboundTag  string `json:"inbound_tag,omitempty"`
+	IPv6Policy  string `json:"ipv6_policy,omitempty"`
 	// SourceHash identifies the applied config and local rule contents.
 	SourceHash string `json:"source_hash,omitempty"`
 }

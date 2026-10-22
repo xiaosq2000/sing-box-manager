@@ -40,7 +40,8 @@ func New(port int, secret string) *Client {
 	return &Client{
 		base:   "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
 		secret: secret,
-		http:   &http.Client{Transport: transport, Timeout: 5 * time.Second},
+		http: &http.Client{Transport: transport, Timeout: 5 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}
 }
 

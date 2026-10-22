@@ -61,7 +61,7 @@ if [ -f "$(dirname "$BINARY")/libcronet.so" ]; then
 fi
 "$BINARY" version | awk 'NR == 1 {print $3}' >"$ASSETS/sing-box.version"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=TUN-fixture \
-	-addext 'subjectAltName=DNS:www.baidu.com,DNS:www.gstatic.com,DNS:dns.fixture.test,DNS:ai.fixture.test,DNS:gfw.fixture.test,DNS:china.fixture.test,DNS:ordinary.fixture.test,DNS:portal.fixture.test' \
+	-addext 'subjectAltName=DNS:www.baidu.com,DNS:www.gstatic.com,DNS:dns.fixture.test,DNS:ai.fixture.test,DNS:gfw.fixture.test,DNS:china.fixture.test,DNS:ordinary.fixture.test,DNS:portal.fixture.test,DNS:api.ipify.org,DNS:api6.ipify.org,DNS:4.ident.me,DNS:6.ident.me,DNS:ipwho.is,DNS:speed.cloudflare.com' \
 	-keyout "$ASSETS/ca.key" -out "$ASSETS/ca.crt" >"$WORK/certificate.log" 2>&1
 python3 "$ROOT/scripts/dev/tun-vm/fixtures.py" host "$ASSETS" >"$WORK/host-fixture.log" 2>&1 &
 fixture_pid=$!

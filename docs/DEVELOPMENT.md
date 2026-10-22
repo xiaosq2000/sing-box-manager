@@ -191,9 +191,9 @@ pixi run go test -tags e2e ./internal/e2e -run '^(TestBrowserLanguageProbeComman
 ```
 
 CLI help and argument-validation fixtures reject calls to installation lookup
-or stdin. AI check fixtures cover explicit opt-in, direct-mode skips, direct
-permission, proxy-only inlet validation, HTTP denials, challenges, redirects,
-unknown regions, and absence of account credentials or automatic retries.
+or stdin. Diagnostic fixtures cover explicit destination selection, ordinary
+inlet authentication, HTTP denials and redirects, and no account credentials
+or automatic retries.
 Region fixtures use a temporary `/etc` tree and a fake tool runner. They cover
 system scope, absolute and relative time zone links, unchanged tool results,
 tool and file fallback, ownership, external changes, partial components, pending
@@ -214,9 +214,9 @@ IP lookup suppression, mismatched database responses, unknown fields, bounded
 responses, terminal-control removal, HTTP denials, redirects, rate limits, timeouts,
 and no direct retry. CLI fixtures check nonfatal detail failures, partial IPv6
 results, proxy authentication, unchanged route and protocol, Chinese output, and
-combination with the existing AI checks. TUN refusal fixtures include `--dual-stack`
-and its AI flag combinations. They refuse before config access or network requests.
-No IP test needs native IPv6 connectivity.
+versioned JSON and strict URL-access goals. Unsafe TUN state and retired flags
+refuse before destination requests. Generation metadata binds native diagnostics
+to the active owner. No IP unit test needs native IPv6 connectivity.
 Completion fixtures read only a scratch config and use no running proxy.
 Native completion tests build a temporary `sbc` and use isolated homes and profiles.
 Bash tests cover bare-shell fallback, split equals signs, cursor position, and
@@ -292,8 +292,9 @@ TUN runtime fixtures use separate owner and mixed API endpoints. They check
 query-only calls, route aliases, protocol changes, invalid choices, operation
 locks, missing or invalid owner state, and unavailable APIs. Pending, dirty or
 inconsistent capture metadata blocks runtime access. No TUN failure falls back
-to the answering mixed endpoint. IP and speed fixtures refuse TUN before config
-access or network requests, including explicit AI and download flags.
+to the answering mixed endpoint. Diagnostic fixtures also cover generation-bound
+owner state, authenticated ordinary mixed requests with shell proxies off, native
+TUN requests, and missing capture proof. Retired flags fail before requests.
 
 Environment migration fixtures cover inherited and manual Mixed exports without a
 shell marker, changed and unrelated values, conservative capture metadata checks,
@@ -304,6 +305,13 @@ source must connect without exports or a proxy-bypass option. These fixtures nee
 no tmux or Herdr installation. The guest uses a non-UTC publisher time zone and
 checks that the hook accepts its confirmed-off journal. See
 [environment migration](TUN_ENV_MIGRATION.md).
+
+The [diagnostic contract](CLIENT_DIAGNOSTICS.md#acceptance-checklist) defines the
+fixture and native gates. The core VM checks `check`, IP observations, and bounded
+downloads in all five route modes. Rapid-close checks retain HTTP observations
+without inventing capture proof. Unit checks cover observer cancellation and
+bounds, timing isolation from API waits, HTTPS access outcomes, and private list
+operations. Normal diagnosis does not change the engine or client settings.
 
 `sbc` passes every message through `internal/i18n`, whose catalog holds the Chinese,
 keyed by the English. Its test reads the source and fails when a message has no
@@ -381,7 +389,7 @@ before sending HTTP on that socket. Load the system TLS context before opening
 TCP, so certificate loading does not consume the engine's sniff timeout.
 Keep system TLS verification. Do not follow redirects, retry directly, or infer
 routing from HTTP status or exit location.
-These checks do not enable TUN `ip` or `speed` diagnostics.
+Diagnostic acceptance also checks unmodified HTTP timing and honest missing-evidence results.
 
 Checks cover stop failure, recovery after a dead proxy,
 `direct` with an unused dead proxy, and controller death after service startup.
@@ -458,8 +466,8 @@ pixi run go test ./internal/tun ./internal/cli ./internal/api ./internal/service
 Each VM run retains its disk, generated assets, guest-only packet trace and
 serial log under the image cache's `runs/` directory. These contain synthetic private keys and credentials.
 Do not upload them wholesale. The script prints the run directory and failure
-markers. TUN IP and speed diagnostics remain unsupported. Public IPv6 access is
-disabled. The IPv6 fixture checks establish DNS suppression and rejection, not
+markers. Native diagnostics exercise the active generation without privileged
+configuration access. Public IPv6 access is disabled. The IPv6 fixture checks establish DNS suppression and rejection, not
 full IPv6 connectivity. Docker bridge and `SO_BINDTODEVICE` compatibility remain
 unvalidated. VM selector transports remain SOCKS fixtures. Physical workstation reboot, production timer
 migration and a production client release are not established by these suites.

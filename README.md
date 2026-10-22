@@ -1,6 +1,6 @@
 # sing-box-manager
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 Deploy, package and distribute [sing-box](https://github.com/SagerNet/sing-box).
 
@@ -88,8 +88,9 @@ possible. See [geolocation blocking](docs/README_SBC.md#chrome-geolocation-block
 On native Linux, `sbc tun on` runs a root-owned TUN service instead of mixed
 mode. It needs systemd, `/dev/net/tun`, and sudo, and it refuses remote SSH
 sessions. `sbc route` and `sbc protocol` control active TUN without restarting
-capture. IP and speed diagnostics explicitly refuse TUN mode.
-See [Linux TUN](docs/README_SBC.md#linux-tun).
+capture. `sbc ip`, `sbc check`, and `sbc speed download` diagnose the active
+mixed or TUN path without changing selections. See
+[network diagnostics](docs/README_SBC.md#network-diagnostics).
 
 `sbm serve` runs Django on loopback at `control_plane.port` (default `47071`).
 It requires `control_plane.enabled` and `control_plane.secret_key`.
@@ -179,6 +180,7 @@ or check out config state with git.
 - [`docs/VPS_DEPLOYMENT.md`](docs/VPS_DEPLOYMENT.md): primary end-to-end VPS deployment guide
 - [`docs/RELEASE_AND_PORTAL.md`](docs/RELEASE_AND_PORTAL.md): build releases, run the portal, and download client packages
 - [`docs/README_SBC.md`](docs/README_SBC.md): client installation, legacy migration, commands, help, and shell completion
+- [`docs/CLIENT_DIAGNOSTICS.md`](docs/CLIENT_DIAGNOSTICS.md): mixed/TUN diagnostic contracts, capture limits, and acceptance gates
 - [`docs/WEBRTC.md`](docs/WEBRTC.md): Linux Chrome WebRTC protection, geolocation blocking, language matching and recovery
 - [`docs/README_WIN.md`](docs/README_WIN.md): Windows installer, scheduled-task layout, and uninstall
 - [`docs/README_MOBILE.md`](docs/README_MOBILE.md): official iOS/Android import links, local QR codes, and device acceptance

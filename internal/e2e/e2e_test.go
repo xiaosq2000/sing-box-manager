@@ -125,7 +125,14 @@ func testLifecycle(t *testing.T, engine string) {
 		t.Errorf("switching restarted sing-box: pid %s became %s", pid, now)
 	}
 	expectPage(t, proxy, site.URL)
-	run(t, nil, sbc, "speed", "--all")
+	expect(t, run(t, nil, sbc, "speed"), "download")
+	if output, code := runCode(t, nil, sbc, "speed", "--all"); code != 2 {
+		t.Fatalf("retired speed option returned %d: %s", code, output)
+	}
+	expect(t, run(t, nil, sbc, "check", "https://www.gstatic.com/generate_204", "--json"), `"http_status":204`, `"context_valid":true`)
+	if now := singBoxPID(t, layout.SingBox()); now != pid {
+		t.Errorf("diagnostics restarted sing-box: pid %s became %s", pid, now)
+	}
 
 	// A refresh whose config cannot start rolls back to the last good one,
 	// and the cache file keeps the route and protocol across the restarts.

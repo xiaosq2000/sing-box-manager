@@ -236,6 +236,19 @@ assert_path() {
 root_digest() {
 	sudo sh -c '{ find /etc/sbc/tun /usr/local/lib/sbc-tun -type f -exec sha256sum {} +; sha256sum /etc/systemd/system/sbc-tun.service; }' | LC_ALL=C sort | sha256sum
 }
+check_diagnostic() {
+	name=$1
+	expected=$2
+	HTTPS_PROXY=http://127.0.0.1:1 sbc check "https://$name/diagnostic-slow" --json >"$HOME/diagnostic-$name.json"
+	python3 - "$HOME/diagnostic-$name.json" "$expected" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report["context_valid"] and report["mode"] == "tun", report
+sample = report["observations"][0]["samples"][0]
+assert sample["http_status"] == 200 and sample["first_response_ms"] > 0, sample
+assert sample["capture"]["verified"] and sample["capture"]["path"] == sys.argv[2], sample
+PY
+}
 step "native CLI switches five modes without restarting capture"
 switch_generation=$(generation)
 switch_pid=$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)
@@ -282,8 +295,70 @@ for mode in direct ai-only china-direct gfw-proxy global; do
 		;;
 	esac
 	assert_path portal.fixture.test direct
+	check_diagnostic portal.fixture.test direct
+	diagnostic_proxy=proxy/trojan
+	if [ "$mode" = direct ]; then diagnostic_proxy=direct; fi
+	check_diagnostic ai.fixture.test "$diagnostic_proxy"
+	ordinary_path=direct
+	china_path=direct
+	gfw_path=$diagnostic_proxy
+	case "$mode" in
+	china-direct | global) ordinary_path=proxy/trojan ;;
+	esac
+	if [ "$mode" = global ]; then china_path=proxy/trojan; fi
+	if [ "$mode" = ai-only ]; then gfw_path=direct; fi
+	check_diagnostic ordinary.fixture.test "$ordinary_path"
+	check_diagnostic china.fixture.test "$china_path"
+	check_diagnostic gfw.fixture.test "$gfw_path"
+	HTTPS_PROXY=http://127.0.0.1:1 sbc ip --dual-stack --json >"$HOME/diagnostic-ip.json"
+	sbc speed download --size 1MB --json >"$HOME/diagnostic-download.json"
+	python3 - "$HOME/diagnostic-ip.json" "$HOME/diagnostic-download.json" "$ordinary_path" <<'PY'
+import json, sys
+ip = json.load(open(sys.argv[1]))
+assert ip["context_valid"] and len(ip["observations"]) == 4, ip
+expected_path = sys.argv[3]
+expected_ip = "198.51.100.7" if expected_path == "direct" else "203.0.113.7"
+assert all(row.get("ip") == expected_ip for row in ip["observations"][:2]), ip
+assert all(row["samples"][0]["capture"] == {"verified": True, "path": expected_path} for row in ip["observations"][:2]), ip
+assert all(row["policy"] == "policy-skipped-not-verified" for row in ip["observations"][2:]), ip
+sample = json.load(open(sys.argv[2]))["observations"][0]["samples"][0]
+assert sample["payload_bytes"] == 1_000_000 and sample["mbit_per_second"] > 0, sample
+assert sample["capture"] == {"verified": True, "path": expected_path}, sample
+assert sample["stop_reason"] == "payload-complete" and sample["transfer_ms"] > 0, sample
+PY
 done
-step "native CLI switches protocols and rejects mixed diagnostics"
+step "rapid-close observations never invent capture proof"
+status=0
+sbc check https://portal.fixture.test/diagnostic-empty --json >"$HOME/diagnostic-empty.json" || status=$?
+python3 - "$HOME/diagnostic-empty.json" "$status" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+sample = report["observations"][0]["samples"][0]
+assert sample["http_status"] == 204 and report["context_valid"], report
+assert int(sys.argv[2]) == (0 if sample["capture"]["verified"] else 1), report
+PY
+step "negative control: wrong diagnostic inbound retains HTTP but cannot prove capture"
+cp "$XDG_CONFIG_HOME/sbc/tun.json" "$HOME/diagnostic-state.saved"
+python3 - "$XDG_CONFIG_HOME/sbc/tun.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+state = json.load(open(path))
+state["inbound_tag"] = "nonexistent-fixture-inbound"
+with open(path, "w") as output:
+    json.dump(state, output)
+PY
+status=0
+sbc check https://portal.fixture.test/diagnostic-slow --json >"$HOME/diagnostic-negative.json" || status=$?
+python3 - "$HOME/diagnostic-negative.json" "$status" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+sample = report["observations"][0]["samples"][0]
+assert int(sys.argv[2]) == 1 and report["context_valid"], report
+assert sample["http_status"] == 200 and sample["capture"] == {"verified": False, "path": "unknown"}, report
+PY
+cp "$HOME/diagnostic-state.saved" "$XDG_CONFIG_HOME/sbc/tun.json"
+check_diagnostic portal.fixture.test direct
+step "native CLI switches protocols and refuses retired diagnostics"
 sbc route gfw
 [ "$(sbc route | cut -d ' ' -f 1)" = gfw-proxy ]
 sudo resolvectl flush-caches
@@ -300,9 +375,8 @@ assert_path gfw.fixture.test proxy-alt
 sbc status | grep 'protocol: naive'
 absent sbc route not-a-route
 absent sbc protocol not-a-protocol
-absent sbc ip
 absent sbc ip --ai
-absent sbc speed
+sbc speed >/dev/null
 absent sbc speed --download
 [ "$(generation)" = "$switch_generation" ]
 [ "$(/usr/bin/systemctl show -p MainPID --value sbc-tun.service)" = "$switch_pid" ]
@@ -422,7 +496,7 @@ absent sbc route global
 absent sbc protocol
 absent sbc protocol trojan
 absent sbc ip
-absent sbc speed
+absent sbc speed download
 absent sbc on
 sudo rm /run/sbc-fixture-fail-stop
 sbc tun off
@@ -438,6 +512,15 @@ assert_off
 step "direct activation does not require an unused proxy"
 curl -fsS --max-time 5 -X POST "$portal/fixture/sub/direct-failed"
 sbc tun on
+check_diagnostic ordinary.fixture.test direct
+HTTPS_PROXY=http://127.0.0.1:1 sbc ip --json >"$HOME/diagnostic-dead-proxy.json"
+python3 - "$HOME/diagnostic-dead-proxy.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report["context_valid"] and report["route"] == "direct", report
+for row in report["observations"]:
+    assert row["ip"] == "198.51.100.7" and row["samples"][0]["capture"] == {"verified": True, "path": "direct"}, row
+PY
 sbc tun off
 assert_off
 curl -fsS --max-time 5 -X POST "$portal/fixture/sub/good"

@@ -271,8 +271,8 @@ function Install-Sbc {
             if ($installed -and $Protocol) { $installed = Show-SbcResult (Invoke-SbcProgram $binary @('protocol', $Protocol)) }
             if ($installed -and $null -ne $legacy) { $installed = Show-SbcResult (Invoke-SbcProgram $binary @('route', $legacy.Route)) }
             # A second selection can succeed after install used its fallback.
-            # Verify that the requested protocol loads a page before cleanup.
-            if ($installed -and $Protocol) { $installed = Show-SbcResult (Invoke-SbcProgram $binary @('speed')) }
+            # Verify HTTP access under the requested selection and active rules before cleanup.
+            if ($installed -and $Protocol) { $installed = Show-SbcResult (Invoke-SbcProgram $binary @('check', 'https://www.gstatic.com/generate_204')) }
         }
         catch { $installed = $false }
         if (-not $installed) {

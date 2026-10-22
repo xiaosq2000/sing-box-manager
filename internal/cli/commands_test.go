@@ -87,19 +87,31 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/version":
 		json.NewEncoder(w).Encode(map[string]any{"version": "sing-box 1.14.2"})
+	case r.URL.Path == "/connections" && r.Method == http.MethodGet:
+		json.NewEncoder(w).Encode(map[string]any{"connections": []any{}})
 	case r.URL.Path == "/configs" && r.Method == http.MethodGet:
-		json.NewEncoder(w).Encode(map[string]any{"mode": f.mode, "mode-list": []string{"ai", "china", "gfw", "global"}})
+		f.lock.Lock()
+		mode := f.mode
+		f.lock.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"mode": mode, "mode-list": []string{"ai", "china", "gfw", "global"}})
 	case r.URL.Path == "/configs" && r.Method == http.MethodPatch:
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
+		f.lock.Lock()
 		f.mode = body["mode"]
+		f.lock.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	case r.URL.Path == "/proxies/proxy" && r.Method == http.MethodGet:
-		json.NewEncoder(w).Encode(map[string]any{"now": f.protocol, "all": f.options()})
+		f.lock.Lock()
+		protocol, options := f.protocol, f.options()
+		f.lock.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"now": protocol, "all": options})
 	case r.URL.Path == "/proxies/proxy" && r.Method == http.MethodPut:
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
+		f.lock.Lock()
 		f.protocol = body["name"]
+		f.lock.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	case r.URL.Path == "/proxies/speed-test" && !f.noSpeedTest && r.Method == http.MethodGet:
 		json.NewEncoder(w).Encode(map[string]any{"now": f.speedTest(), "all": f.options()})
@@ -178,7 +190,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(server.Close)
 	address, _ := url.Parse(server.URL)
 	port, _ := strconv.Atoi(address.Port())
-	config, err := singbox.Patch([]byte(`{"inbounds":[{"tag":"mixed"}],"outbounds":[{"type":"selector","tag":"proxy","outbounds":["trojan","naive"]}],"experimental":{"clash_api":{}}}`),
+	config, err := singbox.Patch([]byte(`{"inbounds":[{"type":"mixed","tag":"mixed"}],"outbounds":[{"type":"selector","tag":"proxy","outbounds":["trojan","naive"]}],"experimental":{"clash_api":{}}}`),
 		singbox.Local{ListenPort: 2080, APIPort: port, APISecret: "s3cret"})
 	if err != nil {
 		t.Fatal(err)

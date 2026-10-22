@@ -16,14 +16,8 @@ import (
 // MixedInboundTag names the local proxy inbound in the portal's config.
 const MixedInboundTag = "mixed"
 
-// SpeedTestTag names the inbound and the selector that 'sbc speed --download'
-// uses. The inbound sends everything to the selector, which holds the same
-// protocols as the proxy selector, so sbc can switch it without touching the
-// protocol in use, and test every protocol whatever the route.
-const SpeedTestTag = "speed-test"
-
-// proxySelectorTag names the portal's selector of protocols.
-const proxySelectorTag = "proxy"
+// Candidate publication removes the retired diagnostic route override.
+const retiredDiagnosticTag = "speed-test"
 
 // Local is what this machine adds to the portal's config.
 type Local struct {
@@ -36,9 +30,6 @@ type Local struct {
 	// other accounts on a shared machine cannot use it.
 	Username string
 	Password string
-	// SpeedPort is the loopback port of the speed test's inbound, which asks
-	// for the same password. Zero leaves the speed test out.
-	SpeedPort int
 }
 
 // Patch returns the portal's config with the local settings applied.
@@ -61,7 +52,7 @@ func Patch(config []byte, local Local) ([]byte, error) {
 	if !patched {
 		return nil, i18n.New("the config has no mixed inbound")
 	}
-	addSpeedTest(root, local)
+	removeDiagnosticOverride(root)
 	experimental, _ := root["experimental"].(map[string]any)
 	if experimental == nil {
 		return nil, i18n.New("the config has no experimental section")
@@ -83,62 +74,57 @@ func setUsers(inbound map[string]any, local Local) {
 	}
 }
 
-// addSpeedTest replaces what an earlier patch added for the speed test: an
-// inbound, a selector with the proxy selector's protocols, and a first route
-// rule from one to the other. A config without the proxy selector gets none.
-func addSpeedTest(root map[string]any, local Local) {
+func removeDiagnosticOverride(root map[string]any) {
 	inbounds, _ := root["inbounds"].([]any)
 	outbounds, _ := root["outbounds"].([]any)
-	inbounds, outbounds = withoutTag(inbounds, SpeedTestTag), withoutTag(outbounds, SpeedTestTag)
+	root["inbounds"] = withoutTag(inbounds, retiredDiagnosticTag)
+	if outbounds != nil {
+		root["outbounds"] = withoutTag(outbounds, retiredDiagnosticTag)
+	}
 	route, _ := root["route"].(map[string]any)
 	rules, _ := route["rules"].([]any)
-	rules = slices.DeleteFunc(rules, func(item any) bool {
-		rule, ok := item.(map[string]any)
-		return ok && rule["outbound"] == SpeedTestTag
-	})
 	if _, ok := route["rules"]; ok {
-		route["rules"] = rules
-	}
-	var protocols any
-	for _, item := range outbounds {
-		if outbound, ok := item.(map[string]any); ok && outbound["tag"] == proxySelectorTag {
-			protocols = outbound["outbounds"]
-		}
-	}
-	if local.SpeedPort > 0 && protocols != nil {
-		inbound := map[string]any{"type": "mixed", "tag": SpeedTestTag, "listen": "127.0.0.1", "listen_port": local.SpeedPort}
-		setUsers(inbound, local)
-		inbounds = append(inbounds, inbound)
-		outbounds = append(outbounds, map[string]any{"type": "selector", "tag": SpeedTestTag, "outbounds": protocols})
-		if route == nil {
-			route = map[string]any{}
-			root["route"] = route
-		}
-		route["rules"] = append([]any{map[string]any{"inbound": []any{SpeedTestTag}, "outbound": SpeedTestTag}}, rules...)
-	}
-	root["inbounds"] = inbounds
-	if outbounds != nil {
-		root["outbounds"] = outbounds
+		route["rules"] = slices.DeleteFunc(rules, func(item any) bool {
+			rule, ok := item.(map[string]any)
+			return ok && rule["outbound"] == retiredDiagnosticTag
+		})
 	}
 }
 
-// MissingSpeedTest reports whether config has the proxy selector the speed
-// test copies, but not the speed test, as configs written before it do.
-func MissingSpeedTest(config []byte) bool {
-	type tagged struct {
-		Tag string `json:"tag"`
-	}
+// HasDiagnosticOverride forces a complete refresh for a retired diagnostic inlet.
+func HasDiagnosticOverride(config []byte) bool {
 	var root struct {
-		Inbounds  []tagged `json:"inbounds"`
-		Outbounds []tagged `json:"outbounds"`
+		Inbounds []struct {
+			Tag string `json:"tag"`
+		}
+		Outbounds []struct {
+			Tag string `json:"tag"`
+		}
+		Route struct {
+			Rules []struct {
+				Outbound string `json:"outbound"`
+			}
+		}
 	}
 	if json.Unmarshal(config, &root) != nil {
 		return false
 	}
-	named := func(tag string) func(tagged) bool {
-		return func(item tagged) bool { return item.Tag == tag }
+	for _, inlet := range root.Inbounds {
+		if inlet.Tag == retiredDiagnosticTag {
+			return true
+		}
 	}
-	return slices.ContainsFunc(root.Outbounds, named(proxySelectorTag)) && !slices.ContainsFunc(root.Inbounds, named(SpeedTestTag))
+	for _, outbound := range root.Outbounds {
+		if outbound.Tag == retiredDiagnosticTag {
+			return true
+		}
+	}
+	for _, rule := range root.Route.Rules {
+		if rule.Outbound == retiredDiagnosticTag {
+			return true
+		}
+	}
+	return false
 }
 
 func withoutTag(items []any, tag string) []any {
@@ -177,8 +163,6 @@ func ReadLocal(config []byte) (Local, error) {
 			if len(inbound.Users) > 0 {
 				local.Username, local.Password = inbound.Users[0].Username, inbound.Users[0].Password
 			}
-		case SpeedTestTag:
-			local.SpeedPort = inbound.ListenPort
 		}
 	}
 	_, port, err := net.SplitHostPort(root.Experimental.ClashAPI.Controller)

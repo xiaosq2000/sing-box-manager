@@ -159,18 +159,18 @@ try {
     Reset-Fixture
     Write-Fixture (Join-Path $env:LOCALAPPDATA 'sbc\subscription') $script:fixtureLink
     Install-Sbc -Protocol trojan
-    Assert-Test (($script:events -join ',') -eq 'install --protocol trojan,protocol trojan,speed') 'Reinstall did not reuse its link'
+    Assert-Test (($script:events -join ',') -eq 'install --protocol trojan,protocol trojan,check https://www.gstatic.com/generate_204') 'Reinstall did not reuse its link'
 
     Reset-Fixture
     Write-Fixture (Join-Path $env:LOCALAPPDATA 'sbc\subscription') $script:fixtureLink
     Install-Sbc -Protocol snell
-    Assert-Test (($script:events -join ',') -eq 'install --protocol snell,protocol snell,speed') 'Snell selection was lost'
+    Assert-Test (($script:events -join ',') -eq 'install --protocol snell,protocol snell,check https://www.gstatic.com/generate_204') 'Snell selection was lost'
 
     Reset-Fixture
     New-LegacyFixture
     $script:portFailures = 1
     Install-Sbc
-    Assert-Test (($script:events -join ',') -eq 'exchange,install --route gfw --auth off --protocol hysteria2,protocol hysteria2,route gfw,speed,legacy uninstall,port 1085,port 1085,desktop on') 'Migration order or settings were lost'
+    Assert-Test (($script:events -join ',') -eq 'exchange,install --route gfw --auth off --protocol hysteria2,protocol hysteria2,route gfw,check https://www.gstatic.com/generate_204,legacy uninstall,port 1085,port 1085,desktop on') 'Migration order or settings were lost'
     Assert-Test (-not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'sing-box'))) 'Legacy files remain'
     Assert-CleanDownload
 
@@ -192,7 +192,7 @@ try {
         Assert-Test ($script:events.Contains('prompt')) 'Invalid saved token response did not fall back to prompt'
     }
 
-    foreach ($command in @('install', 'protocol', 'route', 'speed')) {
+    foreach ($command in @('install', 'protocol', 'route', 'check')) {
         Reset-Fixture
         New-LegacyFixture
         $script:failedCommand = $command

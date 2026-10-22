@@ -22,11 +22,11 @@ const maxIPPage = 64 << 10
 
 // IPDetails holds database estimates. Empty fields are unknown.
 type IPDetails struct {
-	Country      string
-	Region       string
-	City         string
-	ASN          uint32
-	Organization string
+	Country      string `json:"country"`
+	Region       string `json:"region"`
+	City         string `json:"city"`
+	ASN          uint32 `json:"asn"`
+	Organization string `json:"organization"`
 }
 
 // Location lists each available geographic name once, from country to city.
@@ -106,6 +106,11 @@ func ExitIP(client *http.Client, page string, family int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return ParseExitIP(body, family)
+}
+
+// ParseExitIP validates a body already fetched through the selected runtime.
+func ParseExitIP(body []byte, family int) (string, error) {
 	ip, err := netip.ParseAddr(strings.TrimSpace(string(body)))
 	if err != nil || ip.Zone() != "" {
 		return "", i18n.New("the site gave no valid IP address")
@@ -138,6 +143,15 @@ func LookupIP(client *http.Client, base, address string) (IPDetails, error) {
 	body, err := ipPage(client, page)
 	if err != nil {
 		return IPDetails{}, err
+	}
+	return ParseIPDetails(body, address)
+}
+
+// ParseIPDetails validates database data for the explicitly observed address.
+func ParseIPDetails(body []byte, address string) (IPDetails, error) {
+	ip, err := netip.ParseAddr(address)
+	if err != nil || ip.Zone() != "" {
+		return IPDetails{}, i18n.New("cannot look up an invalid IP address")
 	}
 	var data struct {
 		IP          string `json:"ip"`

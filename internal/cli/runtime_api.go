@@ -38,13 +38,3 @@ func activeTunAPI(layout paths.Layout, capture tun.CaptureState) (*api.Client, e
 	}
 	return api.New(state.APIPort, state.APISecret), nil
 }
-
-// mixedDiagnostic refuses TUN before reading mixed settings or sending probes.
-// Native TUN diagnostics need separate capture and privacy acceptance.
-func mixedDiagnostic(env Env, command string) error {
-	capture := tunCapture(env)
-	if !captureOff(capture) {
-		return i18n.Errorf("sbc %s is not available in TUN mode yet. No network check was sent.", command)
-	}
-	return nil
-}

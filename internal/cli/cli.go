@@ -3,9 +3,10 @@ package cli
 
 import (
 	"bufio"
+	"context"
+	"crypto/x509"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,11 +74,11 @@ type Env struct {
 	SystemRegion func() region.SystemPaths
 	// Docker returns the Docker daemon's proxy drop-in.
 	Docker func() (*docker.Daemon, error)
-	// Sites are the pages 'sbc ip' asks and 'sbc speed --download' fetches.
+	// Context and DiagnosticRoots let isolated fixtures supply cancellation and trust.
+	Context         context.Context
+	DiagnosticRoots *x509.CertPool
+	// Sites are the exit-IP and explicit download endpoints.
 	Sites probe.Sites
-	// TimeDownload fetches a page through a client and reports how many bytes
-	// arrived in how long.
-	TimeDownload func(client *http.Client, page string, limit time.Duration) (int64, time.Duration, error)
 	// TunHost reads the Linux TUN environment checks.
 	TunHost func() tun.Host
 	// TunCapture reads public root transaction metadata. Tests replace it.
@@ -128,11 +129,10 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 		Docker: func() (*docker.Daemon, error) {
 			return docker.New(runtime.GOOS, docker.Exec)
 		},
-		Sites:        probe.DefaultSites,
-		TimeDownload: probe.Download,
-		TunHost:      tun.SystemHost,
-		TunPaths:     tun.DefaultPaths,
-		Getenv:       os.Getenv,
+		Sites:    probe.DefaultSites,
+		TunHost:  tun.SystemHost,
+		TunPaths: tun.DefaultPaths,
+		Getenv:   os.Getenv,
 	}
 	env.Sudo = func(self string, args []string) error {
 		command := exec.Command("sudo", append([]string{"--", self}, args...)...)

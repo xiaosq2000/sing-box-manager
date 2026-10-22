@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -314,37 +313,7 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	}
 
 	add("status", i18n.T("Show service, proxy, route, protocol, shells, and traffic"), "proxy", argumentRange(0, 0), func([]string) int { return runStatus(env) })
-	var ip ipOptions
-	ipCmd := add("ip", i18n.T("Show exit IPs, with optional unauthenticated AI provider checks"), "proxy", argumentRange(0, 0), func([]string) int { return runIP(env, ip) })
-	ipCmd.Flags().BoolVar(&ip.dualStack, "dual-stack", false, i18n.T("Probe IPv6 as well as IPv4 through the active route"))
-	ipCmd.Flags().BoolVar(&ip.ai, "ai", false, i18n.T("Also probe Gemini, ChatGPT, and Claude"))
-	ipCmd.Flags().BoolVar(&ip.allowDirectAI, "allow-direct-ai", false, i18n.T("Permit AI probes to expose your direct network IP (requires --ai)"))
-	ipCmd.Args = func(cmd *cobra.Command, args []string) error {
-		if err := argumentRange(0, 0)(cmd, args); err != nil {
-			return err
-		}
-		if ip.allowDirectAI && !ip.ai {
-			return i18n.New("ip: --allow-direct-ai requires --ai")
-		}
-		return nil
-	}
-	ipCmd.Long = i18n.T("IPify and ident.me check IPv4 through the active route. --dual-stack also checks IPv6. ipwho.is supplies location and ASN estimates for each distinct exit IP. Sources can see different exits. --ai uses the proxy-only diagnostic inlet and skips the direct route. --allow-direct-ai uses the active route instead. AI checks use no account credentials and do not prove account eligibility. Redirects are not followed.")
-	var speed speedOptions
-	speedCmd := add("speed", i18n.T("Test page latency, or download throughput with --download [MB]"), "proxy", argumentRange(0, 0), func([]string) int { return runSpeed(env, speed) })
-	speedCmd.Flags().BoolVar(&speed.all, "all", false, i18n.T("Test every protocol without switching the one in use"))
-	speedCmd.Flags().IntVar(&speed.megabytes, "download", 0, i18n.T("Download 20 MB, or a size from 1 to 99 MB"))
-	speedCmd.Flags().Lookup("download").NoOptDefVal = strconv.Itoa(defaultMegabytes)
-	for _, name := range []string{"all", "download"} {
-		flag := speedCmd.Flags().Lookup(name)
-		flag.Value = &singleUseValue{Value: flag.Value}
-	}
-	speedCmd.Args = func(cmd *cobra.Command, args []string) error {
-		if len(args) != 0 || (cmd.Flags().Changed("download") && (speed.megabytes < 1 || speed.megabytes > maxMegabytes)) {
-			return i18n.Errorf("speed takes --all, and --download with an optional size from 1 to %d MB", maxMegabytes)
-		}
-		return nil
-	}
-	speedCmd.RegisterFlagCompletionFunc("download", fixedChoices())
+	diagnosticCommands(root, env, exit)
 	var listRoutes bool
 	for _, what := range []string{"route", "protocol"} {
 		description := i18n.T("Show or switch the route without restarting sing-box")
@@ -461,8 +430,8 @@ func choiceArgs(minimum int, choices ...string) cobra.PositionalArgs {
 	}
 }
 
-// normalizeArgs preserves the optional, space-separated download size and
-// install's standard-library flag spelling. Parsing itself belongs to Cobra.
+// normalizeArgs preserves install's standard-library flag spelling.
+// Parsing itself belongs to Cobra.
 func normalizeArgs(root *cobra.Command, args []string) []string {
 	result := append([]string{}, args...)
 	if len(result) == 0 {
@@ -484,31 +453,16 @@ func normalizeArgs(root *cobra.Command, args []string) []string {
 				}
 			}
 		}
-		if cmd.Name() == "speed" && arg == "--download" && index+1 < len(result) && !strings.HasPrefix(result[index+1], "-") {
-			result[index] += "=" + result[index+1]
-			result = slices.Delete(result, index+1, index+2)
-		}
 	}
 	return result
 }
 
-// Speed flags retain their single-use contract while pflag does the parsing.
-type singleUseValue struct {
-	pflag.Value
-	set bool
-}
-
-var errRepeatedFlag = errors.New("repeated flag")
-
-func (value *singleUseValue) Set(text string) error {
-	if value.set {
-		return errRepeatedFlag
+func localizeFlagError(cmd *cobra.Command, err error) error {
+	for current := cmd; current != nil && current.Parent() != nil; current = current.Parent() {
+		if current.Name() == "ip" || current.Name() == "check" || current.Name() == "speed" {
+			return i18n.New("Invalid diagnostic option or value. No network request was sent.")
+		}
 	}
-	value.set = true
-	return value.Value.Set(text)
-}
-
-func localizeFlagError(_ *cobra.Command, err error) error {
 	var unknown *pflag.NotExistError
 	var missing *pflag.ValueRequiredError
 	var invalid *pflag.InvalidValueError
@@ -519,9 +473,6 @@ func localizeFlagError(_ *cobra.Command, err error) error {
 	case errors.As(err, &missing):
 		return i18n.Errorf("flag --%s needs a value", missing.GetFlag().Name)
 	case errors.As(err, &invalid):
-		if errors.Is(err, errRepeatedFlag) {
-			return i18n.Errorf("flag --%s must not be repeated", invalid.GetFlag().Name)
-		}
 		return i18n.Errorf("invalid value %q for flag --%s", invalid.GetValue(), invalid.GetFlag().Name)
 	case errors.As(err, &syntax):
 		return i18n.Errorf("invalid flag syntax %q", syntax.GetSpecifiedFlag())

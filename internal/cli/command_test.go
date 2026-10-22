@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
@@ -107,7 +106,7 @@ func TestCommandHelpAndParserErrorsAreChinese(t *testing.T) {
 		{[]string{"route", "china", "extra"}, "实际收到"},
 		{[]string{"env", "maybe"}, "只接受"},
 		{[]string{"bogus"}, "未知命令"},
-		{[]string{"speed", "--all", "--all"}, "不能重复"},
+		{[]string{"speed", "--all", "--all"}, "诊断选项"},
 	} {
 		errOut.Reset()
 		if code := Run(env, entry.args); code != 2 || !strings.Contains(errOut.String(), entry.want) || !strings.Contains(errOut.String(), "查看用法") {
@@ -132,14 +131,21 @@ func TestCommandLegacyFlagSyntaxAndSpeedSizes(t *testing.T) {
 	if !slices.Equal(valueArgs, []string{"install", "--protocol", "-shell"}) {
 		t.Fatalf("rewrote a dash-prefixed flag value: %v", valueArgs)
 	}
-	for _, size := range []string{"5", "99"} {
-		h.useDownloads(t, map[string]time.Duration{"trojan": time.Second, "naive": time.Second}, nil)
-		for _, args := range [][]string{{"speed", "--download", size}, {"speed", "--all", "--download", size}, {"speed", "--download=" + size, "--all"}} {
-			h.out.Reset()
-			h.errOut.Reset()
-			if code := Run(h.env, args); code != 0 || !strings.Contains(h.out.String(), "Downloading "+size+" MB") {
-				t.Fatalf("%v: code %d, stdout %s, stderr %s", args, code, h.out, h.errOut)
-			}
+	for _, size := range []string{"5", "99MB", "20mb"} {
+		root := newCommand(h.env, &exit)
+		cmd, _, err := root.Find([]string{"speed", "download"})
+		if err != nil {
+			t.Fatal(err)
 		}
+		if err := cmd.ParseFlags([]string{"--size", size}); err != nil {
+			t.Fatal(err)
+		}
+		if err := cmd.ValidateArgs(nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env, _, _ := inertEnv(t)
+	if code := Run(env, []string{"speed"}); code != 0 {
+		t.Fatal(code)
 	}
 }

@@ -601,7 +601,7 @@ func TestParseUsageNeedsBothCounts(t *testing.T) {
 	}
 }
 
-func TestRefreshAddsTheSpeedTestToAConfigFromBefore(t *testing.T) {
+func TestRefreshRemovesRetiredDiagnosticOverridesThroughCandidatePublication(t *testing.T) {
 	p := newPortal(t)
 	p.config = `{"inbounds":[{"type":"mixed","tag":"mixed","listen":"127.0.0.1","listen_port":1080}],"outbounds":[{"type":"selector","tag":"proxy","outbounds":["direct"]},{"type":"direct","tag":"direct"}],"experimental":{"clash_api":{"default_mode":"china"}}}`
 	i, layout := installer(t, p)
@@ -609,28 +609,21 @@ func TestRefreshAddsTheSpeedTestToAConfigFromBefore(t *testing.T) {
 		t.Fatal(err)
 	}
 	installed := readLocal(t, layout)
-	if installed.SpeedPort == 0 || installed.SpeedPort == installed.ListenPort || installed.SpeedPort == installed.APIPort {
-		t.Fatalf("the install gave the speed test %+v", installed)
-	}
-	// What an sbc from before the speed test wrote, and the ETag that would
-	// otherwise get an answer without a body.
-	before := installed
-	before.SpeedPort = 0
 	current, _ := os.ReadFile(layout.ConfigFile())
-	older, _ := singbox.Patch(current, before)
+	var config map[string]any
+	json.Unmarshal(current, &config)
+	config["inbounds"] = append(config["inbounds"].([]any), map[string]any{"type": "mixed", "tag": "speed-test", "listen_port": 3080})
+	config["outbounds"] = append(config["outbounds"].([]any), map[string]any{"type": "selector", "tag": "speed-test", "outbounds": []string{"direct"}})
+	config["route"] = map[string]any{"rules": []any{map[string]any{"inbound": []string{"speed-test"}, "outbound": "speed-test"}}}
+	older, _ := json.Marshal(config)
 	paths.WriteFile(layout.ConfigFile(), older, 0o600)
-	if _, err := i.Refresh(link(t, p), func() error { return nil }, func() error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	paths.WriteFile(layout.ConfigFile(), older, 0o600)
-
 	result, err := i.Refresh(link(t, p), func() error { return nil }, func() error { return nil })
-
 	if err != nil || !result.ConfigChanged || p.notModified != 0 {
 		t.Fatalf("changed %v, %d unchanged answers, err %v", result.ConfigChanged, p.notModified, err)
 	}
-	if after := readLocal(t, layout); after.SpeedPort == 0 || after.ListenPort != installed.ListenPort {
-		t.Errorf("after the refresh: %+v", after)
+	after, _ := os.ReadFile(layout.ConfigFile())
+	if singbox.HasDiagnosticOverride(after) || readLocal(t, layout) != installed {
+		t.Fatal("refresh retained override or changed local settings")
 	}
 }
 

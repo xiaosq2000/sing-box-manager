@@ -56,7 +56,9 @@ The current system is one Django/PostgreSQL control plane and one sing-box node,
 with systemd-triggered config sync and SQLite traffic history.
 Linux TUN meets the agreed M1b acceptance scope. Device management, a node
 agent, and multiple nodes are the planned scope. Extended TUN network
-compatibility and diagnostics remain separate work.
+compatibility remains separate work. The
+[diagnostic contract](CLIENT_DIAGNOSTICS.md) defines implemented mixed/TUN checks,
+capture limits, and acceptance gates.
 The diagram describes that target, not deployed functionality. Detailed schemas and
 interfaces need review in their implementation PRs. Quotas, public registration,
 plans, and payments remain outside this delivery sequence.
@@ -389,7 +391,8 @@ Client:
   reinstall keeps the earlier choice. If port 1080 is taken for TCP or UDP,
   `sbc install` picks a free port.
 - Cobra and pflag define commands, flags, validation, help and completion.
-  Existing flags stay supported, including `sbc speed --download [MB]`.
+  Diagnostics use the [current command contract](CLIENT_DIAGNOSTICS.md#cli-contract).
+  Retired diagnostic flags fail before requests.
   `sbc <command> --help` and `sbc help <command>` show localized help without
   performing the command's action. Unknown flags and extra arguments fail.
   `sbc completion bash|zsh|powershell` prints completion code. Bash and Zsh
@@ -407,42 +410,23 @@ Client:
   `sbc lang en|zh` saves a client-only choice, and `sbc lang auto` removes it;
   `SBC_LANG` overrides that choice too. `install.sh` reads only the environment.
 - Commands: `install`, `init`, `link`, `lang`, `upgrade`, `uninstall`, `on`, `off`, `env`,
-  `status`, `ip`, `speed`, `route`, `protocol`, `port`, `refresh`, `start`, `stop`,
+  `status`, `ip`, `check`, `speed download`, `route`, `protocol`, `port`, `refresh`, `start`, `stop`,
   `restart`, `run`, `desktop on|off`, `docker on|off` and `version`. `on` and `off`
   point shells, and the desktop after `desktop on`, at the proxy or away from it,
   and leave sing-box running, so an agent that runs `sbc off` keeps its own
   connection. `start` and `stop` control the service. `refresh` refreshes the config
   now, and `link set` replaces the subscription URL.
-- `sbc ip` asks IPify and ident.me for IPv4 through the active route.
-  `--dual-stack` adds IPv6 through family-specific endpoints. Source rows remain
-  separate. Each distinct observed IP gets one ipwho.is lookup for location, ASN
-  and organization estimates. Missing fields stay unknown. Detail failures retain
-  the IP and do not fail the command. Probe failures return nonzero. Requests use
-  HTTPS, have a 5-second timeout and never retry or follow redirects.
-  `--ai` adds unauthenticated Gemini, ChatGPT and Claude checks through the proxy-only
-  diagnostic inlet. It skips `direct` unless `--allow-direct-ai` is supplied.
-  That override uses the active route and permits exposure of the direct IP.
-  Checks follow no redirects and use no account credentials or automatic retries.
-  Gemini's undocumented page supplies a region code. ChatGPT's edge trace can
-  supply an IP and country. Claude reports public-page reachability, denial,
-  challenge or redirect, not a region. None proves service or account eligibility.
-  See [the CLI guide](README_SBC.md#exit-ip-and-ai-checks).
-- `sbc speed` tests the protocol in use, and `sbc speed --all` tests every protocol
-  without switching the one in use. It runs sing-box's delay test three times and
-  reports the median. It suggests no switch, because the proxy mostly carries
-  downloads rather than real-time traffic.
-- `sbc speed --download [MB]` downloads 20 MB, or 1 to 99 MB, from Cloudflare's
-  speed test through the protocol in use, or with `--all` through each protocol in
-  turn, and reports Mbit/s from the first byte. The download goes through a
-  loopback `speed-test` inbound, with the proxy's password where it has one. Its
-  route rule comes first and leads to a `speed-test` selector with the proxy
-  selector's protocols, so `sbc` can test any protocol on any route without
-  switching the one in use. A refresh adds these to a config from an earlier `sbc`.
-- Each download stops after 15 seconds and fails when nothing arrives for 5. The
-  server's monthly transfer grows by twice the bytes downloaded, which is why the
-  default tests one protocol. With `--all`, `sbc` suggests a switch only when a
-  protocol downloads at least 1.5 times as fast as the current one, since a single
-  download varies.
+- `sbc ip` retains separate IPify and ident.me observations, with optional
+  ipwho.is estimates. `sbc check` measures website first responses and HTTP access.
+  A private list, read-only presets, and explicit URLs support common destinations.
+  Both modes follow active rules. Default checks make no AI-provider request.
+- `sbc speed download [--size 20MB]` measures one Cloudflare response stream under
+  active rules. It has byte, time, and idle limits. Bare `speed` sends no request.
+  There is no protocol ranking, forced diagnostic inlet, or provider-region scraping.
+- Diagnostics preserve selections and installed configuration. Versioned JSON
+  separates transport, HTTP, capture, and IP validation. Missing TUN evidence
+  retains HTTP observations but fails scope verification. See
+  [the CLI guide](README_SBC.md#network-diagnostics).
 - `sbc status` shows this billing cycle's traffic from the `subscription-userinfo`
   header of the last refresh.
 - `sbc` lives in a directory of its own, which `sbc init` puts on PATH.
@@ -547,8 +531,8 @@ Routing:
 - Keep the five Clash modes and the protocol selector through the local API.
   `sbc tun on` generates the API port and secret and writes them to the owner's
   state (0600) and the root config (0640 `root:sbc-tun`). `sbc route` and
-  `sbc protocol` use that API without sudo. TUN `ip` and `speed` diagnostics
-  remain unimplemented and explicitly refuse requests.
+  `sbc protocol` use that API without sudo. Native diagnostics require owner
+  metadata bound to the committed generation, including inlet identity and known policy.
 - Accept activation only when a representative request works under the current
   mode. Never switch modes for verification. Resolve with the system resolver,
   match the new TUN connection by its source and destination socket, and obtain
@@ -614,9 +598,9 @@ Runtime commands:
   unavailable APIs. Never fall back to mixed mode after a TUN error.
   Status uses the same owner-state checks. Offline lists and completion remain
   based on the installed configuration.
-- IP and speed diagnostics explicitly refuse TUN before network requests,
-  including AI checks and download tests. Native diagnostics need separate
-  capture and privacy acceptance.
+- IP, website, and download diagnostics use native TUN connections and bounded,
+  asynchronous capture evidence. Unknown evidence never becomes a direct-path claim.
+  Unsafe state refuses requests. Read the [diagnostic contract](CLIENT_DIAGNOSTICS.md).
 
 Maintenance:
 
@@ -673,8 +657,8 @@ The VM uses ephemeral signing trust in test builds only. It does not change
 production trust or contact the operator portal. Its alternate protocol selector
 is a SOCKS fixture, not another real-protocol acceptance claim.
 
-TUN IP/speed diagnostics remain explicitly unsupported. Public IPv6 access is
-disabled. Isolated checks cover AAAA suppression and public IPv6 rejection, not
+Native IP, website, and download checks have separate diagnostic acceptance.
+Public IPv6 access is disabled. Isolated checks cover AAAA suppression and public IPv6 rejection, not
 full IPv6 connectivity. Docker bridge and interface-bound traffic are unvalidated
 compatibility areas, not M1b completion gates. Document these limits rather than treating missing
 tests as passes. Physical workstation reboot, production timer migration and a

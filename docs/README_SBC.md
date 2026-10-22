@@ -158,10 +158,12 @@ The commands never fall back to the mixed API while TUN is active or uncertain.
 `sbc status` uses the same owner-state checks. `route --list` and completion
 remain offline lists from the installed configuration, not live TUN queries.
 
-`sbc ip` and `sbc speed` explicitly refuse TUN mode before sending requests.
-This also applies to AI checks and downloads. Native TUN diagnostics need
-separate implementation and acceptance. Maintenance preserves CLI-selected
-routes and protocols across controlled publication.
+`sbc ip`, `sbc check`, and `sbc speed download` use the committed active TUN.
+An older generation without diagnostic metadata needs a local `sbc refresh` first.
+The commands never fall back to mixed mode. Missing capture evidence retains the
+HTTP observation but returns 1 as unverified scope. See
+[network diagnostics](#network-diagnostics) and the
+[measurement contract](CLIENT_DIAGNOSTICS.md).
 
 ### Acceptance and limits
 
@@ -175,7 +177,8 @@ Public IPv6 access is disabled in Linux TUN. DNS suppression and captured public
 IPv6 rejection have isolated fixture checks, not full IPv6 connectivity acceptance.
 Docker bridge networking and interface-bound sockets remain unvalidated
 compatibility areas. Do not assume those paths behave like the verified
-application traffic. TUN IP and speed diagnostics remain unsupported.
+application traffic. Diagnostic capture evidence covers only the observed request,
+not every application or socket.
 See the [acceptance scope](REFACTOR_SPEC.md#m1b-acceptance-scope).
 
 After `sbc tun off`, uninstall removes the user client and its maintenance
@@ -230,7 +233,10 @@ command is removed. Other commands retain their syntax and meaning.
 | `sbc route [name]`, `sbc protocol [name]`   | Show or switch a choice without restarting sing-box               |
 | `sbc route --list`                          | List installed route strategies and their meanings                |
 | `sbc port [number]`                         | Show or change the local proxy port                               |
-| `sbc status`, `sbc ip`, `sbc speed`         | Show status, exit location, or latency                            |
+| `sbc status`, `sbc ip`                      | Show status or observed exit IPs                                  |
+| `sbc check [URL...]`                        | Check website first responses and HTTP access                     |
+| `sbc check targets …`                       | Manage the private local website list                             |
+| `sbc speed download [--size 20MB]`          | Measure bounded single-stream download throughput                 |
 | `sbc start`, `sbc stop`, `sbc restart`      | Control the service                                               |
 | `sbc run`                                   | Run sing-box in the foreground                                    |
 | `sbc refresh`, `sbc upgrade`                | Refresh configuration, or install signed binary updates           |
@@ -258,7 +264,8 @@ refresh locally at the console.
 
 New installs can use `-p snell` in the Unix installer or `--protocol snell` in
 `sbc install`. Completion reads the installed selector. Mixed-mode diagnostics
-recognize Snell. TUN IP and speed diagnostics remain unsupported.
+recognize Snell. Diagnostics in both modes follow active rules, not a forced
+protocol benchmark.
 
 Snell uses a shared PSK and a separate userkey for each account. It does not
 use the deployment TLS certificate. Adding it does not change route policy or
@@ -597,97 +604,97 @@ A proxy failure does not cause an automatic direct retry.
 removes our shell and opted-in desktop proxy settings. Only traffic that enters
 sing-box follows the selected strategy.
 
-Rule-set maintenance and explicit proxy diagnostics, including `sbc speed`, can
-use the remote proxy even on `direct`. A route switch is not a promise to stop
-all remote-proxy traffic or to close existing connections.
+Rule-set maintenance can use the remote proxy even on `direct`. Diagnostics follow
+the active destination rules. A route switch does not close existing connections.
 
-## Exit IP and AI checks
+## Network diagnostics
 
 ```sh
 sbc ip
-sbc ip --dual-stack
-sbc ip --ai
-# This permits provider requests to expose your direct network IP:
-sbc ip --ai --allow-direct-ai
+sbc ip --dual-stack --json
+sbc check
+sbc check https://www.example.com/ --samples 3
+sbc check --preset global
+# Explicit AI targets can expose your direct public IP:
+sbc check --preset ai
+sbc speed download
+sbc speed download --size 5MB --json
 ```
 
-These diagnostics support mixed mode only. Under TUN, `sbc ip`, including
-`--dual-stack` and `--ai`, and `sbc speed` return an unsupported-command error
-without sending a network check.
+All three commands diagnose sbc traffic, not every application's environment.
+Mixed uses the ordinary authenticated inlet even with shell proxies off. Linux
+TUN uses native connections and ignores proxy variables. Both follow current
+routes and direct exceptions. They do not change selections or restart services.
 
-Plain `sbc ip` checks IPv4 through IPify and ident.me in parallel. `--dual-stack`
-also checks IPv6 through both sources. All requests use the ordinary local proxy
-and follow the active destination rules. The command changes no route or protocol
-and makes no AI provider request without `--ai`.
+### Website responses
 
-| Source                            | IPv4 endpoint            | IPv6 endpoint             |
-| --------------------------------- | ------------------------ | ------------------------- |
-| [IPify](https://www.ipify.org/)   | `https://api.ipify.org/` | `https://api6.ipify.org/` |
-| [ident.me](https://api.ident.me/) | `https://4.ident.me/`    | `https://6.ident.me/`     |
+`check` uses a small non-AI default list, the saved list, an explicit URL list,
+or a read-only `default`, `china`, `global`, or `ai` preset. Explicit URLs and
+`--preset` are mutually exclusive. Default sampling is once per target. The range
+is 1–5. Multiple samples show the median first-response time and response counts.
 
-Each row names the source, address family, and observed exit IP. Different source
-domains can use different exits under split routing. These sources do not represent
-all domestic or foreign destinations. Family-specific endpoints select the proxy's
-exit family, not the connection from `sbc` to its loopback proxy.
+HTTPS GET checks retain TLS verification, read at most 8 KiB, and follow no
+redirects. They use no cookies or account credentials. A 403 means a response
+arrived but access was denied. A 3xx is an unfinished redirect, not a completed
+visit. These checks do not measure rendering, login eligibility, or packet loss.
 
-The command sends each distinct observed IP to [ipwho.is](https://ipwhois.io/documentation)
-over HTTPS for country, region, city, ASN, and organization estimates. It uses the
-ISP name when the organization is absent. The lookup names the observed IP explicitly,
-not the lookup request's own exit. Duplicate observations share one lookup per command.
-Database names and locations are estimates, not proof of a service's region classification.
-Missing fields show `unknown`. No API key is required. The free database has rate
-limits and no uptime guarantee.
+Capture evidence comes from asynchronous local API observations. A short
+connection can disappear before inspection. Missing evidence remains unverified,
+never a guessed direct path. TUN scope verification fails in that case while
+retaining HTTP timing and status. Post-connect inspection cannot prevent a source
+IP from escaping with an uncaptured initial connection.
 
-IPv4 makes two probe requests and at most two detail requests. Dual-stack makes
-four probes and at most four detail requests. Each request has a 5-second timeout.
-Probes run in parallel, followed by parallel detail lookups. Requests use no account
-credentials or cookies. They do not follow redirects, retry, change sources, or
-fall back to a direct connection.
-
-A failed probe keeps its row and reports the error. Any requested probe failure
-returns exit code `1`, even if other probes succeed. A failed detail lookup keeps
-the IP and shows unknown fields with a separate error. Detail errors alone do not
-change the exit code. An IPv6 probe failure does not prove that IPv6 is unavailable
-on the whole network.
-
-`--ai` adds one unauthenticated request each to Gemini, ChatGPT, and Claude.
-These requests use the existing proxy-only diagnostic inlet, not the active
-route's destination rules or direct exceptions. They test the remote proxy, not
-whether community rules classify every provider host correctly. The CLI labels
-this distinction. `direct` skips them unless `--allow-direct-ai` is supplied.
-Missing or unrecognized proxy-only inlets also cause skips. Run `sbc refresh` to
-add the inlet to an older managed config. Skips do not count as failures.
-
-`--allow-direct-ai` requires `--ai` and uses the ordinary local proxy inlet.
-Requests then follow the active route, including direct exceptions. This flag
-permits direct access, but does not force it on a proxy strategy. It does not
-authorize a direct retry after a proxy failure.
-
-| Provider | What the result measures                                                            |
-| -------- | ----------------------------------------------------------------------------------- |
-| Gemini   | A region code in its public start page. The undocumented format can change          |
-| ChatGPT  | IP and country from its edge trace, when available. This is not account eligibility |
-| Claude   | Public-page reachability, denial, challenge, or redirect. Region remains unknown    |
-
-Checks use no browser cookies, API keys, or account credentials. They do not
-follow redirects, retry failures, solve challenges, or change the route.
-A successful page request does not prove that a signed-in account can use a
-service. These checks cannot guarantee protection from provider risk controls.
-A direct request exposes the local network's public IP to the provider.
-
-### Download speed
+### Website lists
 
 ```sh
-sbc speed --all
-sbc speed --download
-sbc speed --download 50
-sbc speed --download=50 --all
+sbc check targets list
+sbc check targets add https://www.example.com/health
+sbc check targets remove TARGET_ID
+sbc check targets export > targets.json
+sbc check targets import targets.json
+sbc check targets reset
 ```
 
-Without `--download`, the command tests page latency. A bare `--download`
-downloads 20 MB. An explicit size must be from 1 to 99 MB. `--all` tests every
-available protocol without switching the protocol in use.
-Downloads count against the server's transfer allowance.
+The private `diagnostic-targets.json` uses versioned JSON and stable IDs. It holds
+at most 24 targets. Import replaces the saved list only after full validation.
+List operations send no request. A missing file uses defaults without writing.
+An explicitly empty list stays empty. `reset` explicitly restores defaults.
+
+Only HTTPS is accepted. Embedded credentials and obvious local literals are
+rejected. Validation does not resolve mixed targets locally. Exact endpoint URLs
+remain distinct on one host. Exports preserve complete URLs, including potentially
+secret query values, and must remain private. Reports hide paths and query values.
+
+### Exit IP
+
+`ip` asks IPify and ident.me for IPv4. `--dual-stack` requests IPv6 too, subject
+to generation-bound policy. Linux TUN's known public IPv6 restriction produces
+explicit skipped, unverified rows. It does not become a verified dual-stack result.
+Unknown failures never prove that IPv6 rejection works.
+
+Different sources can observe different exits under split routing. No source
+represents every website. Each distinct IP gets one ipwho.is lookup for location,
+ASN, and organization estimates. A detail failure keeps the IP and is only a
+warning. Those databases receive observed addresses. Region estimates do not
+prove service or account eligibility.
+
+### Download throughput and results
+
+`speed download` uses Cloudflare's download source through the current route.
+Default payload is 20 decimal MB, with whole-MB sizes from 1 through 99. It measures
+one response stream, not maximum line capacity. It reports actual payload bytes,
+transfer duration, and Mbit/s separately from first-response latency. Budgets do
+not include all network overhead or guarantee a server bill.
+
+Bare `speed`, help, and completion send no request. Retired `--all`, `--download`,
+`--ai`, and `--allow-direct-ai` flags fail before requests. There is no protocol
+ranking or provider-region scraping.
+
+`--json` outputs a versioned result with separate transport, HTTP, capture, and
+IP validation data. Unknown values stay null. HTTP 2xx for every requested sample
+is required for a successful `check`. Any failed goal, changed runtime, or missing
+TUN scope proof returns 1. Invalid invocation or configuration returns 2. SIGINT
+returns 130 with partial results. See [the full contract](CLIENT_DIAGNOSTICS.md).
 
 ## Shell completion
 

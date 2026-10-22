@@ -43,6 +43,7 @@ sbc = [
   "internal/routes/",
   "internal/api/",
   "internal/probe/",
+  "internal/diagnostic/",
   "internal/singbox/",
   "internal/region/",
   "internal/tun/",
@@ -164,6 +165,9 @@ control-plane = [
   "internal/install/",
   "internal/probe/",
   "internal/cli/checks.go",
+  "internal/cli/diagnostic*.go",
+  "internal/diagnostic/",
+  "internal/api/",
   "sing_box_manager/models.py",
   "sing_box_manager/settings.py",
   "config/inventory/",
@@ -200,6 +204,19 @@ control-plane = [
   "docs/examples/",
 ]
 
+"docs/CLIENT_DIAGNOSTICS.md" = [
+  "@sbc",
+  "internal/e2e/e2e_test.go",
+  "sing_box_manager/web/client/install.ps1",
+  "scripts/dev/test-install-ps1.ps1",
+  "sing_box_manager/desktop_config.py",
+  "scripts/dev/test-tun-vm.sh",
+  "scripts/dev/tun-vm/",
+  "tests/test_tun_vm.py",
+  "tests/test_tun_lifecycle.py",
+  "tests/test_desktop_config.py",
+]
+
 "docs/README_SBC.md" = [
   "@sbc",
   "@unix-installer",
@@ -232,6 +249,9 @@ control-plane = [
 
 "docs/README_WIN.md" = [
   "internal/cli/",
+  "internal/diagnostic/",
+  "internal/probe/",
+  "internal/api/",
   "internal/maintenance/",
   "internal/install/",
   "internal/routes/",

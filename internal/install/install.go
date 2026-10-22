@@ -219,9 +219,6 @@ func (i *Installer) local() (singbox.Local, error) {
 	if local.APIPort, err = singbox.FreePort(0); err != nil {
 		return local, err
 	}
-	if local.SpeedPort, err = speedPort(local); err != nil {
-		return local, err
-	}
 	if local.APISecret, err = randomHex(16); err != nil {
 		return local, err
 	}
@@ -236,21 +233,6 @@ func (i *Installer) local() (singbox.Local, error) {
 		}
 	}
 	return local, nil
-}
-
-// speedPort picks a free port for the speed test that the config does not
-// already use.
-func speedPort(local singbox.Local) (int, error) {
-	for range 10 {
-		port, err := singbox.FreePort(0)
-		if err != nil {
-			return 0, err
-		}
-		if port != local.ListenPort && port != local.APIPort {
-			return port, nil
-		}
-	}
-	return 0, i18n.New("no free loopback port")
 }
 
 func (i *Installer) shared() bool {
@@ -522,15 +504,8 @@ func (i *Installer) Refresh(link Link, restart func() error, ready func() error)
 	if err != nil {
 		return RefreshResult{}, err
 	}
-	// A config from before the speed test gets a port for it, and a full
-	// fetch to patch, since the portal answers an unchanged config with no
-	// body.
-	if local.SpeedPort == 0 {
-		if local.SpeedPort, err = speedPort(local); err != nil {
-			return RefreshResult{}, err
-		}
-	}
-	conditional := !singbox.MissingSpeedTest(current)
+	// Retired diagnostic overrides leave only through complete candidate publication.
+	conditional := !singbox.HasDiagnosticOverride(current)
 	version, err := os.ReadFile(i.Layout.SingBoxVersion())
 	if err != nil {
 		return RefreshResult{}, i18n.New("the installed sing-box version is unknown; run 'sbc install'")

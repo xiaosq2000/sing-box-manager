@@ -299,23 +299,21 @@ func TestTUNMutationsKeepTheOperationLock(t *testing.T) {
 	f.untouched(t)
 }
 
-func TestTUNRejectsMixedDiagnosticsBeforeAnyNetworkOrConfigAccess(t *testing.T) {
+func TestTUNUnsafeDiagnosticsRefuseBeforeAnyNetworkOrConfigAccess(t *testing.T) {
 	for _, capture := range []tun.CaptureState{
-		{Status: "active", Phase: "active", Transaction: strings.Repeat("a", 32)},
 		{Status: "dirty", Phase: "pending"}, {Status: "dirty", Phase: "dirty"},
 		{Status: "off", Phase: "pending"}, {Status: "off", Phase: "active"}, {Status: "unknown"},
 	} {
-		for _, command := range [][]string{
-			{"ip"}, {"ip", "--dual-stack"}, {"ip", "--ai"}, {"ip", "--ai", "--allow-direct-ai"},
-			{"ip", "--dual-stack", "--ai"}, {"ip", "--dual-stack", "--ai", "--allow-direct-ai"},
-			{"speed"}, {"speed", "--all"}, {"speed", "--download", "50"},
-		} {
+		for _, command := range [][]string{{"ip"}, {"ip", "--dual-stack"}, {"speed", "download"}, {"check", "https://fixture.test/"}} {
 			t.Run(capture.Status+"-"+capture.Phase+"-"+strings.Join(command, "-"), func(t *testing.T) {
 				f := newRuntimeFixture(t)
 				f.capture = capture
-				f.h.env.Layout = func() (paths.Layout, error) { t.Fatal("TUN diagnostic read mixed config"); return paths.Layout{}, nil }
-				if code := Run(f.h.env, command); code != 1 || !strings.Contains(f.h.errOut.String(), "not available in TUN mode") {
-					t.Fatalf("diagnostic was not explicitly refused: %s", f.h.errOut)
+				f.h.env.Layout = func() (paths.Layout, error) {
+					t.Fatal("unsafe diagnostic inspected config")
+					return paths.Layout{}, nil
+				}
+				if code := Run(f.h.env, command); code != 1 || !strings.Contains(f.h.errOut.String(), "TUN state is unsafe") {
+					t.Fatalf("code %d: %s", code, f.h.errOut)
 				}
 				if len(f.requests()) != 0 {
 					t.Fatal("refused diagnostic called the TUN API")
@@ -324,4 +322,15 @@ func TestTUNRejectsMixedDiagnosticsBeforeAnyNetworkOrConfigAccess(t *testing.T) 
 			})
 		}
 	}
+}
+
+func TestTUNDiagnosticsRequireGenerationBoundOwnerState(t *testing.T) {
+	f := newRuntimeFixture(t)
+	if code := Run(f.h.env, []string{"ip"}); code != 1 || !strings.Contains(f.h.errOut.String(), "generation-bound") {
+		t.Fatalf("code %d: %s", code, f.h.errOut)
+	}
+	if len(f.requests()) != 0 {
+		t.Fatal("invalid generation called the API")
+	}
+	f.untouched(t)
 }
