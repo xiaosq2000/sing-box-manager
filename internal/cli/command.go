@@ -13,6 +13,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/install"
 	"github.com/xiaosq2000/sing-box-manager/internal/routes"
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
+	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
@@ -484,6 +485,7 @@ func localizeFlagError(cmd *cobra.Command, err error) error {
 // Help uses command and flag metadata, not a second list of command syntax.
 func printHelp(cmd *cobra.Command) {
 	out := cmd.OutOrStdout()
+	th := tui.NewTheme(out, nil)
 	description := cmd.Short
 	if cmd.Long != "" {
 		description = cmd.Long
@@ -496,18 +498,18 @@ func printHelp(cmd *cobra.Command) {
 	if cmd == cmd.Root() {
 		usage = "sbc <command> [flags]"
 	}
-	fmt.Fprintf(out, "%s %s\n", i18n.T("Usage:"), usage)
+	fmt.Fprintf(out, "%s %s\n", th.Key.Render(i18n.T("Usage:")), usage)
 	width := 0
 	for _, child := range cmd.Commands() {
 		if !child.Hidden {
-			width = max(width, len(child.Use))
+			width = max(width, tui.DisplayWidth(child.Use))
 		}
 	}
 	for _, group := range cmd.Groups() {
-		fmt.Fprintf(out, "\n%s\n", group.Title)
+		fmt.Fprintf(out, "\n%s\n", th.Header.Render(group.Title))
 		for _, child := range cmd.Commands() {
 			if child.GroupID == group.ID && !child.Hidden {
-				fmt.Fprintf(out, "  %-*s  %s\n", width, child.Use, child.Short)
+				fmt.Fprintf(out, "  %s  %s\n", th.Primary.Render(tui.PadRight(child.Use, width)), child.Short)
 			}
 		}
 	}
@@ -518,18 +520,18 @@ func printHelp(cmd *cobra.Command) {
 		}
 	}
 	if ungrouped {
-		fmt.Fprintf(out, "\n%s\n", i18n.T("Commands:"))
+		fmt.Fprintf(out, "\n%s\n", th.Header.Render(i18n.T("Commands:")))
 		for _, child := range cmd.Commands() {
 			if child.GroupID == "" && !child.Hidden {
-				fmt.Fprintf(out, "  %-*s  %s\n", width, child.Use, child.Short)
+				fmt.Fprintf(out, "  %s  %s\n", th.Primary.Render(tui.PadRight(child.Use, width)), child.Short)
 			}
 		}
 	}
 	if cmd.HasAvailableFlags() {
-		fmt.Fprintf(out, "\n%s\n%s", i18n.T("Flags:"), cmd.LocalFlags().FlagUsages())
+		fmt.Fprintf(out, "\n%s\n%s", th.Header.Render(i18n.T("Flags:")), cmd.LocalFlags().FlagUsages())
 	}
 	if cmd == cmd.Root() {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, i18n.T("Use 'sbc <command> --help' for command details."))
+		fmt.Fprintln(out, th.Muted.Render(i18n.T("Use 'sbc <command> --help' for command details.")))
 	}
 }

@@ -12,8 +12,9 @@ pixi run precommit-install
 ```
 
 See [Development](docs/DEVELOPMENT.md) for focused checks and native-platform test
-requirements. The `sbc` command layer uses Cobra and pflag. Other client code
-uses the Go standard library, and builds keep cgo disabled. Shared Unix scripts
+requirements. The `sbc` command layer uses Cobra and pflag. Terminal views use
+Charmbracelet Lipgloss, BubbleTea, and Bubbles. Other client code uses the Go
+standard library. Builds keep cgo disabled. Shared Unix scripts
 must remain compatible with bash 3.2. Windows scripts must remain compatible with
 Windows PowerShell 5.1.
 

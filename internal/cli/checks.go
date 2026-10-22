@@ -13,12 +13,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xiaosq2000/sing-box-manager/internal/diagnostic"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
+	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 )
 
 type diagnosticOptions struct {
@@ -165,6 +166,42 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 			}
 		}
 	}()
+	var progressMu sync.Mutex
+	var liveProg *tea.Program
+	var liveDone chan struct{}
+	var liveErr error
+	sendProgress := func() {
+		if liveProg == nil {
+			return
+		}
+		progressMu.Lock()
+		rows, pending := buildDiagnosticTableRows(report.Observations)
+		progressMu.Unlock()
+		liveProg.Send(tui.LiveTableUpdateMsg{Rows: rows, Pending: pending})
+	}
+	if !options.json && tui.Interactive(env.Stdin, env.Stdout, env.Getenv) {
+		th := tui.NewTheme(env.Stdout, env.Getenv)
+		headerLine := ""
+		if report.Mode != nil {
+			headerLine = strings.TrimSuffix(fmt.Sprintf(i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol)), "\n")
+		}
+		initialRows, initialPending := buildDiagnosticTableRows(report.Observations)
+		liveModel := tui.NewLiveTableModel(th, headerLine, diagnosticHeaders(), initialRows, initialPending, i18n.T("testing..."), func() {
+			interrupted.CompareAndSwap(0, 130)
+			cancel()
+		})
+		liveModel.Width, liveModel.Height = tui.TerminalSize(env.Stdout)
+		liveModel.HelpText = i18n.T("↑/↓ scroll • ctrl+c cancel")
+		liveProg = tea.NewProgram(liveModel, tea.WithInput(env.Stdin), tea.WithOutput(env.Stdout), tea.WithoutSignalHandler())
+		liveDone = make(chan struct{})
+		go func() {
+			defer close(liveDone)
+			_, liveErr = liveProg.Run()
+			if liveErr != nil {
+				cancel()
+			}
+		}()
+	}
 	var workers sync.WaitGroup
 	jobs := make(chan int)
 	for range min(4, len(entries)) {
@@ -188,7 +225,11 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 					if command == "speed.download" {
 						limit = int64(options.megabytes) * 1_000_000
 					}
-					row.Samples[attempt] = runtime.requester.Fetch(ctx, entries[index].URL, limit, command == "speed.download")
+					sample := runtime.requester.Fetch(ctx, entries[index].URL, limit, command == "speed.download")
+					progressMu.Lock()
+					row.Samples[attempt] = sample
+					progressMu.Unlock()
+					sendProgress()
 					if !runtime.check(ctx) {
 						cancel()
 						break
@@ -222,6 +263,7 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 				row.IPValidation = "valid"
 			}
 		}
+		sendProgress()
 	}
 	// Optional lookups never prevent retaining an already observed address.
 	if command == "ip" && ctx.Err() == nil {
@@ -274,6 +316,10 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 	runtime.observer.Stop()
 	cancel()
 	<-watchDone
+	if liveProg != nil {
+		liveProg.Send(tui.LiveTableDoneMsg{})
+		<-liveDone
+	}
 	report.ContextValid = runtime.isValid()
 	if !report.ContextValid {
 		report.Issue = "runtime-changed"
@@ -298,6 +344,10 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 			code = 1
 		}
 	}
+	if liveErr != nil {
+		fmt.Fprintf(env.Stderr, "sbc: %s\n", tui.SafeText(liveErr.Error()))
+		code = 1
+	}
 	if report.Issue != "" {
 		code = 1
 	}
@@ -308,6 +358,87 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 	return renderDiagnostic(env, report, options.json, code)
 }
 
+func diagnosticHeaders() []string {
+	raw := strings.TrimSuffix(i18n.T("Target / source\tFirst response\tResponses\tHTTP\tCapture\tPath\tExit IP / rate\n"), "\n")
+	return strings.Split(raw, "\t")
+}
+
+func formatObservationRow(row diagnosticObservation) ([]string, bool) {
+	name := row.ID + " (" + row.Host + ")"
+	if row.Source != "" {
+		name = fmt.Sprintf("%s IPv%d", row.Source, row.Family)
+	}
+	if row.Policy != "" {
+		return []string{name, "-", "-", "-", i18n.T("policy-skipped, not verified"), "-", "-"}, false
+	}
+	var durations []float64
+	var statuses []string
+	verified, responses, path, pending := true, 0, "unknown", false
+	for _, sample := range row.Samples {
+		if sample.Issue == "not-started" {
+			pending = true
+		}
+		if sample.FirstResponseMS != nil {
+			durations = append(durations, *sample.FirstResponseMS)
+		}
+		if sample.HTTPStatus != nil {
+			responses++
+			statuses = append(statuses, strconv.Itoa(*sample.HTTPStatus))
+		}
+		verified = verified && sample.Capture.Verified
+		if sample.Capture.Path != "unknown" {
+			path = sample.Capture.Path
+		}
+	}
+	latency := "-"
+	if len(durations) > 0 {
+		slices.Sort(durations)
+		middle := len(durations) / 2
+		median := durations[middle]
+		if len(durations)%2 == 0 {
+			median = (median + durations[middle-1]) / 2
+		}
+		latency = fmt.Sprintf("%.1f ms", median)
+	}
+	capture := i18n.T("unverified")
+	if verified {
+		capture = i18n.T("verified")
+	}
+	value := row.IP
+	if value == "" {
+		value = i18n.T("unknown")
+	}
+	if len(row.Samples) == 1 && row.Samples[0].MbitPerSecond != nil {
+		value = fmt.Sprintf("%.1f Mbit/s", *row.Samples[0].MbitPerSecond)
+	}
+	httpText := strings.Join(slices.Compact(statuses), "/")
+	if httpText == "" {
+		httpText = "-"
+	}
+	return []string{
+		name,
+		latency,
+		fmt.Sprintf("%d/%d", responses, len(row.Samples)),
+		httpText,
+		capture,
+		diagnostic.SafeText(path),
+		value,
+	}, pending
+}
+
+func buildDiagnosticTableRows(observations []diagnosticObservation) ([][]string, map[int]bool) {
+	rows := make([][]string, len(observations))
+	pending := make(map[int]bool)
+	for i, obs := range observations {
+		row, isPending := formatObservationRow(obs)
+		rows[i] = row
+		if isPending {
+			pending[i] = true
+		}
+	}
+	return rows, pending
+}
+
 func renderDiagnostic(env Env, report diagnosticReport, asJSON bool, code int) int {
 	if asJSON {
 		if json.NewEncoder(env.Stdout).Encode(report) != nil {
@@ -315,63 +446,20 @@ func renderDiagnostic(env Env, report diagnosticReport, asJSON bool, code int) i
 		}
 		return code
 	}
+	th := tui.NewTheme(env.Stdout, env.Getenv)
 	if report.Mode != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol))
+		headerLine := fmt.Sprintf(i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol))
+		if th.Colored {
+			headerLine = th.Header.Render(strings.TrimSuffix(headerLine, "\n")) + "\n"
+		}
+		width, _ := tui.TerminalSize(env.Stdout)
+		fmt.Fprint(env.Stdout, tui.FitLines(headerLine, width))
 	}
 	for _, warning := range slices.Compact(report.Warnings) {
 		fmt.Fprintln(env.Stderr, diagnosticMessage(warning))
 	}
-	table := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprint(table, i18n.T("Target / source\tFirst response\tResponses\tHTTP\tCapture\tPath\tExit IP / rate\n"))
-	for _, row := range report.Observations {
-		name := row.ID + " (" + row.Host + ")"
-		if row.Source != "" {
-			name = fmt.Sprintf("%s IPv%d", row.Source, row.Family)
-		}
-		if row.Policy != "" {
-			fmt.Fprintf(table, "%s\t-\t-\t-\t%s\t-\t-\n", name, i18n.T("policy-skipped, not verified"))
-			continue
-		}
-		var durations []float64
-		var statuses []string
-		verified, responses, path := true, 0, "unknown"
-		for _, sample := range row.Samples {
-			if sample.FirstResponseMS != nil {
-				durations = append(durations, *sample.FirstResponseMS)
-			}
-			if sample.HTTPStatus != nil {
-				responses++
-				statuses = append(statuses, strconv.Itoa(*sample.HTTPStatus))
-			}
-			verified = verified && sample.Capture.Verified
-			if sample.Capture.Path != "unknown" {
-				path = sample.Capture.Path
-			}
-		}
-		latency := "-"
-		if len(durations) > 0 {
-			slices.Sort(durations)
-			middle := len(durations) / 2
-			median := durations[middle]
-			if len(durations)%2 == 0 {
-				median = (median + durations[middle-1]) / 2
-			}
-			latency = fmt.Sprintf("%.1f ms", median)
-		}
-		capture := i18n.T("unverified")
-		if verified {
-			capture = i18n.T("verified")
-		}
-		value := row.IP
-		if value == "" {
-			value = i18n.T("unknown")
-		}
-		if len(row.Samples) == 1 && row.Samples[0].MbitPerSecond != nil {
-			value = fmt.Sprintf("%.1f Mbit/s", *row.Samples[0].MbitPerSecond)
-		}
-		fmt.Fprintf(table, "%s\t%s\t%d/%d\t%s\t%s\t%s\t%s\n", name, latency, responses, len(row.Samples), strings.Join(slices.Compact(statuses), "/"), capture, diagnostic.SafeText(path), value)
-	}
-	table.Flush()
+	rows, _ := buildDiagnosticTableRows(report.Observations)
+	fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, diagnosticHeaders(), rows, tui.DiagnosticCellStyler))
 	for _, row := range report.Observations {
 		if row.Policy != "" {
 			continue

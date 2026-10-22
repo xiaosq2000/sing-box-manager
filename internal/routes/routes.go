@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
+	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 )
 
 // Canonical accepts the three legacy names without changing their meaning.
@@ -53,7 +54,7 @@ func Description(name string) string {
 func Help() string {
 	text := ""
 	for _, name := range []string{"direct", "ai-only", "gfw-proxy", "china-direct", "global"} {
-		text += "  " + name + "\t" + Description(name) + "\n"
+		text += "  " + tui.PadRight(name, 14) + Description(name) + "\n"
 	}
 	return text + i18n.T("Aliases: ai = ai-only, gfw = gfw-proxy, china = china-direct. Security restrictions remain active.")
 }

@@ -220,7 +220,7 @@ assert_selection() {
 }
 set_mode() {
 	sbc route "$1"
-	[ "$(sbc route | cut -d ' ' -f 1)" = "$1" ]
+	sbc route | grep -F "$1 (current)" >/dev/null
 	sudo resolvectl flush-caches
 }
 assert_path() {
@@ -360,13 +360,13 @@ cp "$HOME/diagnostic-state.saved" "$XDG_CONFIG_HOME/sbc/tun.json"
 check_diagnostic portal.fixture.test direct
 step "native CLI switches protocols and refuses retired diagnostics"
 sbc route gfw
-[ "$(sbc route | cut -d ' ' -f 1)" = gfw-proxy ]
+sbc route | grep -F 'gfw-proxy (current)' >/dev/null
 sudo resolvectl flush-caches
 sbc protocol trojan
-[ "$(sbc protocol | cut -d ' ' -f 1)" = trojan ]
+sbc protocol | grep -F 'trojan (current)' >/dev/null
 assert_path gfw.fixture.test proxy
 sbc protocol naive
-[ "$(sbc protocol | cut -d ' ' -f 1)" = naive ]
+sbc protocol | grep -F 'naive (current)' >/dev/null
 assert_path gfw.fixture.test proxy-alt
 sbc protocol trojan
 assert_path gfw.fixture.test proxy

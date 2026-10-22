@@ -12,6 +12,10 @@ import (
 
 // runPrivacy summarizes the browser and region choices. It changes nothing.
 func runPrivacy(env Env) int {
+	return withPanel(env, privacySummary)
+}
+
+func privacySummary(env Env) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -32,54 +36,54 @@ func runPrivacy(env Env) int {
 func printBrowserSummary(env Env) {
 	privacy, err := env.Privacy()
 	if err != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("Browser protection: unavailable (%v)\n"), err)
+		printKVLine(env, fmt.Sprintf(i18n.T("Browser protection: unavailable (%v)\n"), err))
 		return
 	}
 	optedOut, err := privacy.WebRTCOptedOut()
 	if err != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("Browser protection: unknown (%v)\n"), err)
+		printKVLine(env, fmt.Sprintf(i18n.T("Browser protection: unknown (%v)\n"), err))
 		return
 	}
 	if optedOut {
-		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: off (opted out)"))
+		printKVLine(env, i18n.T("Browser protection: off (opted out)")+"\n")
 		return
 	}
-	fmt.Fprintln(env.Stdout, i18n.T("Browser protection: on (automatic repair)"))
+	printKVLine(env, i18n.T("Browser protection: on (automatic repair)")+"\n")
 }
 
 func printRegionChoice(env Env, layout paths.Layout) {
 	status, err := regionFor(env, layout).Status()
 	if err != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("Region matching: unknown (%v)\n"), err)
+		printKVLine(env, fmt.Sprintf(i18n.T("Region matching: unknown (%v)\n"), err))
 		return
 	}
 	if status.Scope == region.ScopeSystem {
 		if status.State != nil && status.Mode.Any() {
 			profile := status.State.Profile
-			fmt.Fprintf(env.Stdout, i18n.T("Region matching: %s (system) (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language)
+			printKVLine(env, fmt.Sprintf(i18n.T("Region matching: %s (system) (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language))
 		} else if status.Mode.Any() {
-			fmt.Fprintln(env.Stdout, i18n.T("Region matching: on (system), but the saved profile is missing; run 'sbc refresh'."))
+			printKVLine(env, i18n.T("Region matching: on (system), but the saved profile is missing; run 'sbc refresh'.")+"\n")
 		} else if region.SystemStateExists(systemRegionPaths(env)) {
-			fmt.Fprintln(env.Stdout, i18n.T("Region matching: a system region record exists; run 'sbc privacy region off --system'"))
+			printKVLine(env, i18n.T("Region matching: a system region record exists; run 'sbc privacy region off --system'")+"\n")
 		} else {
-			fmt.Fprintln(env.Stdout, i18n.T("Region matching: off"))
+			printKVLine(env, i18n.T("Region matching: off")+"\n")
 		}
 		return
 	}
 	if status.State == nil {
 		if status.MissingState {
-			fmt.Fprintln(env.Stdout, i18n.T("Region matching: on, but the saved profile is missing; run 'sbc refresh'."))
+			printKVLine(env, i18n.T("Region matching: on, but the saved profile is missing; run 'sbc refresh'.")+"\n")
 		} else {
-			fmt.Fprintln(env.Stdout, i18n.T("Region matching: unavailable: no client region is saved"))
+			printKVLine(env, i18n.T("Region matching: unavailable: no client region is saved")+"\n")
 		}
 		printOrphanedSystemRegion(env)
 		return
 	}
 	if status.Mode.Any() {
 		profile := status.State.Profile
-		fmt.Fprintf(env.Stdout, i18n.T("Region matching: %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language)
+		printKVLine(env, fmt.Sprintf(i18n.T("Region matching: %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language))
 	} else {
-		fmt.Fprintln(env.Stdout, i18n.T("Region matching: off"))
+		printKVLine(env, i18n.T("Region matching: off")+"\n")
 	}
 	printOrphanedSystemChoice(env)
 }
@@ -140,10 +144,10 @@ func printBrowserStatus(env Env, privacy desktop.BrowserPrivacy) int {
 		return fail(env, err)
 	}
 	if optedOut {
-		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: off (opted out)"))
+		printKVLine(env, i18n.T("Browser protection: off (opted out)")+"\n")
 		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy browser webrtc on' to enable it."))
 	} else {
-		fmt.Fprintln(env.Stdout, i18n.T("Browser protection: on (automatic repair)"))
+		printKVLine(env, i18n.T("Browser protection: on (automatic repair)")+"\n")
 		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy browser webrtc off' to remove the managed Chrome policy."))
 	}
 	fmt.Fprintln(env.Stdout, i18n.T("Only Google Chrome on Linux is managed."))

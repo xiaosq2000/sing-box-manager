@@ -52,14 +52,14 @@ func printBrowserGeolocationStatus(env Env, manager *desktop.ChromeGeolocation) 
 	if status.Enabled {
 		choice = i18n.T("on")
 	}
-	fmt.Fprintf(env.Stdout, i18n.T("Chrome geolocation saved choice: %s\n"), choice)
+	printKVLine(env, fmt.Sprintf(i18n.T("Chrome geolocation saved choice: %s\n"), choice))
 	if status.Configured {
-		fmt.Fprintln(env.Stdout, i18n.T("Chrome geolocation policy: blocking value found in local files"))
+		printKVLine(env, i18n.T("Chrome geolocation policy: blocking value found in local files")+"\n")
 	} else {
-		fmt.Fprintln(env.Stdout, i18n.T("Chrome geolocation policy: no local blocking value found"))
+		printKVLine(env, i18n.T("Chrome geolocation policy: no local blocking value found")+"\n")
 	}
 	if status.Owned {
-		fmt.Fprintln(env.Stdout, i18n.T("Chrome geolocation ownership record: present"))
+		printKVLine(env, i18n.T("Chrome geolocation ownership record: present")+"\n")
 	}
 	if !status.Enabled && status.Owned {
 		fmt.Fprintln(env.Stdout, i18n.T("Chrome geolocation cleanup is pending. Retry 'sbc privacy browser geolocation off'."))

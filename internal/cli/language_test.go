@@ -70,7 +70,7 @@ func TestLangShowsSavesAndClearsTheChoice(t *testing.T) {
 	}
 
 	got, _ = runLangCommand("lang")
-	if got != "语言：简体中文（已保存设置）\n" {
+	if got != "语言：    简体中文（已保存设置）\n" {
 		t.Fatalf("Chinese query: %q", got)
 	}
 
@@ -103,7 +103,7 @@ func TestLangShowsTheLocaleAndTheDefault(t *testing.T) {
 		lang string
 		want string
 	}{
-		{"zh_CN.UTF-8", "语言：简体中文（系统 locale）\n"},
+		{"zh_CN.UTF-8", "语言：    简体中文（系统 locale）\n"},
 		{"", "Language: English (default)\n"},
 	} {
 		t.Setenv("LANG", c.lang)
@@ -129,7 +129,7 @@ func TestSBCLangOverridesTheSavedChoice(t *testing.T) {
 	if code := Run(env, []string{"lang"}); code != 0 {
 		t.Fatalf("query: code %d, stderr %q", code, errOut.String())
 	}
-	if got := out.String(); got != "Language: English (SBC_LANG)\nSaved choice: Simplified Chinese\n" {
+	if got := out.String(); got != "Language:     English (SBC_LANG)\nSaved choice: Simplified Chinese\n" {
 		t.Fatalf("query: %q", got)
 	}
 
@@ -150,7 +150,7 @@ func TestSBCLangOverridesTheSavedChoice(t *testing.T) {
 	if code := Run(env, []string{"lang"}); code != 0 {
 		t.Fatalf("query without SBC_LANG: code %d, stderr %q", code, errOut.String())
 	}
-	if got := out.String(); got != "语言：简体中文（已保存设置）\n" {
+	if got := out.String(); got != "语言：    简体中文（已保存设置）\n" {
 		t.Fatalf("query without SBC_LANG: %q", got)
 	}
 }

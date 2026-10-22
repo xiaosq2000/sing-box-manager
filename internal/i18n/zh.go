@@ -219,7 +219,6 @@ var zh = map[string]string{
 	"route:    %s\nprotocol: %s\n":          "路由：%s\n协议：%s\n",
 	"Route: %s\n":                           "路由：%s\n",
 	"Protocol: %s\n":                        "协议：%s\n",
-	"%s (choices: %s)\n":                    "%s（可选：%s）\n",
 	"unknown route %q; choose one of %s":    "未知路由 %q，可选：%s",
 	"unknown protocol %q; choose one of %s": "未知协议 %q，可选：%s",
 

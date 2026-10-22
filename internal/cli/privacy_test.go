@@ -93,7 +93,7 @@ func TestPrivacyBrowserStatusReadsTheSavedChoice(t *testing.T) {
 		if code := Run(h.env, []string{"privacy", "browser"}); code != 0 {
 			t.Fatal(h.errOut)
 		}
-		output := h.out.String()
+		output := strings.Join(strings.Fields(h.out.String()), " ")
 		want := "Browser protection: on (automatic repair)"
 		if optedOut {
 			want = "Browser protection: off (opted out)"
@@ -111,7 +111,7 @@ func TestPrivacySummaryShowsBothFeatures(t *testing.T) {
 	if code := Run(h.env, []string{"privacy"}); code != 0 {
 		t.Fatal(h.errOut)
 	}
-	output := h.out.String()
+	output := strings.Join(strings.Fields(h.out.String()), " ")
 	for _, want := range []string{"Browser protection: on", "Region matching:", "Run 'sbc privacy browser' or 'sbc privacy region'"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("stdout %q does not contain %q", output, want)

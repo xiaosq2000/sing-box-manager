@@ -101,10 +101,10 @@ func TestTUNQueriesAndSwitchesUseOnlyTheOwnerAPI(t *testing.T) {
 		if code := Run(f.h.env, command); code != 0 {
 			t.Fatalf("%v: %s", command, f.h.errOut)
 		}
-		if command[0] == "route" && !strings.HasPrefix(f.h.out.String(), "gfw-proxy (choices:") {
+		if command[0] == "route" && !strings.Contains(f.h.out.String(), "gfw-proxy (current)") {
 			t.Fatal(f.h.out)
 		}
-		if command[0] == "protocol" && !strings.HasPrefix(f.h.out.String(), "naive (choices:") {
+		if command[0] == "protocol" && !strings.Contains(f.h.out.String(), "naive (current)") {
 			t.Fatal(f.h.out)
 		}
 		if command[0] == "status" && !strings.Contains(f.h.out.String(), "route:    gfw-proxy\nprotocol: naive\n") {
@@ -254,7 +254,7 @@ func TestTUNMutationFailureDoesNotFallBackOrRestart(t *testing.T) {
 func TestOffCaptureIgnoresStaleTUNState(t *testing.T) {
 	f := newRuntimeFixture(t)
 	f.capture = tun.CaptureState{Status: "off", Phase: "off"}
-	if code := Run(f.h.env, []string{"route"}); code != 0 || !strings.HasPrefix(f.h.out.String(), "china-direct (choices:") {
+	if code := Run(f.h.env, []string{"route"}); code != 0 || !strings.Contains(f.h.out.String(), "china-direct (current)") {
 		t.Fatalf("off did not preserve the mixed path: %s%s", f.h.out, f.h.errOut)
 	}
 	if f.mixed.Load() != 1 || len(f.requests()) != 0 {

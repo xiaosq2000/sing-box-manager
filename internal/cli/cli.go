@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/shell"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
 	"github.com/xiaosq2000/sing-box-manager/internal/trust"
+	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 	"github.com/xiaosq2000/sing-box-manager/internal/winsettings"
 )
@@ -143,8 +145,16 @@ func DefaultEnv(version string, stdin io.Reader, stdout, stderr io.Writer) Env {
 }
 
 func fail(env Env, err error) int {
-	fmt.Fprintf(env.Stderr, "sbc: %v\n", err)
+	fmt.Fprintf(env.Stderr, "sbc: %s\n", tui.SafeLines(err.Error()))
 	return 1
+}
+
+func printStatusLine(env Env, text string) {
+	fmt.Fprint(env.Stdout, tui.FormatColonLine(env.Stdout, env.Getenv, text, tui.StatusKeyWidth))
+}
+
+func printKVLine(env Env, text string) {
+	fmt.Fprint(env.Stdout, tui.FormatColonLine(env.Stdout, env.Getenv, text, 0))
 }
 
 // prompt asks for an answer when standard input is a terminal, and stays quiet
@@ -273,7 +283,7 @@ func checkProxy(env Env, layout paths.Layout, options installOptions) error {
 	if err != nil {
 		return i18n.Errorf("sing-box runs, but no page loads through %s: %v.\nTry another protocol with 'sbc protocol <name>', or check this network", protocol, err)
 	}
-	fmt.Fprintf(env.Stdout, i18n.T("Route %s, protocol %s: a page loads through the proxy in %d ms.\n"), route, protocol, delay.Milliseconds())
+	fmt.Fprintf(env.Stdout, i18n.T("Route %s, protocol %s: a page loads through the proxy in %d ms.\n"), tui.SafeText(route), tui.SafeText(protocol), delay.Milliseconds())
 	return nil
 }
 
@@ -326,6 +336,10 @@ func localAPI(layout paths.Layout) (*api.Client, singbox.Local, error) {
 }
 
 func runStatus(env Env) int {
+	return withPanel(env, runStatusPanel)
+}
+
+func runStatusPanel(env Env) int {
 	layout, err := env.Layout()
 	if err != nil {
 		return fail(env, err)
@@ -334,10 +348,10 @@ func runStatus(env Env) int {
 	if !captureOff(capture) {
 		warnProxyEnvironment(env, layout)
 		if !activeTunGeneration(capture) {
-			fmt.Fprintln(env.Stdout, i18n.T("tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'"))
+			printStatusLine(env, i18n.T("tun:      dirty. Capture state is unconfirmed. Run 'sbc tun off'")+"\n")
 			return 1
 		}
-		fmt.Fprintf(env.Stdout, i18n.T("tun:      active (%s)\n"), tun.InterfaceName)
+		printStatusLine(env, fmt.Sprintf(i18n.T("tun:      active (%s)\n"), tun.InterfaceName))
 		client, stateErr := activeTunAPI(layout, capture)
 		if stateErr != nil {
 			return fail(env, stateErr)
@@ -345,13 +359,13 @@ func runStatus(env Env) int {
 		route, _, routeErr := client.Modes()
 		protocol, _, protocolErr := client.Selected(api.ProxySelector)
 		if routeErr != nil || protocolErr != nil {
-			fmt.Fprintln(env.Stdout, i18n.T("api:      TUN API is not reachable; run 'sbc tun off' and 'sbc tun on' again"))
+			printStatusLine(env, i18n.T("api:      TUN API is not reachable; run 'sbc tun off' and 'sbc tun on' again")+"\n")
 			return 1
 		}
-		fmt.Fprintf(env.Stdout, i18n.T("route:    %s\nprotocol: %s\n"), route, protocol)
-		fmt.Fprintln(env.Stdout, i18n.T("capture:  TUN; run 'sbc tun off' to stop it"))
+		printStatusLine(env, fmt.Sprintf(i18n.T("route:    %s\nprotocol: %s\n"), tui.SafeText(route), tui.SafeText(protocol)))
+		printStatusLine(env, i18n.T("capture:  TUN; run 'sbc tun off' to stop it")+"\n")
 		if _, err := os.Stat(layout.TunUpdateHint()); err == nil {
-			fmt.Fprintln(env.Stdout, i18n.T("update:   TUN updates are available; run 'sbc refresh' or 'sbc upgrade'"))
+			printStatusLine(env, i18n.T("update:   TUN updates are available; run 'sbc refresh' or 'sbc upgrade'")+"\n")
 		}
 		return 0
 	}
@@ -370,7 +384,7 @@ func runStatus(env Env) int {
 	if local.Username != "" {
 		password = i18n.T(", with a password")
 	}
-	fmt.Fprintf(env.Stdout, i18n.T("service:  %s\nproxy:    127.0.0.1:%d%s\n"), state, local.ListenPort, password)
+	printStatusLine(env, fmt.Sprintf(i18n.T("service:  %s\nproxy:    127.0.0.1:%d%s\n"), state, local.ListenPort, password))
 	shellState := i18n.T("off")
 	if _, err := os.Stat(layout.EnvFile()); err == nil {
 		shellState = i18n.T("on")
@@ -381,21 +395,21 @@ func runStatus(env Env) int {
 			return fail(env, err)
 		}
 	}
-	fmt.Fprintf(env.Stdout, i18n.T("shells:   %s\n"), shellState)
+	printStatusLine(env, fmt.Sprintf(i18n.T("shells:   %s\n"), shellState))
 	if desk, err := env.Desktop(); err == nil {
 		if state, err := desk.State(local.ListenPort); err == nil {
-			fmt.Fprintf(env.Stdout, i18n.T("desktop:  %s (%s)\n"), state, desk.Name())
+			printStatusLine(env, fmt.Sprintf(i18n.T("desktop:  %s (%s)\n"), state, desk.Name()))
 		}
 	}
 	if daemon, err := env.Docker(); err == nil {
 		if state, err := daemon.State(local.ListenPort); err == nil {
-			fmt.Fprintf(env.Stdout, i18n.T("docker:   %s\n"), state)
+			printStatusLine(env, fmt.Sprintf(i18n.T("docker:   %s\n"), state))
 		}
 	}
 	printRegionSummary(env, layout)
 	if usage, at, ok := install.ReadUsage(layout); ok {
-		fmt.Fprintf(env.Stdout, i18n.T("traffic:  %s up, %s down this billing cycle, as of %s\n"),
-			formatBytes(usage.Upload), formatBytes(usage.Download), at.Format("2006-01-02 15:04"))
+		printStatusLine(env, fmt.Sprintf(i18n.T("traffic:  %s up, %s down this billing cycle, as of %s\n"),
+			formatBytes(usage.Upload), formatBytes(usage.Download), at.Format("2006-01-02 15:04")))
 	}
 	if settings, err := maintenance.Load(layout); err == nil {
 		printMaintenance(env, settings)
@@ -404,22 +418,25 @@ func runStatus(env Env) int {
 	}
 	discardStaleUpgradeHint(layout, env.Version)
 	if hint, err := os.ReadFile(layout.UpgradeHint()); err == nil {
-		fmt.Fprintf(env.Stdout, i18n.T("upgrade:  %s is available; run 'sbc upgrade'\n"), strings.TrimSpace(string(hint)))
+		printStatusLine(env, fmt.Sprintf(i18n.T("upgrade:  %s is available; run 'sbc upgrade'\n"), tui.SafeText(strings.TrimSpace(string(hint)))))
 	}
 	mode, _, err := client.Modes()
 	if err != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("sing-box: %v\n"), err)
+		printStatusLine(env, fmt.Sprintf(i18n.T("sing-box: %v\n"), err))
 		return 0
 	}
 	protocol, _, _ := client.Selected(api.ProxySelector)
-	fmt.Fprintf(env.Stdout, i18n.T("route:    %s\nprotocol: %s\n"), mode, protocol)
+	printStatusLine(env, fmt.Sprintf(i18n.T("route:    %s\nprotocol: %s\n"), tui.SafeText(mode), tui.SafeText(protocol)))
 	return 0
 }
 
 func runRouteList(env Env) int {
-	for _, name := range installedChoices(env, "route") {
-		fmt.Fprintf(env.Stdout, "%-13s %s\n", name, routes.Description(name))
+	choices := installedChoices(env, "route")
+	rows := make([][]string, 0, len(choices))
+	for _, name := range choices {
+		rows = append(rows, []string{name, routes.Description(name)})
 	}
+	fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, []string{i18n.T("Route"), i18n.T("Description")}, rows, nil))
 	return 0
 }
 
@@ -442,7 +459,50 @@ func runSwitch(env Env, args []string, what string) int {
 		return fail(env, err)
 	}
 	if len(args) == 0 {
-		fmt.Fprintf(env.Stdout, i18n.T("%s (choices: %s)\n"), current, strings.Join(options, ", "))
+		items := make([]tui.SelectorItem, 0, len(options))
+		currentListed := false
+		for _, opt := range options {
+			currentListed = currentListed || opt == current
+			desc := ""
+			if what == "route" {
+				desc = routes.Description(opt)
+			}
+			items = append(items, tui.SelectorItem{Value: opt, Description: desc, Current: opt == current})
+		}
+		title := i18n.T("Select protocol")
+		if what == "route" {
+			title = i18n.T("Select route strategy")
+		}
+		currentLabel := i18n.T("unknown")
+		if current != "" {
+			currentLabel = tui.SafeText(current)
+		}
+		currentFormat := i18n.T("Protocol: %s\n")
+		if what == "route" {
+			currentFormat = i18n.T("Route: %s\n")
+		}
+		printKVLine(env, fmt.Sprintf(currentFormat, currentLabel))
+		// An incomplete API list cannot identify the initial selection.
+		// Keep this query read-only and show the current value separately.
+		if tui.Interactive(env.Stdin, env.Stdout, env.Getenv) && currentListed {
+			chosen, canceled, selErr := tui.RunSelector(env.Stdin, env.Stdout, env.Getenv, title, i18n.T("(current)"), i18n.T("↑/↓ move • enter switch • esc cancel"), items)
+			if selErr != nil {
+				var interrupted *tui.InterruptError
+				if errors.As(selErr, &interrupted) {
+					return interrupted.Code
+				}
+				return fail(env, selErr)
+			}
+			if !canceled && chosen != "" {
+				return withOperation(env, func(env Env) int {
+					return runSwitch(env, []string{chosen}, what)
+				})
+			}
+		}
+		_, err := fmt.Fprint(env.Stdout, tui.RenderChoices(env.Stdout, env.Getenv, title, i18n.T("(current)"), items))
+		if err != nil {
+			return 1
+		}
 		return 0
 	}
 	if what == "route" {
@@ -454,9 +514,9 @@ func runSwitch(env Env, args []string, what string) int {
 		return fail(env, err)
 	}
 	if what == "route" {
-		fmt.Fprintf(env.Stdout, i18n.T("Route: %s\n"), routes.Canonical(args[0]))
+		printKVLine(env, fmt.Sprintf(i18n.T("Route: %s\n"), tui.SafeText(routes.Canonical(args[0]))))
 	} else {
-		fmt.Fprintf(env.Stdout, i18n.T("Protocol: %s\n"), args[0])
+		printKVLine(env, fmt.Sprintf(i18n.T("Protocol: %s\n"), tui.SafeText(args[0])))
 	}
 	return 0
 }
