@@ -326,7 +326,7 @@ func (h *harness) useDocker(t *testing.T) (*docker.Daemon, *[]string) {
 func TestRouteAndProtocolShowAndSwitch(t *testing.T) {
 	h := newHarness(t)
 
-	if code := Run(h.env, []string{"route"}); code != 0 || h.out.String() != "china-direct (choices: ai-only, china-direct, gfw-proxy, global)\n" {
+	if code := Run(h.env, []string{"route"}); code != 0 || !strings.Contains(h.out.String(), "china-direct (current)") || !strings.Contains(h.out.String(), "╭") {
 		t.Fatalf("route: code %d, %q", code, h.out.String())
 	}
 	if code := Run(h.env, []string{"route", "gfw"}); code != 0 || h.api.mode != "gfw" {
@@ -347,7 +347,7 @@ func TestStatusShowsServiceRouteProtocolAndPort(t *testing.T) {
 	Run(h.env, []string{"status"})
 
 	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\n" +
-		"refresh: auto on, interval 6h, last attempt not run yet\nupgrade: auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\n" +
+		"refresh:  auto on, interval 6h, last attempt not run yet\nupgrade:  auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\n" +
 		"route:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out.String())

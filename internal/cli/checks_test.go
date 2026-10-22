@@ -30,6 +30,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
+	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 	"github.com/xiaosq2000/sing-box-manager/internal/tun"
 )
 
@@ -443,8 +444,23 @@ func TestDiagnosticChineseOutput(t *testing.T) {
 	if code := Run(h.env, []string{"ip"}); code != 0 {
 		t.Fatal(code, h.errOut)
 	}
-	if !strings.Contains(h.out.String(), "首响应") || !strings.Contains(h.out.String(), "未验证") {
+	if !strings.Contains(h.out.String(), "首响应") || !strings.Contains(h.out.String(), "未验证") || !strings.Contains(h.out.String(), "╭") {
 		t.Fatal(h.out)
+	}
+	var tableLines []string
+	for _, line := range strings.Split(strings.TrimSpace(h.out.String()), "\n") {
+		if strings.HasPrefix(line, "╭") || strings.HasPrefix(line, "│") || strings.HasPrefix(line, "├") || strings.HasPrefix(line, "╰") {
+			tableLines = append(tableLines, line)
+		}
+	}
+	if len(tableLines) < 5 {
+		t.Fatalf("expected rounded table lines in:\n%s", h.out)
+	}
+	wantWidth := tui.DisplayWidth(tableLines[0])
+	for i, line := range tableLines {
+		if got := tui.DisplayWidth(line); got != wantWidth {
+			t.Errorf("Chinese table line %d display width = %d, want %d:\n%s\nfull output:\n%s", i, got, wantWidth, line, h.out)
+		}
 	}
 }
 
@@ -454,9 +470,24 @@ func TestStatusShowsTheTrafficCountOfTheLastRefresh(t *testing.T) {
 	at := time.Date(2026, 10, 3, 14, 5, 0, 0, time.Local)
 	os.Chtimes(h.layout.Usage(), at, at)
 	Run(h.env, []string{"status"})
-	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\ntraffic:  700.00 MiB up, 15.30 GiB down this billing cycle, as of 2026-10-03 14:05\nrefresh: auto on, interval 6h, last attempt not run yet\nupgrade: auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\nroute:    china-direct\nprotocol: trojan\n"
+	want := "service:  running\nproxy:    127.0.0.1:2080\nshells:   off\ntraffic:  700.00 MiB up, 15.30 GiB down this billing cycle, as of 2026-10-03 14:05\nrefresh:  auto on, interval 6h, last attempt not run yet\nupgrade:  auto on, interval 6h, last attempt not run yet\nBackground schedules need setup. Set either auto policy to retry.\nroute:    china-direct\nprotocol: trojan\n"
 	if h.out.String() != want {
 		t.Errorf("got\n%s", h.out)
+	}
+
+	i18n.SetChinese(true)
+	defer i18n.SetChinese(false)
+	h.out.Reset()
+	Run(h.env, []string{"status"})
+	for _, line := range strings.Split(strings.TrimSpace(h.out.String()), "\n") {
+		if idx := strings.Index(line, "："); idx >= 0 {
+			prefix := line[:idx+len("：")]
+			rest := line[idx+len("："):]
+			spaces := len(rest) - len(strings.TrimLeft(rest, " "))
+			if got := tui.DisplayWidth(prefix) + spaces; got != tui.StatusKeyWidth {
+				t.Errorf("Chinese status line %q key column width = %d, want %d", line, got, tui.StatusKeyWidth)
+			}
+		}
 	}
 }
 

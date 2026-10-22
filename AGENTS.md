@@ -60,8 +60,9 @@ surrounding context.
   installer must stay POSIX sh compatible. Shared Bash scripts and shell integration
   must stay bash 3.2 compatible, including code sourced by zsh.
   Windows client scripts must stay Windows PowerShell 5.1 compatible.
-- `sbc` uses Cobra and pflag for its command layer. Keep other client code
-  standard-library-only. Build with cgo off.
+- `sbc` uses Cobra and pflag for its command layer and Charmbracelet (`lipgloss`,
+  `bubbletea`, and `bubbles`) for terminal rendering and interactive selection.
+  Keep other client code standard-library-only. Build with cgo off.
 
 ## Completion
 

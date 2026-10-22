@@ -51,6 +51,7 @@ sbc = [
   "internal/browserlanguage/",
   "internal/browserprivacy/",
   "internal/desktop/",
+  "internal/tui/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
 unix-installer = [
@@ -166,6 +167,7 @@ control-plane = [
   "internal/probe/",
   "internal/cli/checks.go",
   "internal/cli/diagnostic*.go",
+  "internal/tui/",
   "internal/diagnostic/",
   "internal/api/",
   "sing_box_manager/models.py",
@@ -249,6 +251,7 @@ control-plane = [
 
 "docs/README_WIN.md" = [
   "internal/cli/",
+  "internal/tui/",
   "internal/diagnostic/",
   "internal/probe/",
   "internal/api/",

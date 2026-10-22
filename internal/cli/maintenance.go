@@ -292,10 +292,10 @@ func printMaintenance(env Env, settings maintenance.Settings) {
 			}
 			result = p.LastAttempt.Local().Format("2006-01-02 15:04") + " " + state
 		}
-		fmt.Fprintf(env.Stdout, i18n.T("%s: auto %s, interval %s, last attempt %s\n"), action, enabled, p.Interval(), result)
+		printStatusLine(env, fmt.Sprintf(i18n.T("%s: auto %s, interval %s, last attempt %s\n"), action, enabled, p.Interval(), result))
 	}
 	if !settings.Scheduled {
-		fmt.Fprintln(env.Stdout, i18n.T("Background schedules need setup. Set either auto policy to retry."))
+		printStatusLine(env, i18n.T("Background schedules need setup. Set either auto policy to retry.")+"\n")
 	}
 }
 

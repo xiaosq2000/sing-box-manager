@@ -150,7 +150,7 @@ func TestPrivacyStatusShowsTheTargetAndFiles(t *testing.T) {
 	if code := Run(env, []string{"privacy", "region"}); code != 0 {
 		t.Fatalf("code %d, stderr %q", code, errOut.String())
 	}
-	text := out.String()
+	text := strings.Join(strings.Fields(out.String()), " ")
 	for _, want := range []string{"Region: on", "Node: node.example", "Time zone: available", "Files: current"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("stdout %q does not contain %q", text, want)

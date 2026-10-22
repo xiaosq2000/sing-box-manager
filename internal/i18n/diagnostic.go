@@ -52,6 +52,16 @@ func init() {
 		"IP details are unavailable. Observed IP addresses remain valid.":                                 "IP 详情不可用，已观测到的 IP 地址仍然有效。",
 		"Checks follow active rules. Direct destinations can see this network's public IP. No account eligibility is tested.": "检查遵循当前规则。直连目标可看到本网络的公网 IP。不检查账户使用资格。",
 		"Invalid diagnostic target or configuration.": "诊断目标或配置无效。",
+		"ID":                    "ID",
+		"Host":                  "主机",
+		"Route":                 "路由策略",
+		"Description":           "说明",
+		"Select route strategy": "选择路由策略",
+		"Select protocol":       "选择代理协议",
+		"(current)":             "（当前）",
+		"↑/↓ move • enter switch • esc cancel": "↑/↓ 移动 • enter 切换 • esc 取消",
+		"testing...":                 "检测中...",
+		"↑/↓ scroll • ctrl+c cancel": "↑/↓ 滚动 • ctrl+c 取消",
 	} {
 		zh[english] = chinese
 	}

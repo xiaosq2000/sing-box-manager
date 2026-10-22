@@ -92,7 +92,7 @@ func TestBrowserGeolocationStatusIsReadOnlyAndDistinguishesSavedChoice(t *testin
 		t.Fatalf("missing policy status code: %d", code)
 	}
 	for _, text := range []string{"saved choice: on", "no local blocking value found", "ownership record: present", "do not prove Chrome's effective policy"} {
-		if !strings.Contains(h.out.String(), text) {
+		if !strings.Contains(strings.Join(strings.Fields(h.out.String()), " "), text) {
 			t.Fatalf("missing %q: %s", text, h.out)
 		}
 	}

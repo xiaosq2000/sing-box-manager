@@ -11,6 +11,7 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
 	"github.com/xiaosq2000/sing-box-manager/internal/singbox"
+	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 )
 
 // errPasswordOnDesktop explains why a proxy with a password stays off the
@@ -22,12 +23,7 @@ var errPasswordOnDesktop = i18n.New("this proxy asks for a password, which deskt
 var errPasswordOnDocker = i18n.New("this proxy asks for a password because other accounts use this machine, and so does its Docker daemon, so sbc keeps the daemon off the proxy")
 
 func isTerminal(stream any) bool {
-	file, ok := stream.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return tui.IsTerminal(stream)
 }
 
 func readLocal(layout paths.Layout) (singbox.Local, error) {

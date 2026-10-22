@@ -175,7 +175,7 @@ func testLifecycle(t *testing.T, engine string) {
 	if _, err := os.Stat(layout.UpgradeHint()); !os.IsNotExist(err) {
 		t.Fatal("refresh recreated the completed upgrade notification")
 	}
-	expect(t, run(t, nil, sbc, "status"), "refresh: auto off, interval 30m", "upgrade: auto off, interval 24h", "protocol: http")
+	expect(t, run(t, nil, sbc, "status"), "refresh:  auto off, interval 30m", "upgrade:  auto off, interval 24h", "protocol: http")
 
 	// Uninstall removes the service, the process and every file. On Windows
 	// the directory sbc runs from goes a moment after sbc has exited.

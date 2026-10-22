@@ -191,6 +191,10 @@ The private `diagnostic-targets.json` can contain secret URL query values. Expor
 preserve those URLs for import and must remain private. Reports hide paths and
 queries, API credentials, and unrelated connections. No automatic result history
 or report upload is used. See [the diagnostic contract](CLIENT_DIAGNOSTICS.md).
+Human-readable tables and selectors remove terminal commands and format controls
+from display labels. Selection requests retain the original API value. This
+separation prevents a display label from issuing terminal commands without
+changing which option the user selects.
 
 Usernames may appear in one section, two sections, or all protocol sections. The sections are
 related by username, but they are stored independently.

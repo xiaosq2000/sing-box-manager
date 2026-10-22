@@ -88,8 +88,17 @@ Django HTML templates are excluded from Prettier because its HTML parser changes
 template tags. Route tests check that these pages render without unprocessed tags.
 
 `sbc`, in `cmd/sbc` and `internal/`, uses Cobra and pflag for commands, help,
-validation, and completion. Other client code uses the Go standard library.
+validation, and completion, and Charmbracelet (`lipgloss`, `bubbletea`, and
+`bubbles`) for CJK-aligned terminal rendering and interactive selection. Other
+client code uses the Go standard library.
 `go.mod` and `go.sum` pin CLI dependencies. No Viper settings layer is used.
+Linux PTY fixtures in `internal/cli/terminal_linux_test.go` use child processes,
+synthetic installations, and loopback servers. They check terminal restoration,
+confirmation keys, signals, operation locks, TUN guards, output fallbacks, colors,
+resize, JSON, and display-label sanitization. They change no host settings.
+`internal/tui` tests also check narrow layouts, scrolling, and CJK column widths.
+Run these fixtures with `pixi run go test ./internal/tui ./internal/cli -run 'Test(Terminal|Selector|Adaptive|Panel|LiveTable)'`.
+Native macOS and Windows terminal behavior needs separate acceptance.
 Its `internal/singbox` and `internal/api` tests run the fetched sing-box and skip without
 it, and its install tests serve a signed release from a local test server. The
 `internal/desktop` and `internal/docker` tests run fake `gsettings`, `networksetup`

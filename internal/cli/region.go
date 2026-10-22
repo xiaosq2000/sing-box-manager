@@ -44,7 +44,7 @@ func runPrivacyRegion(env Env, args []string, timezone, language, system, yes bo
 	}
 	switch action {
 	case "status":
-		return printRegionStatus(env)
+		return withPanel(env, printRegionStatus)
 	case "on":
 		return enableRegion(env, layout, manager, timezone, language, system, yes)
 	case "off":
@@ -475,56 +475,56 @@ func printRegionStatus(env Env) int {
 	}
 	if status.State == nil {
 		if status.MissingState {
-			fmt.Fprintln(env.Stdout, i18n.T("Region: on, but the saved profile is missing; run 'sbc refresh'."))
+			printKVLine(env, i18n.T("Region: on, but the saved profile is missing; run 'sbc refresh'.")+"\n")
 		} else {
-			fmt.Fprintln(env.Stdout, i18n.T("Region: unavailable: no client region is saved; run 'sbc refresh' after the portal provides one."))
+			printKVLine(env, i18n.T("Region: unavailable: no client region is saved; run 'sbc refresh' after the portal provides one.")+"\n")
 		}
 		if !status.FilesCurrent {
-			fmt.Fprintln(env.Stdout, i18n.T("Files: left over; run 'sbc privacy region off'."))
+			printKVLine(env, i18n.T("Files: left over; run 'sbc privacy region off'.")+"\n")
 		}
 		printOrphanedSystemRegion(env)
 		return 0
 	}
 	profile := status.State.Profile
 	if status.Mode.Any() {
-		fmt.Fprintf(env.Stdout, i18n.T("Region: %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language)
-		fmt.Fprintf(env.Stdout, i18n.T("Node: %s\n"), status.State.Node)
+		printKVLine(env, fmt.Sprintf(i18n.T("Region: %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language))
+		printKVLine(env, fmt.Sprintf(i18n.T("Node: %s\n"), status.State.Node))
 		if !status.Updated.IsZero() {
-			fmt.Fprintf(env.Stdout, i18n.T("Profile updated: %s\n"), status.Updated.Format("2006-01-02 15:04"))
+			printKVLine(env, fmt.Sprintf(i18n.T("Profile updated: %s\n"), status.Updated.Format("2006-01-02 15:04")))
 		}
 	} else {
-		fmt.Fprintln(env.Stdout, i18n.T("Region: off"))
-		fmt.Fprintf(env.Stdout, i18n.T("Last profile: %s, %s (%s)\n"), profile.Timezone, profile.Language, status.State.Node)
+		printKVLine(env, i18n.T("Region: off")+"\n")
+		printKVLine(env, fmt.Sprintf(i18n.T("Last profile: %s, %s (%s)\n"), profile.Timezone, profile.Language, status.State.Node))
 		if !status.Updated.IsZero() {
-			fmt.Fprintf(env.Stdout, i18n.T("Profile updated: %s\n"), status.Updated.Format("2006-01-02 15:04"))
+			printKVLine(env, fmt.Sprintf(i18n.T("Profile updated: %s\n"), status.Updated.Format("2006-01-02 15:04")))
 		}
 	}
 	if status.Mode.Timezone {
 		if status.TimezoneAvailable {
-			fmt.Fprintln(env.Stdout, i18n.T("Time zone: available"))
+			printKVLine(env, i18n.T("Time zone: available")+"\n")
 		} else {
 			fmt.Fprintf(env.Stderr, "sbc: %v\n", status.TimezoneError)
 		}
 	} else if status.TimezoneError != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("Time zone: off; %v\n"), status.TimezoneError)
+		printKVLine(env, fmt.Sprintf(i18n.T("Time zone: off; %v\n"), status.TimezoneError))
 	}
 	if status.Mode.Language {
 		if status.LanguageAvailable {
-			fmt.Fprintf(env.Stdout, i18n.T("Language: available (%s)\n"), status.Locale)
+			printKVLine(env, fmt.Sprintf(i18n.T("Language: available (%s)\n"), status.Locale))
 		} else {
 			fmt.Fprintf(env.Stderr, "sbc: %v\n", status.LanguageError)
 		}
 	} else if status.LanguageError != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("Language: off; %v\n"), status.LanguageError)
+		printKVLine(env, fmt.Sprintf(i18n.T("Language: off; %v\n"), status.LanguageError))
 	}
 	if status.Mode.Any() {
 		if status.FilesCurrent {
-			fmt.Fprintln(env.Stdout, i18n.T("Files: current"))
+			printKVLine(env, i18n.T("Files: current")+"\n")
 		} else {
-			fmt.Fprintln(env.Stdout, i18n.T("Files: out of date; run 'sbc privacy region on' to repair."))
+			printKVLine(env, i18n.T("Files: out of date; run 'sbc privacy region on' to repair.")+"\n")
 		}
 	} else if !status.FilesCurrent {
-		fmt.Fprintln(env.Stdout, i18n.T("Files: left over; run 'sbc privacy region off'."))
+		printKVLine(env, i18n.T("Files: left over; run 'sbc privacy region off'.")+"\n")
 	}
 	if !status.Mode.Any() {
 		fmt.Fprintln(env.Stdout, i18n.T("Run 'sbc privacy region on' to apply it."))
@@ -694,41 +694,41 @@ func printRegionSummary(env Env, layout paths.Layout) {
 	manager := regionFor(env, layout)
 	status, err := manager.Status()
 	if err != nil {
-		fmt.Fprintf(env.Stdout, i18n.T("region:   unavailable (%v)\n"), err)
+		printStatusLine(env, fmt.Sprintf(i18n.T("region:   unavailable (%v)\n"), err))
 		return
 	}
 	paths := systemRegionPaths(env)
 	if status.Scope == region.ScopeSystem {
 		if status.State == nil || !status.Mode.Any() {
 			if status.Mode.Any() {
-				fmt.Fprintln(env.Stdout, i18n.T("region:   on (system), but the saved profile is missing; run 'sbc refresh'"))
+				printStatusLine(env, i18n.T("region:   on (system), but the saved profile is missing; run 'sbc refresh'")+"\n")
 			} else if region.SystemStateExists(paths) {
-				fmt.Fprintln(env.Stdout, i18n.T("region:   a system region record exists; run 'sbc privacy region off --system'"))
+				printStatusLine(env, i18n.T("region:   a system region record exists; run 'sbc privacy region off --system'")+"\n")
 			}
 			return
 		}
-		fmt.Fprintf(env.Stdout, i18n.T("region:   %s (system) (%s, %s)\n"), regionModeText(status.Mode), status.State.Profile.Timezone, status.State.Profile.Language)
+		printStatusLine(env, fmt.Sprintf(i18n.T("region:   %s (system) (%s, %s)\n"), regionModeText(status.Mode), status.State.Profile.Timezone, status.State.Profile.Language))
 		sys, sysErr := region.SystemStatusOf(paths)
 		if sysErr != nil {
 			fmt.Fprintf(env.Stderr, "sbc: %v\n", sysErr)
 		} else if systemRegionStale(status, sys, status.State.Profile) ||
 			(status.Mode.Timezone && !sys.TimezoneMatches()) ||
 			(status.Mode.Language && !sys.LanguageMatches()) {
-			fmt.Fprintf(env.Stdout, i18n.T("region:   out of date; run '%s'\n"), systemRegionHint(status.Mode))
+			printStatusLine(env, fmt.Sprintf(i18n.T("region:   out of date; run '%s'\n"), systemRegionHint(status.Mode)))
 		}
 		if !proxyLikelyOn(env, layout) {
-			fmt.Fprintln(env.Stdout, i18n.T("region:   the proxy is off, so the exit IP will not match"))
+			printStatusLine(env, i18n.T("region:   the proxy is off, so the exit IP will not match")+"\n")
 		}
 		return
 	}
 	if status.State == nil || !status.Mode.Any() {
 		if region.SystemStateExists(paths) {
-			fmt.Fprintln(env.Stdout, i18n.T("region:   a system region record exists; run 'sbc privacy region off --system'"))
+			printStatusLine(env, i18n.T("region:   a system region record exists; run 'sbc privacy region off --system'")+"\n")
 		}
 		return
 	}
 	profile := status.State.Profile
-	fmt.Fprintf(env.Stdout, i18n.T("region:   %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language)
+	printStatusLine(env, fmt.Sprintf(i18n.T("region:   %s (%s, %s)\n"), regionModeText(status.Mode), profile.Timezone, profile.Language))
 	if status.Mode.Language && !status.LanguageAvailable {
 		fmt.Fprintf(env.Stderr, "sbc: %v\n", status.LanguageError)
 	}
@@ -736,10 +736,10 @@ func printRegionSummary(env Env, layout paths.Layout) {
 		fmt.Fprintf(env.Stderr, "sbc: %v\n", status.TimezoneError)
 	}
 	if !status.FilesCurrent {
-		fmt.Fprintln(env.Stdout, i18n.T("region:   out of date; run 'sbc privacy region on'"))
+		printStatusLine(env, i18n.T("region:   out of date; run 'sbc privacy region on'")+"\n")
 	}
 	if !proxyLikelyOn(env, layout) {
-		fmt.Fprintln(env.Stdout, i18n.T("region:   the proxy is off, so the exit IP will not match"))
+		printStatusLine(env, i18n.T("region:   the proxy is off, so the exit IP will not match")+"\n")
 	}
 }
 

@@ -251,6 +251,28 @@ Docker changes require confirmation or `--yes` because they restart Docker.
 Subscription links are credentials. Pass them through the installer prompt or
 stdin, not command arguments. `sbc link set` also reads from stdin.
 
+## Terminal output
+
+Human-readable lists use CJK-aware column widths. Status and privacy panels align
+values across the complete panel. Narrow terminals show stacked table fields
+without removing results. `NO_COLOR` disables colors but keeps keyboard interaction.
+Pipes, files, and `TERM=dumb` use static output. Machine-readable output, including
+`--json`, shell exports, and completion scripts, does not use these views.
+
+Interactive `check`, `ip`, and `speed download` show an inline progress view.
+Use arrow keys or Page Up/Down to scroll. The view adapts to window size changes.
+The complete final report remains in terminal history. Ctrl-C returns 130 with
+partial diagnostic results. POSIX SIGTERM returns 143.
+
+Route and protocol selectors keep the current item visible in short windows.
+Only Enter confirms a switch. Space does not submit. Esc or `q` cancels without
+changing settings. Ctrl-C and SIGINT return 130. POSIX SIGTERM returns 143.
+Selection errors return a failure instead of a successful query.
+Non-interactive calls show the same choices in a static table, with a current-item
+marker. If the API list omits the current choice, the query stays read-only and
+shows the current value separately. Display labels omit terminal control sequences
+and embedded line breaks. API requests keep the original option values.
+
 ## Snell protocol
 
 New installs prefer [Snell v6](SNELL.md) when its infrastructure and account
@@ -590,7 +612,11 @@ sbc route --help
 `ai`, `gfw`, and `china` remain aliases for `ai-only`, `gfw-proxy`, and
 `china-direct`. The CLI displays canonical names, including with an older installed
 config. Rendered configs retain alias modes so saved selections survive refreshes
-and restarts. Completion suggests canonical names only.
+and restarts. Completion suggests canonical names only. When standard input and
+output are interactive terminals, bare `sbc route` and `sbc protocol` open an
+interactive selector (`Enter` switches, `Esc` or `q` cancels without changing the
+selection). Non-interactive invocations show a static choices table with the
+current choice marked. See [terminal output](#terminal-output) for fallback rules.
 
 All strategies retain private-network access, configured direct exceptions,
 AdGuard filtering, DNS interception, and restrictions on port 853, UDP port 443,

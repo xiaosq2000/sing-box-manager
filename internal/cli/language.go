@@ -88,14 +88,16 @@ func runLang(env Env, args []string) int {
 		}
 		chinese, source := i18n.Resolve(os.Getenv, saved)
 		i18n.SetChinese(chinese)
-		fmt.Fprintf(env.Stdout, i18n.T("Language: %s (%s)\n"), languageName(chinese), languageSource(source))
-		if saved != languageAuto && source != i18n.SourceSetting {
-			savedChinese := saved == languageChinese
-			if savedChinese != chinese {
-				fmt.Fprintf(env.Stdout, i18n.T("Saved choice: %s\n"), languageName(savedChinese))
+		return withPanel(env, func(env Env) int {
+			printKVLine(env, fmt.Sprintf(i18n.T("Language: %s (%s)\n"), languageName(chinese), languageSource(source)))
+			if saved != languageAuto && source != i18n.SourceSetting {
+				savedChinese := saved == languageChinese
+				if savedChinese != chinese {
+					printKVLine(env, fmt.Sprintf(i18n.T("Saved choice: %s\n"), languageName(savedChinese)))
+				}
 			}
-		}
-		return 0
+			return 0
+		})
 	}
 
 	choice := args[0]

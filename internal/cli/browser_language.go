@@ -15,7 +15,7 @@ import (
 
 func browserOperation(env Env, args []string, action func(Env, []string) int) int {
 	if env.OS != "linux" || len(args) == 0 || args[0] == "status" {
-		return action(env, args)
+		return withPanel(env, func(env Env) int { return action(env, args) })
 	}
 	return withOperation(env, func(env Env) int { return action(env, args) })
 }
@@ -109,18 +109,18 @@ func printBrowserLanguageStatus(env Env, layout paths.Layout) int {
 		return fail(env, err)
 	}
 	if !status.State.Enabled {
-		fmt.Fprintln(env.Stdout, i18n.T("Chrome languages: off"))
+		printKVLine(env, i18n.T("Chrome languages: off")+"\n")
 		if status.Pending != 0 {
 			fmt.Fprintln(env.Stdout, i18n.T("Chrome language cleanup is pending. Exit Chrome and retry 'sbc privacy browser language off'."))
 		}
 		return 0
 	}
 	if status.State.Target == nil {
-		fmt.Fprintln(env.Stdout, i18n.T("Chrome languages: on, but the node language is unavailable. Run 'sbc privacy browser language off'."))
+		printKVLine(env, i18n.T("Chrome languages: on, but the node language is unavailable. Run 'sbc privacy browser language off'.")+"\n")
 	} else {
-		fmt.Fprintf(env.Stdout, i18n.T("Chrome languages: on (%s, node %s)\n"), status.State.Target.Language, status.State.Target.Node)
+		printKVLine(env, fmt.Sprintf(i18n.T("Chrome languages: on (%s, node %s)\n"), status.State.Target.Language, status.State.Target.Node))
 	}
-	fmt.Fprintf(env.Stdout, i18n.T("Chrome language profiles: %d current, %d pending or changed\n"), status.Current, status.Pending)
+	printKVLine(env, fmt.Sprintf(i18n.T("Chrome language profiles: %d current, %d pending or changed\n"), status.Current, status.Pending))
 	if status.NoProfiles {
 		fmt.Fprintln(env.Stdout, i18n.T("sbc found no standard Chrome personal profile. Start Chrome once. Exit Chrome and retry"))
 	}

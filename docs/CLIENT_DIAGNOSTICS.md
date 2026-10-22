@@ -27,9 +27,10 @@ The first release includes website checks, exit-IP observations, bounded downloa
 a local website list, localized output, cancellation, and versioned JSON.
 
 Do not add a service, database, external dependency, privileged diagnostic API,
-protocol benchmark, browser probe, or background monitor. Keep Cobra/pflag and the
-Go standard library. Build with cgo disabled. Do not change TUN activation,
-shutdown, recovery, ownership, or routing policy for this feature.
+protocol benchmark, browser probe, or background monitor. Keep Cobra/pflag,
+Charmbracelet terminal rendering, and the Go standard library. Build with cgo
+disabled. Do not change TUN activation, shutdown, recovery, ownership, or
+routing policy for this feature.
 
 ## CLI contract
 
@@ -230,6 +231,13 @@ mechanism. Do not insert delays into a request to make capture evidence appear.
 Human output identifies scope as sbc, the runtime, route, selected protocol,
 measurement target, and actual evidence. Keep HTTP errors distinct from connection
 failures and unverified scope. Preserve useful partial results.
+
+Interactive terminals use an inline, scrollable progress view that adapts to
+window size changes. Narrow tables use stacked fields without dropping data.
+The complete final report remains in terminal history. Pipes, files, and
+`TERM=dumb` use static output. `NO_COLOR` disables colors, not keyboard input.
+Live and final views use the same semantic styles. Display cells remove terminal
+control sequences and format controls.
 
 `--json` emits one versioned result to stdout, without progress text. Use a shared
 envelope with `schema_version: 1`, `command`, `scope`, `mode`, `route`, `protocol`,
