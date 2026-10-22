@@ -72,7 +72,8 @@ It removes export attributes from private variables and Bash helper functions.
 
 The hook reads existing public capture markers and the root transaction journal through shell builtins.
 Only a complete canonical `off` journal permits exports when TUN configuration exists.
-The hook checks UTC timestamp syntax, precision, calendar dates, and time ranges.
+The hook checks RFC3339Nano syntax, precision, calendar dates, time ranges, and time zone offsets.
+The root helper uses its process time zone, which need not be UTC.
 Missing, unreadable, or unknown metadata blocks exports conservatively.
 The native initialization check also retains a service-state refusal until the journal changes.
 If repair leaves identical metadata, evaluate `sbc init` again to repeat that native check.
@@ -143,6 +144,7 @@ Do not change a developer's network or application environment.
 
 The core VM suite deliberately introduces Mixed variables before activation.
 It retains a persistent parent as a negative control, then tests a clean replacement.
+The guest also checks confirmed-off journals from a non-UTC root publisher.
 No tmux or Herdr installation is needed for this inheritance check.
 
 ## Scope

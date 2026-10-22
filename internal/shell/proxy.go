@@ -76,7 +76,7 @@ func proxyNames() []string {
 
 func proxyHelpers(shellName string, state ProxyState) string {
 	var code strings.Builder
-	names := []string{"_sbc_matched", "_sbc_record", "_sbc_extra", "_sbc_id", "_sbc_tail", "_sbc_date", "_sbc_committed", "_sbc_main", "_sbc_fraction", "_sbc_year", "_sbc_month", "_sbc_day", "_sbc_hour", "_sbc_minute", "_sbc_second", "_sbc_days", "_sbc_region_prev", "_sbc_region_tz", "_sbc_region_lang"}
+	names := []string{"_sbc_matched", "_sbc_record", "_sbc_extra", "_sbc_id", "_sbc_tail", "_sbc_date", "_sbc_committed", "_sbc_main", "_sbc_fraction", "_sbc_year", "_sbc_month", "_sbc_day", "_sbc_hour", "_sbc_minute", "_sbc_second", "_sbc_days", "_sbc_zone", "_sbc_zone_hour", "_sbc_zone_minute", "_sbc_region_prev", "_sbc_region_tz", "_sbc_region_lang"}
 	for _, name := range proxyNames() {
 		names = append(names, "_sbc_seen_"+name, "_sbc_before_"+name)
 	}
@@ -132,8 +132,18 @@ func proxyHelpers(shellName string, state ProxyState) string {
 	}
 	code.WriteString(`}
 _sbc_valid_deadline() {
-    # Root writes UTC RFC3339Nano. Reject noncanonical or invalid timestamps.
-    case "$_sbc_date" in *Z) _sbc_main=${_sbc_date%Z} ;; *) return 1 ;; esac
+    # Root writes RFC3339Nano in its process time zone. Validate offsets too.
+    case "$_sbc_date" in
+    *Z) _sbc_main=${_sbc_date%Z} ;;
+    *[+-][0-9][0-9]:[0-9][0-9])
+        _sbc_main=${_sbc_date%??????}
+        _sbc_zone=${_sbc_date#"$_sbc_main"}
+        _sbc_zone_hour=${_sbc_zone#?}
+        _sbc_zone_minute=${_sbc_zone_hour#??:}
+        _sbc_zone_hour=${_sbc_zone_hour%:??}
+        [ "$((10#$_sbc_zone_hour))" -le 23 ] && [ "$((10#$_sbc_zone_minute))" -le 59 ] || return 1 ;;
+    *) return 1 ;;
+    esac
     case "$_sbc_main" in
     *.*)
         _sbc_fraction=${_sbc_main#*.}

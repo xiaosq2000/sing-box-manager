@@ -41,6 +41,8 @@ phase() { python3 -c 'import json; print(json.load(open("/etc/sbc/tun-control/tr
 generation() { python3 -c 'import json; print(json.load(open("/etc/sbc/tun-control/transaction.json"))["id"])'; }
 assert_off() {
 	[ "$(phase)" = off ]
+	# The process-free hook must accept the root publisher's actual time zone.
+	_sbc_capture_off
 	absent /usr/bin/systemctl is-active --quiet sbc-tun.service
 	absent ip link show sbc-tun0
 	absent test -e /etc/sbc/tun-control/blocked
@@ -75,6 +77,11 @@ sudo visudo -cf /etc/sudoers.d/sbc-fixture-umask
 root_umask=$(sudo sh -c umask)
 printf 'user umask=%s; root umask=%s\n' "$(umask)" "$root_umask"
 [ "$root_umask" = 0077 ]
+step "non-UTC root transaction timestamps"
+# Only the disposable guest changes time zone. TLS uses the same absolute clock.
+[ -f /usr/share/zoneinfo/Etc/GMT-8 ]
+sudo ln -sfn /usr/share/zoneinfo/Etc/GMT-8 /etc/localtime
+[ "$(sudo date +%z)" = +0800 ]
 step "prepare an isolated router and direct target"
 for tool in ip nft dig curl python3 update-ca-certificates; do command -v "$tool" >/dev/null; done
 # A restricted QEMU network supplies an address but no default route.
@@ -172,6 +179,7 @@ done
 [ -f "$HOME/environment-parent-ready" ]
 sbc tun on >"$HOME/tun-on.log" 2>&1
 [ "$(phase)" = active ]
+python3 -c 'import json; assert json.load(open("/etc/sbc/tun-control/transaction.json"))["deadline"].endswith("+08:00")'
 grep 'Running programs can retain Mixed proxy settings' "$HOME/tun-on.log" >/dev/null
 sbc status 2>"$HOME/environment-status.log"
 grep 'this command inherits Mixed proxy variables' "$HOME/environment-status.log" >/dev/null
