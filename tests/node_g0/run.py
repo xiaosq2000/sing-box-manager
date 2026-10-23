@@ -111,6 +111,78 @@ def ssh_category(returncode, stderr):
     return "ssh-transport"
 
 
+def qemu_diagnostic(root):
+    def contents(name):
+        try:
+            with (root / name).open("rb") as file:
+                return file.read(65536).lower()
+        except OSError:
+            return b""
+
+    output = contents("qemu.log")
+    category = "unclassified" if output else "empty"
+    for markers, candidate in (
+        (
+            (b"kvm: entry failed", b"kvm internal error", b"kvm run failed"),
+            "kvm-run-error",
+        ),
+        (
+            (
+                b"failed to initialize kvm",
+                b"could not access kvm",
+                b"kvm is not supported",
+            ),
+            "kvm-init-error",
+        ),
+        ((b"host forwarding rule", b"address already in use"), "host-forward-error"),
+        ((b"guest forwarding rule", b"guestfwd"), "guest-forward-error"),
+        (
+            (
+                b"failed to get",
+                b"failed to lock",
+                b"is another process using the image",
+            ),
+            "drive-lock-error",
+        ),
+        (
+            (b"could not open", b"could not read", b"image is not in qcow2 format"),
+            "drive-open-error",
+        ),
+        (
+            (
+                b"cannot set up guest memory",
+                b"cannot allocate memory",
+                b"failed to allocate",
+            ),
+            "memory-error",
+        ),
+        ((b"could not load pc bios", b"could not find rom image"), "firmware-error"),
+        (
+            (b"invalid option", b"invalid parameter", b"unsupported machine type"),
+            "option-error",
+        ),
+        ((b"terminating on signal",), "signal"),
+    ):
+        if any(marker in output for marker in markers):
+            category = candidate
+            break
+    serial = contents("serial.log")
+    return {
+        "log_category": category,
+        "boot_markers": {
+            name: marker in serial
+            for name, marker in (
+                ("kernel-start", b"linux version"),
+                ("kernel-panic", b"kernel panic"),
+                ("reboot", b"reboot: restarting system"),
+                ("poweroff", b"power down"),
+                ("cloud-init", b"cloud-init"),
+                ("login", b"node-g0 login:"),
+            )
+        },
+    }
+
+
 def safe_error(error):
     if isinstance(error, CommandFailure):
         category = (
@@ -142,7 +214,7 @@ class Diagnostics:
         self.current = name
         print(f"G0 phase: {name}", flush=True)
 
-    def failure(self, error, processes):
+    def failure(self, error, processes, root=None):
         result = {
             "phase": self.current if self.current in PHASES else "unknown",
             **safe_error(error),
@@ -151,13 +223,15 @@ class Diagnostics:
             else "not-selected",
             "guest_attempts": self.guest_attempts,
             "processes": {
-                name: "running" if process.poll() is None else "exited"
+                name: {"returncode": process.poll()}
                 for name, process in processes.items()
                 if name in PROCESS_NAMES
             },
         }
         if self.guest_last is not None:
             result["guest_last"] = safe_error(self.guest_last)
+        if root is not None and "qemu" in processes:
+            result["qemu"] = qemu_diagnostic(root)
         print("G0 diagnostic: " + json.dumps(result, sort_keys=True), flush=True)
 
 
@@ -884,7 +958,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             flush=True,
         )
     except Exception as error:
-        diagnostics.failure(error, processes)
+        diagnostics.failure(error, processes, root)
         write(root / "failure.log", traceback.format_exc())
         raise RuntimeError(
             "fixture failed; inspect the retained private logs"

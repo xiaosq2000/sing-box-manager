@@ -223,9 +223,47 @@ def test_guest_readiness_retains_last_safe_outcome(
             '"guest_last": {"category": "ssh-authentication", "returncode": 255}'
             in public
         )
-        assert '"qemu": "exited"' in public
+        assert '"qemu": {"returncode": 1}' in public
     assert diagnostics.guest_attempts == 1
     assert calls == [log]
+
+
+@pytest.mark.parametrize(
+    ("output", "category"),
+    [
+        (b"KVM: entry failed, hardware error 0x80000021", "kvm-run-error"),
+        (b"failed to initialize KVM: Permission denied", "kvm-init-error"),
+        (b"Could not set up host forwarding rule", "host-forward-error"),
+        (b"Could not set up guest forwarding rule", "guest-forward-error"),
+        (b'Failed to get "write" lock', "drive-lock-error"),
+        (b"Could not open private-disk", "drive-open-error"),
+        (b"cannot set up guest memory", "memory-error"),
+        (b"could not load PC BIOS", "firmware-error"),
+        (b"invalid option", "option-error"),
+        (b"terminating on signal 15", "signal"),
+        (b"unknown private error", "unclassified"),
+        (b"", "empty"),
+    ],
+)
+def test_qemu_diagnostic_uses_only_fixed_categories(tmp_path, capsys, output, category):
+    private = b"PRIVATE-fixture-credential-and-path"
+    (tmp_path / "qemu.log").write_bytes(output + (b" " + private if output else b""))
+    (tmp_path / "serial.log").write_bytes(b"Linux version\nKernel panic\n" + private)
+    result = harness.qemu_diagnostic(tmp_path)
+    assert result["log_category"] == category
+    assert result["boot_markers"]["kernel-start"]
+    assert result["boot_markers"]["kernel-panic"]
+    assert not result["boot_markers"]["cloud-init"]
+    diagnostics = harness.Diagnostics()
+    process = subprocess.CompletedProcess([], 1)
+    process.poll = lambda: 1
+    diagnostics.failure(RuntimeError(private), {"qemu": process}, tmp_path)
+    assert private.decode() not in capsys.readouterr().out
+    assert private.decode() not in json.dumps(result)
+
+
+def test_absent_qemu_logs_do_not_hide_original_failure(tmp_path):
+    assert harness.qemu_diagnostic(tmp_path)["log_category"] == "empty"
 
 
 def test_state_timeout_is_not_success():

@@ -120,11 +120,13 @@ Failed runs remain for diagnosis. Removal requires explicit cleanup authorizatio
 
 The dedicated GitHub-hosted workflow runs the same contracts, cgo-free module checks and native fixture.
 It does not upload or cache private run directories.
-Remote G0 acceptance is blocked by a failed native run. Its root cause remains unknown.
+Remote G0 acceptance is blocked at guest readiness. KVM initialization passes, but the actual QEMU process exits before SSH becomes available.
+The QEMU exit cause remains unknown. Longer readiness timeouts do not address an exited process.
 A local result does not establish remote acceptance or acceptance of a changed source fingerprint.
 
 The runner prints fixed phase names and the selected accelerator.
-On failure, it prints fixed error categories, numeric exit codes, guest readiness attempts and tracked process states.
+On failure, it prints fixed error categories, numeric exit codes, guest readiness attempts and tracked process exit codes.
+QEMU diagnostics contain only fixed log categories and Boolean boot markers. Raw QEMU and serial logs remain private.
 The last guest readiness outcome distinguishes SSH transport, host-key, authentication and remote readiness failures.
 These categories identify observed symptoms, not necessarily root causes.
 Raw command output, paths from commands and exception details stay in private run logs.
