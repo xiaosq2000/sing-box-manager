@@ -654,10 +654,24 @@ routes and direct exceptions. They do not change selections or restart services.
 
 ### Website responses
 
-`check` uses a small non-AI default list, the saved list, an explicit URL list,
-or a read-only `default`, `china`, `global`, or `ai` preset. Explicit URLs and
-`--preset` are mutually exclusive. Default sampling is once per target. The range
-is 1–5. Multiple samples show the median first-response time and response counts.
+`check` uses the saved list, or 17 built-in non-AI targets when no list exists.
+Explicit URLs and read-only `default`, `china`, `global`, or `ai` presets override
+that selection for one invocation. Explicit URLs and `--preset` are mutually
+exclusive. Default sampling is once per target. The range is 1–5. Multiple samples
+show the median first-response time and response counts.
+
+| Category / preset        | Websites                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| China / `china`          | Baidu, Bilibili, WeChat, Taobao, Zhihu, Douyin, University of Macau (`www.um.edu.mo`), University of Hong Kong (`www.hku.hk`) |
+| International / `global` | GitHub, Cloudflare, Google, YouTube, X, TikTok, Reddit, Telegram, IEEE (`www.ieee.org`)                                       |
+| AI / `ai`                | ChatGPT, Claude, Gemini. Explicit selection only                                                                              |
+
+`default` contains China targets first, then international targets. These targets
+request `/favicon.ico` on their respective hosts. AI targets request provider
+homepages. A resource response does not establish App, messaging, or video access.
+The category column appears in both progress and final output. JSON website
+observations include `category`: `china`, `global`, `ai`, or `custom`.
+Categories describe website groups, not actual direct or proxy paths.
 
 HTTPS GET checks retain TLS verification, read at most 8 KiB, and follow no
 redirects. They use no cookies or account credentials. A 403 means a response
@@ -684,7 +698,15 @@ sbc check targets reset
 The private `diagnostic-targets.json` uses versioned JSON and stable IDs. It holds
 at most 24 targets. Import replaces the saved list only after full validation.
 List operations send no request. A missing file uses defaults without writing.
-An explicitly empty list stays empty. `reset` explicitly restores defaults.
+An explicitly empty list stays empty. New built-in defaults do not replace a saved
+list. Use `sbc check --preset default` without changing it, or run
+`sbc check targets reset` to explicitly replace it with the 17 built-in targets.
+
+`targets list` shows each target's category. Saved JSON targets accept an optional
+`category` field: `china`, `global`, `ai`, or `custom`. Import and export preserve
+this field. Lists without it remain valid. Exact built-in URLs inherit their
+built-in category for display and reports without changing the saved file.
+Other URLs show as Custom unless the saved target supplies a category.
 
 Only HTTPS is accepted. Embedded credentials and obvious local literals are
 rejected. Validation does not resolve mixed targets locally. Exact endpoint URLs

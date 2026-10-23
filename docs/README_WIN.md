@@ -130,8 +130,10 @@ for `direct`, `ai-only`, `gfw-proxy`, `china-direct`, and `global`.
 Plain `sbc ip` checks IPv4 through IPify and ident.me, with location and ASN
 estimates from ipwho.is. `sbc ip --dual-stack` also checks IPv6. IP probes and
 detail lookups follow the active route. Plain `sbc ip` contacts no AI provider.
-`sbc check` measures website first responses and HTTP access. `sbc speed download`
-measures bounded throughput. They use the ordinary authenticated sbc inlet and
+`sbc check` measures website first responses and HTTP access. Without a saved
+list, it checks 17 non-AI targets grouped as China and international websites.
+The `china` and `global` presets select those groups without changing saved targets.
+`sbc speed download` measures bounded throughput. They use the ordinary authenticated sbc inlet and
 follow active destination rules, even with shell proxies off. AI targets need an
 explicit URL or `--preset ai` and can expose the direct public IP. Retired `--ai`
 and `--allow-direct-ai` flags are rejected. See

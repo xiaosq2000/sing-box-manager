@@ -31,6 +31,7 @@ type diagnosticOptions struct {
 type diagnosticObservation struct {
 	ID           string              `json:"id"`
 	Host         string              `json:"host"`
+	Category     string              `json:"category,omitempty"`
 	Source       string              `json:"source,omitempty"`
 	Family       int                 `json:"family,omitempty"`
 	Policy       string              `json:"policy,omitempty"`
@@ -129,6 +130,9 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 	}
 	for _, entry := range entries {
 		row := diagnosticObservation{ID: entry.ID, Host: diagnostic.Host(entry.URL), Samples: []diagnostic.Sample{}}
+		if command == "check" {
+			row.Category = diagnostic.TargetCategory(entry)
+		}
 		if command == "ip" {
 			row.IPValidation = "not-tested"
 			row.Family = 4
@@ -186,7 +190,7 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 			headerLine = strings.TrimSuffix(fmt.Sprintf(i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol)), "\n")
 		}
 		initialRows, initialPending := buildDiagnosticTableRows(report.Observations)
-		liveModel := tui.NewLiveTableModel(th, headerLine, diagnosticHeaders(), initialRows, initialPending, i18n.T("testing..."), func() {
+		liveModel := tui.NewLiveTableModel(th, headerLine, diagnosticHeaders(command), initialRows, initialPending, i18n.T("testing..."), func() {
 			interrupted.CompareAndSwap(0, 130)
 			cancel()
 		})
@@ -358,9 +362,26 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 	return renderDiagnostic(env, report, options.json, code)
 }
 
-func diagnosticHeaders() []string {
+func diagnosticHeaders(command string) []string {
 	raw := strings.TrimSuffix(i18n.T("Target / source\tFirst response\tResponses\tHTTP\tCapture\tPath\tExit IP / rate\n"), "\n")
-	return strings.Split(raw, "\t")
+	headers := strings.Split(raw, "\t")
+	if command == "check" {
+		headers[6] = i18n.T("Category")
+	}
+	return headers
+}
+
+func diagnosticCategoryLabel(category string) string {
+	switch category {
+	case "china":
+		return i18n.T("China")
+	case "global":
+		return i18n.T("International")
+	case "ai":
+		return i18n.T("AI")
+	default:
+		return i18n.T("Custom")
+	}
 }
 
 func formatObservationRow(row diagnosticObservation) ([]string, bool) {
@@ -405,6 +426,9 @@ func formatObservationRow(row diagnosticObservation) ([]string, bool) {
 		capture = i18n.T("verified")
 	}
 	value := row.IP
+	if row.Category != "" {
+		value = diagnosticCategoryLabel(row.Category)
+	}
 	if value == "" {
 		value = i18n.T("unknown")
 	}
@@ -459,7 +483,7 @@ func renderDiagnostic(env Env, report diagnosticReport, asJSON bool, code int) i
 		fmt.Fprintln(env.Stderr, diagnosticMessage(warning))
 	}
 	rows, _ := buildDiagnosticTableRows(report.Observations)
-	fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, diagnosticHeaders(), rows, tui.DiagnosticCellStyler))
+	fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, diagnosticHeaders(report.Command), rows, tui.DiagnosticCellStyler))
 	for _, row := range report.Observations {
 		if row.Policy != "" {
 			continue

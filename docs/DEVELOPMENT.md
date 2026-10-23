@@ -202,7 +202,9 @@ pixi run go test -tags e2e ./internal/e2e -run '^(TestBrowserLanguageProbeComman
 CLI help and argument-validation fixtures reject calls to installation lookup
 or stdin. Diagnostic fixtures cover explicit destination selection, ordinary
 inlet authentication, HTTP denials and redirects, and no account credentials
-or automatic retries.
+or automatic retries. Preset-selection fixtures reject CONNECT on loopback without
+public DNS or destination access. Category fixtures cover all 17 default targets,
+localized labels, JSON, legacy lists, and import/export round trips.
 Region fixtures use a temporary `/etc` tree and a fake tool runner. They cover
 system scope, absolute and relative time zone links, unchanged tool results,
 tool and file fallback, ownership, external changes, partial components, pending
