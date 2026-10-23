@@ -302,6 +302,46 @@ def reachable(number):
         return False
 
 
+def kvm_snapshot(root, point, returncode=None):
+    if point not in {"before-probe", "after-probe", "after-qemu-exit"}:
+        raise ValueError("invalid KVM observation point")
+    result = {
+        "point": point,
+        "monotonic_ns": time.monotonic_ns(),
+        "euid": os.geteuid(),
+        "egid": os.getegid(),
+        "groups": os.getgroups(),
+    }
+    if type(returncode) is int:
+        result["qemu_returncode"] = returncode
+    try:
+        state = os.stat("/dev/kvm")
+        result["device"] = {
+            "mode": state.st_mode & 0o7777,
+            "uid": state.st_uid,
+            "gid": state.st_gid,
+            "inode": state.st_ino,
+        }
+    except OSError as error:
+        result["stat_errno"] = error.errno
+    try:
+        acl = os.getxattr("/dev/kvm", "system.posix_acl_access")
+        result["acl_sha256"] = hashlib.sha256(acl).hexdigest()
+    except OSError as error:
+        result["acl_errno"] = error.errno
+    try:
+        descriptor = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
+    except OSError as error:
+        result["rdwr_open"] = False
+        result["open_errno"] = error.errno
+    else:
+        os.close(descriptor)
+        result["rdwr_open"] = True
+    write(root / f"kvm-{point}.json", canonical(result) + b"\n")
+    print("G0 KVM snapshot: " + json.dumps(result, sort_keys=True), flush=True)
+    return result
+
+
 def select_acceleration(log, machine_options, process_env):
     try:
         descriptor = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
@@ -326,8 +366,16 @@ def select_acceleration(log, machine_options, process_env):
     )
 
 
-def wait_for_guest(guest, diagnostics, log, seconds=180):
+def wait_for_guest(guest, diagnostics, log, seconds=180, *, qemu_process=None):
+    exit_observed = False
+
     def ready():
+        nonlocal exit_observed
+        if qemu_process is not None and not exit_observed:
+            returncode = qemu_process.poll()
+            if returncode is not None:
+                kvm_snapshot(log.parent, "after-qemu-exit", returncode)
+                exit_observed = True
         diagnostics.guest_attempts += 1
         try:
             ready = (
@@ -790,14 +838,16 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "none",
             "-no-reboot",
         ]
+        kvm_snapshot(root, "before-probe")
         accel = select_acceleration(
             root / "accelerator-probe.log", machine_options, env
         )
+        kvm_snapshot(root, "after-probe")
         if accel not in {"kvm", "tcg"}:
             raise RuntimeError("invalid VM accelerator result")
         diagnostics.acceleration = accel
         print(f"G0 acceleration: {accel}", flush=True)
-        start(
+        qemu_process = start(
             ["qemu-system-x86_64", "-machine", f"accel={accel}", *machine_options],
             "qemu",
         )
@@ -817,7 +867,9 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             )
 
         diagnostics.phase("guest-ready")
-        wait_for_guest(guest, diagnostics, root / "guest-ready-last.log")
+        wait_for_guest(
+            guest, diagnostics, root / "guest-ready-last.log", qemu_process=qemu_process
+        )
         diagnostics.phase("install")
         inventory = {
             "all": {

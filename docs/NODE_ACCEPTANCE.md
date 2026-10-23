@@ -123,9 +123,14 @@ Failed runs remain for diagnosis. Removal requires explicit cleanup authorizatio
 The dedicated GitHub-hosted workflow runs the same contracts, cgo-free module checks and native fixture.
 It does not upload or cache private run directories.
 Remote G0 acceptance is blocked by QEMU's KVM access denial before guest boot.
-A Python read/write device open and the minimal startup probe both succeed. They do not establish access for the actual VM.
-The OS security cause remains unknown. The selector now probes the complete VM arguments and environment before acceptance.
-Remote verification remains pending. Longer readiness timeouts do not address an exited process.
+A Python read/write device open and the complete VM preflight both succeed, but the actual QEMU still fails.
+Neither check resolves the access difference. The OS security cause remains unknown.
+Longer readiness timeouts do not address an exited process.
+
+A bounded observation records device state before the probe, after the probe and when polling first detects QEMU exit.
+The snapshot contains numeric identity and device metadata, an ACL fingerprint or errno, and the read/write-open outcome.
+It excludes raw ACL data, exception text and command output. The observation does not change selection, permissions, waits or retries.
+An observed permission change alone does not identify the process or mechanism that caused it.
 A local result does not establish remote acceptance or acceptance of a changed source fingerprint.
 
 The runner prints fixed phase names and the selected accelerator.

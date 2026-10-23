@@ -1,9 +1,11 @@
 """Check G0 safety and fixture construction without starting a VM or service."""
 
+import errno
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -323,6 +325,92 @@ def test_accessible_kvm_still_requires_startup_probe(monkeypatch, tmp_path, resu
         harness.select_acceleration(log, options, process_env)
         == result.decode().strip()
     )
+
+
+def test_kvm_snapshots_distinguish_access_change_without_raw_acl(
+    monkeypatch, tmp_path, capsys
+):
+    original_stat, original_open, original_close = (
+        harness.os.stat,
+        harness.os.open,
+        harness.os.close,
+    )
+    changed = False
+    closed = []
+    private = b"PRIVATE-fixture-acl-and-error"
+
+    def stat(path, *args, **kwargs):
+        if path == "/dev/kvm":
+            return SimpleNamespace(st_mode=0o20660, st_uid=0, st_gid=108, st_ino=7)
+        return original_stat(path, *args, **kwargs)
+
+    def acl(path, name):
+        assert (path, name) == ("/dev/kvm", "system.posix_acl_access")
+        if changed:
+            raise OSError(errno.ENODATA, private.decode())
+        return private
+
+    def open_device(path, *args, **kwargs):
+        if path != "/dev/kvm":
+            return original_open(path, *args, **kwargs)
+        assert args == (harness.os.O_RDWR | harness.os.O_CLOEXEC,)
+        if changed:
+            raise PermissionError(errno.EACCES, private.decode())
+        return 91
+
+    def close(descriptor):
+        if descriptor == 91:
+            closed.append(descriptor)
+        else:
+            original_close(descriptor)
+
+    monkeypatch.setattr(harness.os, "stat", stat)
+    monkeypatch.setattr(harness.os, "getxattr", acl)
+    monkeypatch.setattr(harness.os, "open", open_device)
+    monkeypatch.setattr(harness.os, "close", close)
+    before = harness.kvm_snapshot(tmp_path, "before-probe")
+    changed = True
+    after = harness.kvm_snapshot(tmp_path, "after-probe")
+    assert before["device"] == after["device"]
+    assert before["rdwr_open"] is True
+    assert before["acl_sha256"] == harness.hashlib.sha256(private).hexdigest()
+    assert after["rdwr_open"] is False
+    assert after["open_errno"] == errno.EACCES
+    assert after["acl_errno"] == errno.ENODATA
+    assert closed == [91]
+    assert private.decode() not in capsys.readouterr().out
+    for point, expected in (("before-probe", before), ("after-probe", after)):
+        path = tmp_path / f"kvm-{point}.json"
+        assert json.loads(path.read_text()) == expected
+        assert path.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(ValueError):
+        harness.kvm_snapshot(tmp_path, "PRIVATE-invalid-point")
+
+
+def test_qemu_exit_observation_does_not_change_wait_or_retry(monkeypatch, tmp_path):
+    observations = []
+    poll_results = iter([None, 1, 1])
+    process = SimpleNamespace(poll=lambda: next(poll_results))
+    diagnostics = harness.Diagnostics()
+
+    def guest(*args, **kwargs):
+        raise harness.CommandFailure("ssh-refused", 255)
+
+    def wait(predicate, seconds):
+        assert seconds == 180
+        assert [predicate() for _ in range(3)] == [False, False, False]
+        raise harness.StateTimeout("fixture timeout")
+
+    monkeypatch.setattr(harness, "wait", wait)
+    monkeypatch.setattr(
+        harness, "kvm_snapshot", lambda *args: observations.append(args)
+    )
+    with pytest.raises(harness.StateTimeout):
+        harness.wait_for_guest(
+            guest, diagnostics, tmp_path / "guest.log", qemu_process=process
+        )
+    assert diagnostics.guest_attempts == 3
+    assert observations == [(tmp_path, "after-qemu-exit", 1)]
 
 
 def test_state_timeout_is_not_success():
