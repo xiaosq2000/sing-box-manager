@@ -1,0 +1,98 @@
+---
+- name: Install the disposable G0 node
+  hosts: node
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require a disposable guest marker
+      ansible.builtin.stat:
+        path: /etc/sbm-node-g0-disposable
+      register: disposable_marker
+
+    - name: Reject an unmarked host
+      ansible.builtin.assert:
+        that:
+          - disposable_marker.stat.exists
+          - ansible_host == '127.0.0.1'
+          - g0_run_dir is defined
+
+    - name: Create private node directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - /opt/sbm-node-g0
+        - /etc/sbm-node-g0
+        - /var/lib/sbm-node-g0
+
+    - name: Install the two locally built executables
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - src: "{{ g0_agent_binary }}"
+          dest: /opt/sbm-node-g0/sbm-node-g0
+        - src: "{{ g0_engine_binary }}"
+          dest: /opt/sbm-node-g0/sing-box
+
+    - name: Install private fixture TLS material
+      ansible.builtin.copy:
+        src: "{{ g0_run_dir }}/{{ item }}"
+        dest: "/etc/sbm-node-g0/{{ item }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      diff: false
+      loop:
+        - control.crt
+        - node.crt
+        - node.key
+
+    - name: Generate or read the persistent node identity
+      ansible.builtin.command:
+        argv:
+          - /opt/sbm-node-g0/sbm-node-g0
+          - init
+          - --identity
+          - /etc/sbm-node-g0/identity.json
+          - --origin
+          - "{{ g0_control_origin }}"
+          - --ca
+          - /etc/sbm-node-g0/control.crt
+      register: node_registration
+      changed_when: false
+      no_log: true
+
+    - name: Register the digest through the private control SSH endpoint
+      ansible.builtin.command:
+        argv: "{{ g0_control_ssh_argv }}"
+        stdin: "{{ node_registration.stdout }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      no_log: true
+
+    - name: Install disposable systemd units
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - sbm-g0-proxy.service
+        - sbm-g0-agent.service
+
+    - name: Enable the G0 agent
+      ansible.builtin.systemd_service:
+        name: sbm-g0-agent.service
+        daemon_reload: true
+        enabled: true
+        state: started

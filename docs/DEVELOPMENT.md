@@ -575,6 +575,24 @@ stats off; the separate runtime job tests the custom counter binary.
 Its local unit test mocks all host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
 
+## Node-agent feasibility checks
+
+The opt-in `node-g0` environment adds pinned Ansible tooling and PostgreSQL for the
+[isolated G0 fixture](NODE_ACCEPTANCE.md). The separate `node-agent/` Go module uses
+cgo-free gRPC and SQLite without changing `sbc` dependencies.
+
+```sh
+pixi run -e node-g0 test tests/test_node_g0.py tests/test_node_g0_harness.py
+pixi run test-node-agent
+pixi run lint-node-agent
+```
+
+The native fixture installs services only inside a marked disposable VM.
+Its controller runs as private development subprocesses, not host system services.
+Read the [artifact and run requirements](NODE_ACCEPTANCE.md#reproduce) before execution.
+The dedicated GitHub-hosted workflow keeps raw run artifacts private.
+These checks do not establish production deployment or the remaining M5/M6 gates.
+
 ## Traffic accounting checks
 
 Traffic values and calendar rules live in `traffic_models.py`, SQLite transactions

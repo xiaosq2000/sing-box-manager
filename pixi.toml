@@ -94,7 +94,9 @@ test = { cmd = "pytest -q" }
 # run a real binary.
 fetch-sing-box = "python -m tests.fetch_sing_box"
 fetch-sing-box-server = "python -m tests.fetch_sing_box --server"
+lint-node-agent = { cmd = "go -C node-agent vet ./...", default-environment = "node-g0" }
 test-go = { cmd = "go test ./..." }
+test-node-agent = { cmd = "go -C node-agent test -count=1 ./...", default-environment = "node-g0" }
 typecheck = { cmd = "ty check" }
 
 [feature.dev.pypi-dependencies]
@@ -116,6 +118,10 @@ GOTOOLCHAIN = "local"
 [feature.control-plane-test.dependencies]
 postgresql = ">=17,<18"
 
+[feature.node-g0.pypi-dependencies]
+ansible-core = "==2.21.5"
+django-ninja = "==1.7.1"
+
 [environments]
 control-plane-test = { features = [
   "dev",
@@ -123,6 +129,12 @@ control-plane-test = { features = [
   "control-plane-test",
 ], solve-group = "runtime" }
 default = { features = ["dev", "go"], solve-group = "runtime" }
+node-g0 = { features = [
+  "dev",
+  "go",
+  "control-plane-test",
+  "node-g0",
+], solve-group = "runtime" }
 style = { features = ["dev", "go"], no-default-feature = true }
 
 [tasks.sbm]

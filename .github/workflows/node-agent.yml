@@ -1,0 +1,81 @@
+name: Node agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "node-agent/**"
+      - "scripts/dev/node-g0/**"
+      - "scripts/dev/tun-vm/select-accel.py"
+      - "tests/node_g0/**"
+      - "tests/test_node_g0.py"
+      - "sing_box_manager/release/**"
+      - "sing_box_manager/traffic_stats.py"
+      - "sing_box_manager/settings.py"
+      - "config/inventory/example.yaml"
+      - "pixi.toml"
+      - "pixi.lock"
+      - ".github/workflows/node-agent.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "node-agent/**"
+      - "scripts/dev/node-g0/**"
+      - "scripts/dev/tun-vm/select-accel.py"
+      - "tests/node_g0/**"
+      - "tests/test_node_g0.py"
+      - "sing_box_manager/release/**"
+      - "sing_box_manager/traffic_stats.py"
+      - "sing_box_manager/settings.py"
+      - "config/inventory/example.yaml"
+      - "pixi.toml"
+      - "pixi.lock"
+      - ".github/workflows/node-agent.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  node-g0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0 # v0.9.5
+        with:
+          locked: true
+          environments: node-g0
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Check Ninja and PostgreSQL contracts
+        run: pixi run -e node-g0 test tests/test_node_g0.py tests/test_node_g0_harness.py
+        env:
+          SBM_REQUIRE_POSTGRES: "1"
+          SBM_REQUIRE_NODE_G0: "1"
+      - name: Check the separate cgo-free agent module
+        run: |
+          go -C node-agent test -count=1 ./...
+          go -C node-agent vet ./...
+        shell: pixi run -e node-g0 bash -e {0}
+      - name: Install disposable-runner VM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils netcat-openbsd openssh-server
+          if [ -c /dev/kvm ]; then sudo setfacl -m "u:$(id -un):rw" /dev/kvm; fi
+      - name: Prepare verified fixture artifacts
+        run: |
+          pixi run -e node-g0 fetch-sing-box-server
+          sha256sum .cache/sing-box-manager/server/sing-box | cut -d ' ' -f 1 > .cache/sing-box-manager/server/sing-box.sha256
+          bash scripts/dev/fetch-tun-image.sh
+      - name: Check isolated SSH, HTTPS, proxy and accounting flow
+        run: pixi run -e node-g0 python scripts/dev/node-g0/run.py --engine .cache/sing-box-manager/server/sing-box
+        env:
+          SBM_NODE_G0: "1"
+      # The run directory contains synthetic credentials and private keys.
+      # Do not upload or cache it, its VM disk, or raw logs.

@@ -2,7 +2,8 @@
 
 Checked on 2026-10-23.
 
-Status: design contract for M5/M6, not implemented behavior or production authorization.
+Status: target contract for M5/M6, not production authorization.
+The [acceptance record](NODE_ACCEPTANCE.md) separates the implemented G0 fixture from pending product behavior.
 All commands and interfaces in this document are targets unless identified as existing.
 The [roadmap](REFACTOR_SPEC.md#delivery-order) puts M5 and M6 before device management.
 
