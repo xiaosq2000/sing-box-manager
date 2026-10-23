@@ -418,6 +418,35 @@ def test_state_timeout_is_not_success():
         harness.wait(lambda: False, seconds=0)
 
 
+def test_ci_uses_kvm_ownership_instead_of_a_transient_named_user_acl():
+    root = Path(__file__).parents[1]
+    workflows = {
+        name: yaml.load(
+            (root / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader
+        )
+        for name in ("node-agent.yml", "sbc.yml")
+    }
+    job = workflows["node-agent.yml"]["jobs"]["node-g0"]
+    setup = next(step for step in job["steps"] if "/dev/kvm" in step.get("run", ""))
+    native = next(
+        step
+        for step in job["steps"]
+        if "scripts/dev/node-g0/run.py" in step.get("run", "")
+    )
+    expected = 'sudo chown "$(id -u)" /dev/kvm'
+    assert expected in setup["run"]
+    assert any(
+        expected in step.get("run", "")
+        for step in workflows["sbc.yml"]["jobs"]["e2e-tun"]["steps"]
+    )
+    assert "setfacl" not in setup["run"]
+    assert "chmod" not in setup["run"]
+    assert job["steps"].index(setup) < job["steps"].index(native)
+    for item in (job, setup, native):
+        assert "if" not in item
+        assert "continue-on-error" not in item
+
+
 def test_ci_uses_disposable_runner_and_never_uploads_private_runs():
     root = Path(__file__).parents[1]
     config = yaml.load(

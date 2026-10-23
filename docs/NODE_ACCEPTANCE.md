@@ -122,10 +122,12 @@ Failed runs remain for diagnosis. Removal requires explicit cleanup authorizatio
 
 The dedicated GitHub-hosted workflow runs the same contracts, cgo-free module checks and native fixture.
 It does not upload or cache private run directories.
-Remote G0 acceptance is blocked by QEMU's KVM access denial before guest boot.
-A Python read/write device open and the complete VM preflight both succeed, but the actual QEMU still fails.
-Neither check resolves the access difference. The OS security cause remains unknown.
-Longer readiness timeouts do not address an exited process.
+The hosted G0 job grants `/dev/kvm` ownership to the runner UID, matching TUN CI.
+This changes device access only on the disposable hosted runner. It does not change developer hosts or guest permissions.
+Named-user ACL grants can disappear during KVM VM lifecycle events on the tested runner.
+The [minimal reproduction](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39971638135) records the runner UID entry disappearing while the ACL mask remains unchanged.
+KVM and udev events, uaccess tags and candidate rules support the uaccess path, but do not identify the ACL writer.
+Two unreadable rule files limit that observation. Remote G0 verification of the ownership grant remains pending.
 
 A bounded observation records device state before the probe, after the probe and when polling first detects QEMU exit.
 The snapshot contains numeric identity and device metadata, an ACL fingerprint or errno, and the read/write-open outcome.

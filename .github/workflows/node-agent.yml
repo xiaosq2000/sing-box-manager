@@ -67,7 +67,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 qemu-utils netcat-openbsd openssh-server
-          if [ -c /dev/kvm ]; then sudo setfacl -m "u:$(id -un):rw" /dev/kvm; fi
+          # Match TUN CI. Named-user ACL grants can disappear during KVM uevents.
+          if [ -c /dev/kvm ]; then sudo chown "$(id -u)" /dev/kvm; fi
       - name: Prepare verified fixture artifacts
         run: |
           pixi run -e node-g0 fetch-sing-box-server
