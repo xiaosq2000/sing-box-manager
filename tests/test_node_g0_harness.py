@@ -127,6 +127,112 @@ def test_counter_protobuf_matches_its_pinned_generator(tmp_path):
     ).read_bytes()
 
 
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "category"),
+    [
+        (255, b"Host key verification failed.", "ssh-host-key"),
+        (255, b"REMOTE HOST IDENTIFICATION HAS CHANGED", "ssh-host-key"),
+        (255, b"Permission denied (publickey).", "ssh-authentication"),
+        (255, b"Connection refused", "ssh-refused"),
+        (255, b"Connection timed out", "ssh-timeout"),
+        (255, b"Connection closed by remote host", "ssh-transport"),
+        (1, b"", "guest-not-ready"),
+    ],
+)
+def test_ssh_diagnostics_use_fixed_categories(returncode, stderr, category):
+    assert harness.ssh_category(returncode, stderr) == category
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_command_failure_keeps_output_private(monkeypatch, tmp_path, capsys, timeout):
+    private = b"PRIVATE-fixture-credential-and-path"
+    argv = ["ssh", private.decode()]
+
+    def execute(*args, **kwargs):
+        if timeout:
+            raise subprocess.TimeoutExpired(argv, 15, output=private, stderr=private)
+        return subprocess.CompletedProcess(argv, 255, private, private)
+
+    monkeypatch.setattr(harness.subprocess, "run", execute)
+    log = tmp_path / "command.log"
+    with pytest.raises(harness.CommandFailure) as caught:
+        harness.run(argv, log=log)
+    diagnostics = harness.Diagnostics()
+    diagnostics.phase("guest-ready")
+    diagnostics.failure(caught.value, {})
+    public = capsys.readouterr().out + str(caught.value)
+    assert private.decode() not in public
+    assert log.read_bytes() == private * 2
+    assert log.stat().st_mode & 0o777 == 0o600
+    expected = "command-timeout" if timeout else "ssh-transport"
+    assert harness.safe_error(caught.value)["category"] == expected
+
+
+def test_unknown_errors_and_fields_cannot_enter_public_diagnostics(capsys):
+    private = "PRIVATE-fixture-credential-and-path"
+    diagnostics = harness.Diagnostics()
+    with pytest.raises(ValueError):
+        diagnostics.phase(private)
+    diagnostics.current = private
+    diagnostics.acceleration = private
+    diagnostics.guest_last = harness.CommandFailure(private, private)
+    diagnostics.failure(RuntimeError(private), {private: object()})
+    public = capsys.readouterr().out
+    assert private not in public
+    assert '"category": "fixture-error"' in public
+    assert '"processes": {}' in public
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_guest_readiness_retains_last_safe_outcome(
+    monkeypatch, tmp_path, capsys, ready
+):
+    diagnostics = harness.Diagnostics()
+    diagnostics.phase("guest-ready")
+    diagnostics.acceleration = "tcg"
+    calls = []
+
+    def guest(command, *, log):
+        calls.append(log)
+        if not ready:
+            raise harness.CommandFailure("ssh-authentication", 255)
+        return b""
+
+    def wait(predicate, seconds):
+        assert seconds == 180
+        if not predicate():
+            raise harness.StateTimeout("PRIVATE-fixture-state")
+
+    class Exited:
+        def poll(self):
+            return 1
+
+    monkeypatch.setattr(harness, "wait", wait)
+    log = tmp_path / "guest-ready-last.log"
+    if ready:
+        harness.wait_for_guest(guest, diagnostics, log)
+        assert diagnostics.guest_last is None
+    else:
+        with pytest.raises(harness.StateTimeout) as caught:
+            harness.wait_for_guest(guest, diagnostics, log)
+        diagnostics.failure(caught.value, {"qemu": Exited()})
+        public = capsys.readouterr().out
+        assert "PRIVATE-fixture-state" not in public
+        assert '"category": "state-timeout"' in public
+        assert (
+            '"guest_last": {"category": "ssh-authentication", "returncode": 255}'
+            in public
+        )
+        assert '"qemu": "exited"' in public
+    assert diagnostics.guest_attempts == 1
+    assert calls == [log]
+
+
+def test_state_timeout_is_not_success():
+    with pytest.raises(harness.StateTimeout):
+        harness.wait(lambda: False, seconds=0)
+
+
 def test_ci_uses_disposable_runner_and_never_uploads_private_runs():
     root = Path(__file__).parents[1]
     config = yaml.load(

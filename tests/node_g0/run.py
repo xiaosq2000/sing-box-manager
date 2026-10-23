@@ -53,17 +53,137 @@ def port():
         return sock.getsockname()[1]
 
 
+class CommandFailure(RuntimeError):
+    def __init__(self, category, returncode=None):
+        super().__init__("command failed; inspect private run logs")
+        self.category = category
+        self.returncode = returncode
+
+
+class StateTimeout(RuntimeError):
+    pass
+
+
+ERROR_CATEGORIES = {
+    "command-exit",
+    "command-timeout",
+    "ssh-host-key",
+    "ssh-authentication",
+    "ssh-refused",
+    "ssh-timeout",
+    "ssh-transport",
+    "guest-not-ready",
+}
+PHASES = {
+    "build",
+    "database",
+    "controller",
+    "control-ssh",
+    "guest-boot",
+    "guest-ready",
+    "install",
+    "initial-apply",
+    "client-start",
+    "first-traffic",
+    "repeat-install",
+    "next-generation",
+    "second-traffic",
+    "accounting",
+    "result",
+}
+PROCESS_NAMES = {"https", "control-ssh", "qemu", "client"}
+
+
+def ssh_category(returncode, stderr):
+    # Match fixed OpenSSH errors. Never return captured text or a remote value.
+    if returncode != 255:
+        return "guest-not-ready"
+    for marker, category in (
+        (b"Host key verification failed", "ssh-host-key"),
+        (b"REMOTE HOST IDENTIFICATION HAS CHANGED", "ssh-host-key"),
+        (b"Permission denied", "ssh-authentication"),
+        (b"Connection refused", "ssh-refused"),
+        (b"Connection timed out", "ssh-timeout"),
+        (b"Connection timed out during banner exchange", "ssh-timeout"),
+    ):
+        if marker in stderr:
+            return category
+    return "ssh-transport"
+
+
+def safe_error(error):
+    if isinstance(error, CommandFailure):
+        category = (
+            error.category if error.category in ERROR_CATEGORIES else "command-exit"
+        )
+        result = {"category": category}
+        if type(error.returncode) is int:
+            result["returncode"] = error.returncode
+        return result
+    if isinstance(error, StateTimeout):
+        return {"category": "state-timeout"}
+    if isinstance(error, ssl.SSLError):
+        return {"category": "tls-error"}
+    if isinstance(error, OSError):
+        return {"category": "os-error"}
+    return {"category": "fixture-error"}
+
+
+class Diagnostics:
+    def __init__(self):
+        self.current = "build"
+        self.acceleration = "not-selected"
+        self.guest_attempts = 0
+        self.guest_last = None
+
+    def phase(self, name):
+        if name not in PHASES:
+            raise ValueError("invalid diagnostic phase")
+        self.current = name
+        print(f"G0 phase: {name}", flush=True)
+
+    def failure(self, error, processes):
+        result = {
+            "phase": self.current if self.current in PHASES else "unknown",
+            **safe_error(error),
+            "acceleration": self.acceleration
+            if self.acceleration in {"kvm", "tcg"}
+            else "not-selected",
+            "guest_attempts": self.guest_attempts,
+            "processes": {
+                name: "running" if process.poll() is None else "exited"
+                for name, process in processes.items()
+                if name in PROCESS_NAMES
+            },
+        }
+        if self.guest_last is not None:
+            result["guest_last"] = safe_error(self.guest_last)
+        print("G0 diagnostic: " + json.dumps(result, sort_keys=True), flush=True)
+
+
 def run(argv, *, stdin=None, env=None, cwd=ROOT, timeout=120, log=None):
-    result = subprocess.run(
-        argv, input=stdin, capture_output=True, cwd=cwd, env=env or ENV, timeout=timeout
-    )
+    try:
+        result = subprocess.run(
+            argv,
+            input=stdin,
+            capture_output=True,
+            cwd=cwd,
+            env=env or ENV,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        if log is not None:
+            write(log, (error.stdout or b"") + (error.stderr or b""))
+        raise CommandFailure("command-timeout") from None
     if log is not None:
         write(log, result.stdout + result.stderr)
     if result.returncode:
-        # Captured output can contain private fixture configuration.
-        raise RuntimeError(
-            f"command failed: {Path(argv[0]).name}; see private run logs"
+        category = (
+            ssh_category(result.returncode, result.stderr)
+            if argv[0] == "ssh"
+            else "command-exit"
         )
+        raise CommandFailure(category, result.returncode)
     return result.stdout
 
 
@@ -73,7 +193,7 @@ def wait(predicate, seconds=90):
         if predicate():
             return
         time.sleep(0.25)
-    raise RuntimeError("timed out waiting for fixture state")
+    raise StateTimeout("timed out waiting for fixture state")
 
 
 def reachable(number):
@@ -82,6 +202,28 @@ def reachable(number):
             return True
     except OSError:
         return False
+
+
+def wait_for_guest(guest, diagnostics, log, seconds=180):
+    def ready():
+        diagnostics.guest_attempts += 1
+        try:
+            ready = (
+                guest(
+                    "test -f /etc/sbm-node-g0-disposable && systemctl is-active --quiet sbm-g0-target",
+                    log=log,
+                )
+                == b""
+            )
+            diagnostics.guest_last = (
+                None if ready else CommandFailure("guest-not-ready")
+            )
+            return ready
+        except CommandFailure as error:
+            diagnostics.guest_last = error
+            return False
+
+    wait(ready, seconds)
 
 
 def certificate(root, name, san):
@@ -241,18 +383,21 @@ def main():
         "SBM_NODE_G0_DIR": str(root),
         "DJANGO_SETTINGS_MODULE": "tests.node_g0.settings",
     }
-    processes = []
+    processes = {}
+    diagnostics = Diagnostics()
     streams = []
     pg_started = False
     seed = None
 
     def start(argv, name, *, process_env=env):
+        if name not in PROCESS_NAMES:
+            raise ValueError("invalid fixture process name")
         file = (root / f"{name}.log").open("wb")
         streams.append(file)
         process = subprocess.Popen(
             argv, cwd=ROOT, env=process_env, stdout=file, stderr=subprocess.STDOUT
         )
-        processes.append(process)
+        processes[name] = process
         return process
 
     def control(action, stdin=None):
@@ -263,6 +408,7 @@ def main():
         )
 
     try:
+        diagnostics.phase("build")
         run(
             [
                 "go",
@@ -276,6 +422,7 @@ def main():
             timeout=300,
             log=root / "build.log",
         )
+        diagnostics.phase("database")
         socket_dir = root / "pgsocket"
         socket_dir.mkdir()
         run(
@@ -321,6 +468,7 @@ def main():
                 "CREATE DATABASE node_g0",
             ]
         )
+        diagnostics.phase("controller")
         https_port, control_ssh, guest_ssh, guest_proxy, seed_port, mixed_port = [
             port() for _ in range(6)
         ]
@@ -352,6 +500,7 @@ def main():
         if probe.getresponse().status != 401:
             raise RuntimeError("HTTPS authentication preflight failed")
         probe.close()
+        diagnostics.phase("control-ssh")
         operator_public = ssh_key(root, "operator")
         control_public = ssh_key(root, "control-host")
         guest_public = ssh_key(root, "guest-host")
@@ -409,6 +558,7 @@ LogLevel ERROR
             "-o",
             "LogLevel=ERROR",
         ]
+        diagnostics.phase("guest-boot")
         target_script = """from http.server import BaseHTTPRequestHandler, HTTPServer
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -501,6 +651,8 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
         )
         if accel not in {"kvm", "tcg"}:
             raise RuntimeError("invalid VM accelerator result")
+        diagnostics.acceleration = accel
+        print(f"G0 acceleration: {accel}", flush=True)
         net = f"user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:{guest_ssh}-:22,hostfwd=tcp:127.0.0.1:{guest_proxy}-:8443,guestfwd=tcp:10.0.2.100:{seed_port}-cmd:nc -N 127.0.0.1 {seed_port},guestfwd=tcp:10.0.2.100:{https_port}-cmd:nc -N 127.0.0.1 {https_port}"
         start(
             [
@@ -532,7 +684,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "qemu",
         )
 
-        def guest(command):
+        def guest(command, *, log=None):
             return run(
                 [
                     "ssh",
@@ -543,20 +695,12 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                     command,
                 ],
                 timeout=15,
+                log=log,
             )
 
-        def guest_ready():
-            try:
-                return (
-                    guest(
-                        "test -f /etc/sbm-node-g0-disposable && systemctl is-active --quiet sbm-g0-target"
-                    )
-                    == b""
-                )
-            except (RuntimeError, subprocess.TimeoutExpired):
-                return False
-
-        wait(guest_ready, 180)
+        diagnostics.phase("guest-ready")
+        wait_for_guest(guest, diagnostics, root / "guest-ready-last.log")
+        diagnostics.phase("install")
         inventory = {
             "all": {
                 "hosts": {
@@ -625,8 +769,10 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
         def report():
             return json.loads(control("report"))
 
+        diagnostics.phase("initial-apply")
         wait(lambda: report()["nodes"][0]["applied_generation"] == 1)
         before = report()["nodes"][0]["invocation"]
+        diagnostics.phase("client-start")
         client_config = {
             "log": {"level": "error"},
             "inbounds": [
@@ -667,6 +813,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             finally:
                 connection.close()
 
+        diagnostics.phase("first-traffic")
         first_bytes = fetch()
         wait(
             lambda: (
@@ -674,15 +821,19 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                 and report()["usage"][0]["download"] >= first_bytes
             )
         )
+        diagnostics.phase("repeat-install")
         run(playbook, env=ansible_env, timeout=180, log=root / "ansible-repeat.log")
         if report()["nodes"][0]["invocation"] != before:
             raise RuntimeError("repeat deployment restarted the proxy")
+        diagnostics.phase("next-generation")
         control("publish")
         wait(lambda: report()["nodes"][0]["applied_generation"] == 2)
         if report()["nodes"][0]["invocation"] == before:
             raise RuntimeError("configuration change did not replace the engine")
+        diagnostics.phase("second-traffic")
         second_bytes = fetch()
         wait(lambda: report()["usage"][0]["download"] >= first_bytes + second_bytes)
+        diagnostics.phase("accounting")
         # Wait for the final observed counters, then compare exact durable buckets.
         time.sleep(3)
         local = json.loads(
@@ -697,6 +848,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
         central = final["usage"][0]
         if local != [[central["version"], central["upload"], central["download"]]]:
             raise RuntimeError("local and central durable accounting differ")
+        diagnostics.phase("result")
         result = {
             "gate": "G0",
             "result": "PASS",
@@ -731,7 +883,8 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "G0 PASS: SSH/Ansible -> HTTPS -> real Trojan -> SQLite -> PostgreSQL",
             flush=True,
         )
-    except Exception:
+    except Exception as error:
+        diagnostics.failure(error, processes)
         write(root / "failure.log", traceback.format_exc())
         raise RuntimeError(
             "fixture failed; inspect the retained private logs"
@@ -752,7 +905,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                         f"timeout 8 curl --noproxy '*' --cacert /etc/sbm-node-g0/control.crt --max-time 5 -sS -o /dev/null -w '%{{http_code}}' https://10.0.2.100:{https_port}/node-g0/v1/config"
                     ),
                 )
-        for process in reversed(processes):
+        for process in reversed(list(processes.values())):
             if process.poll() is None:
                 process.terminate()
                 try:

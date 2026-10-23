@@ -74,8 +74,8 @@ Equal databases can share an upstream undercount. Application body size does not
 HTTP response headers could explain the observed excess download bytes, but their actual contribution is unverified.
 Do not label the difference TLS/network overhead or use it to claim accounting accuracy.
 
-The read-only analysis and this documentation update do not repeat acceptance tests or resolve the runtime anomalies.
-G1–G4, complete accounting accuracy, remote workflow execution, iOS acceptance and two-hour stability remain unverified.
+The analysis did not resolve the runtime anomalies. Harness phase diagnostics do not resolve them either.
+G1–G4, complete accounting accuracy, remote G0 acceptance, iOS acceptance and two-hour stability remain unverified.
 Android remains unverified and non-blocking. Failed-start forward repair belongs to G1 without simultaneous credential revocation.
 Keep detailed private review artifacts, run paths, raw logs and identity observations outside public source.
 
@@ -120,4 +120,13 @@ Failed runs remain for diagnosis. Removal requires explicit cleanup authorizatio
 
 The dedicated GitHub-hosted workflow runs the same contracts, cgo-free module checks and native fixture.
 It does not upload or cache private run directories.
-A configured workflow is not evidence of a completed remote CI run.
+Remote G0 acceptance is blocked by a failed native run. Its root cause remains unknown.
+A local result does not establish remote acceptance or acceptance of a changed source fingerprint.
+
+The runner prints fixed phase names and the selected accelerator.
+On failure, it prints fixed error categories, numeric exit codes, guest readiness attempts and tracked process states.
+The last guest readiness outcome distinguishes SSH transport, host-key, authentication and remote readiness failures.
+These categories identify observed symptoms, not necessarily root causes.
+Raw command output, paths from commands and exception details stay in private run logs.
+Credential-negative fixtures check that these values cannot enter public diagnostics.
+Diagnostics do not change timeouts, SSH host-key checks, TLS verification or failure outcomes.
