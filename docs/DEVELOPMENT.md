@@ -88,6 +88,27 @@ generated credentials or acceptance artifacts enter these caches.
 Check these workflow contracts and the accelerator probe with
 `pixi run test tests/test_ci_workflows.py tests/test_public_repository.py`.
 
+The independent `kvm-access-probe.yml` diagnostic accepts only pushes to
+`ci/kvm-acl-diagnostic`, not PRs or manual dispatches. It runs one `setfacl` grant,
+one paused, networkless QEMU/QMP probe without a guest image, and another device
+access observation on a disposable GitHub-hosted runner. It does not run G0 or
+change the shared accelerator selector. Explicit opt-in, the expected repository,
+workflow/ref, hosted Linux runner and non-root execution are required.
+Local safety fixtures need no VM or device access:
+`python3 -m unittest discover -s tests -p test_kvm_access_probe.py -v`.
+
+Diagnostic JSON separates the current UID's ACL entry, mask and their permission
+intersection from the actual `O_RDWR` result. Snapshots are ordered, not atomic.
+Only KVM device events, uaccess tag flags, hashed candidate-rule sources and
+bounded KVM-related journal counts enter public output; raw command output,
+other ACL identities and journal messages are not printed or retained.
+Exit `0` requires all collectors to complete, stable post-grant ACL/access and a
+successful QMP check; exit `1` reports a failure, change or incomplete collection;
+exit `2` refuses an unauthorized execution context. Empty event/log results do not
+prove absence of an ACL writer. Notifications and candidate rules establish neither
+rule execution nor attribution. This is time-bounded correlation evidence, not an
+ACL-syscall audit, a permission repair or G0 acceptance.
+
 | Change              | Useful checks                                                                                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Markdown            | `pixi run prettier --check README.md AGENTS.md 'docs/**/*.md'`; check edited commands and local links                                                                                         |

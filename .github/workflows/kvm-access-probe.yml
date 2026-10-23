@@ -1,0 +1,32 @@
+name: KVM ACL diagnostic
+
+on:
+  push:
+    branches: [ci/kvm-acl-diagnostic]
+    paths:
+      - "scripts/dev/kvm-access-probe.py"
+      - "tests/test_kvm_access_probe.py"
+      - ".github/workflows/kvm-access-probe.yml"
+      - "docs/DEVELOPMENT.md"
+
+permissions:
+  contents: read
+
+jobs:
+  kvm-acl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check diagnostic safety with fixtures
+        run: python3 -m unittest discover -s tests -p test_kvm_access_probe.py -v
+      - name: Install minimal disposable-runner probe tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios acl
+      - name: Observe one ACL grant and paused KVM probe
+        run: python3 scripts/dev/kvm-access-probe.py
+        env:
+          SBM_KVM_ACCESS_PROBE: "1"
