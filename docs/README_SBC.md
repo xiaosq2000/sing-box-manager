@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-22.
+Checked on 2026-10-23.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -253,11 +253,20 @@ stdin, not command arguments. `sbc link set` also reads from stdin.
 
 ## Terminal output
 
+Colors use the terminal's ANSI palette, not a fixed RGB theme. Body text and
+backgrounds inherit terminal defaults. Headings use bold, with cyan focus,
+green success, yellow warnings and red errors. Status text and focus markers
+remain meaningful without color. Controls need no Nerd Font: selection uses `>`
+and progress uses an ASCII spinner. Tables retain common Unicode borders.
+
 Human-readable lists use CJK-aware column widths. Status and privacy panels align
 values across the complete panel. Narrow terminals show stacked table fields
-without removing results. `NO_COLOR` disables colors but keeps keyboard interaction.
-Pipes, files, and `TERM=dumb` use static output. Machine-readable output, including
-`--json`, shell exports, and completion scripts, does not use these views.
+without removing results. A non-empty `NO_COLOR` disables styling, including bold,
+but keeps keyboard interaction. `CLICOLOR=0` also disables styling unless
+`CLICOLOR_FORCE` overrides it. `NO_COLOR` takes precedence.
+Pipes, files, and `TERM=dumb` use static output without terminal controls, even
+with forced color. Machine-readable output, including `--json`, shell exports,
+and completion scripts, does not initialize these views or query terminal colors.
 
 Interactive `check`, `ip`, and `speed download` show an inline progress view.
 Use arrow keys or Page Up/Down to scroll. The view adapts to window size changes.
@@ -265,6 +274,9 @@ The complete final report remains in terminal history. Ctrl-C returns 130 with
 partial diagnostic results. POSIX SIGTERM returns 143.
 
 Route and protocol selectors keep the current item visible in short windows.
+Use Page Up/Down to read a selected item that is taller than the window.
+Below four columns, interactive views show a `<>` resize hint (`<` in one column).
+They retain their data and redraw when the window is wider.
 Only Enter confirms a switch. Space does not submit. Esc or `q` cancels without
 changing settings. Ctrl-C and SIGINT return 130. POSIX SIGTERM returns 143.
 Selection errors return a failure instead of a successful query.

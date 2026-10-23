@@ -1,12 +1,11 @@
 package tui
 
 import (
-	"io"
 	"strings"
 )
 
 // RenderPanel aligns values across the complete panel, not one line at a time.
-func RenderPanel(w io.Writer, getenv func(string) string, text string) string {
+func RenderPanel(th Theme, width int, text string) string {
 	text = SafeLines(text)
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	keyWidth := StatusKeyWidth
@@ -15,8 +14,6 @@ func RenderPanel(w io.Writer, getenv func(string) string, text string) string {
 			keyWidth = max(keyWidth, DisplayWidth(key)+1)
 		}
 	}
-	th := NewTheme(w, getenv)
-	width, _ := TerminalSize(w)
 	var out strings.Builder
 	for _, line := range lines {
 		key, value, _, ok := splitColonKV(line)

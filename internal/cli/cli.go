@@ -48,6 +48,7 @@ type Env struct {
 	Layout         func() (paths.Layout, error)
 	CheckVacant    func(paths.Layout) error
 	startup        *startupGuard
+	outputState    *humanOutput
 	startupTimeout time.Duration
 	// Exec replaces the process with another program. On Windows it runs the
 	// program as a child instead, writing its output to the writer and its
@@ -150,11 +151,13 @@ func fail(env Env, err error) int {
 }
 
 func printStatusLine(env Env, text string) {
-	fmt.Fprint(env.Stdout, tui.FormatColonLine(env.Stdout, env.Getenv, text, tui.StatusKeyWidth))
+	out := env.output()
+	fmt.Fprint(out, tui.FormatColonLine(out.Theme, text, tui.StatusKeyWidth))
 }
 
 func printKVLine(env Env, text string) {
-	fmt.Fprint(env.Stdout, tui.FormatColonLine(env.Stdout, env.Getenv, text, 0))
+	out := env.output()
+	fmt.Fprint(out, tui.FormatColonLine(out.Theme, text, 0))
 }
 
 // prompt asks for an answer when standard input is a terminal, and stays quiet
@@ -436,7 +439,7 @@ func runRouteList(env Env) int {
 	for _, name := range choices {
 		rows = append(rows, []string{name, routes.Description(name)})
 	}
-	fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, []string{i18n.T("Route"), i18n.T("Description")}, rows, nil))
+	printTable(env, []string{i18n.T("Route"), i18n.T("Description")}, rows, nil)
 	return 0
 }
 
@@ -484,8 +487,9 @@ func runSwitch(env Env, args []string, what string) int {
 		printKVLine(env, fmt.Sprintf(currentFormat, currentLabel))
 		// An incomplete API list cannot identify the initial selection.
 		// Keep this query read-only and show the current value separately.
-		if tui.Interactive(env.Stdin, env.Stdout, env.Getenv) && currentListed {
-			chosen, canceled, selErr := tui.RunSelector(env.Stdin, env.Stdout, env.Getenv, title, i18n.T("(current)"), i18n.T("↑/↓ move • enter switch • esc cancel"), items)
+		out := env.output()
+		if out.Interactive() && currentListed {
+			chosen, canceled, selErr := tui.RunSelector(out, title, i18n.T("(current)"), i18n.T("↑/↓ move • PgUp/PgDn scroll • enter switch • esc cancel"), items)
 			if selErr != nil {
 				var interrupted *tui.InterruptError
 				if errors.As(selErr, &interrupted) {
@@ -499,7 +503,8 @@ func runSwitch(env Env, args []string, what string) int {
 				})
 			}
 		}
-		_, err := fmt.Fprint(env.Stdout, tui.RenderChoices(env.Stdout, env.Getenv, title, i18n.T("(current)"), items))
+		width, _ := out.Size()
+		_, err := fmt.Fprint(out, tui.RenderChoices(out.Theme, width, title, i18n.T("(current)"), items))
 		if err != nil {
 			return 1
 		}

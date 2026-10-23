@@ -12,7 +12,6 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/maintenance"
 	"github.com/xiaosq2000/sing-box-manager/internal/paths"
-	"github.com/xiaosq2000/sing-box-manager/internal/tui"
 )
 
 func diagnosticCommands(root *cobra.Command, env Env, exit *int) {
@@ -180,7 +179,7 @@ func runTargetCommand(env Env, action string, args []string) int {
 		for _, target := range list.Targets {
 			rows = append(rows, []string{target.ID, diagnostic.Host(target.URL), diagnosticCategoryLabel(diagnostic.TargetCategory(target))})
 		}
-		fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, []string{i18n.T("ID"), i18n.T("Host"), i18n.T("Category")}, rows, nil))
+		printTable(env, []string{i18n.T("ID"), i18n.T("Host"), i18n.T("Category")}, rows, nil)
 		return 0
 	case "export":
 		if json.NewEncoder(env.Stdout).Encode(list) != nil {

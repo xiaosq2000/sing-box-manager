@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xiaosq2000/sing-box-manager/internal/diagnostic"
 	"github.com/xiaosq2000/sing-box-manager/internal/i18n"
 	"github.com/xiaosq2000/sing-box-manager/internal/probe"
@@ -171,7 +170,7 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 		}
 	}()
 	var progressMu sync.Mutex
-	var liveProg *tea.Program
+	var liveProg *tui.Program
 	var liveDone chan struct{}
 	var liveErr error
 	sendProgress := func() {
@@ -183,8 +182,9 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 		progressMu.Unlock()
 		liveProg.Send(tui.LiveTableUpdateMsg{Rows: rows, Pending: pending})
 	}
-	if !options.json && tui.Interactive(env.Stdin, env.Stdout, env.Getenv) {
-		th := tui.NewTheme(env.Stdout, env.Getenv)
+	if !options.json && env.output().Interactive() {
+		out := env.output()
+		th := out.Theme
 		headerLine := ""
 		if report.Mode != nil {
 			headerLine = strings.TrimSuffix(fmt.Sprintf(i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol)), "\n")
@@ -194,17 +194,21 @@ func runDiagnostic(env Env, command string, targets []diagnostic.Target, options
 			interrupted.CompareAndSwap(0, 130)
 			cancel()
 		})
-		liveModel.Width, liveModel.Height = tui.TerminalSize(env.Stdout)
+		liveModel.Width, liveModel.Height = out.Size()
 		liveModel.HelpText = i18n.T("↑/↓ scroll • ctrl+c cancel")
-		liveProg = tea.NewProgram(liveModel, tea.WithInput(env.Stdin), tea.WithOutput(env.Stdout), tea.WithoutSignalHandler())
-		liveDone = make(chan struct{})
-		go func() {
-			defer close(liveDone)
-			_, liveErr = liveProg.Run()
-			if liveErr != nil {
-				cancel()
-			}
-		}()
+		liveProg, liveErr = out.Program(liveModel)
+		if liveErr != nil {
+			cancel()
+		} else {
+			liveDone = make(chan struct{})
+			go func() {
+				defer close(liveDone)
+				_, liveErr = liveProg.Run()
+				if liveErr != nil {
+					cancel()
+				}
+			}()
+		}
 	}
 	var workers sync.WaitGroup
 	jobs := make(chan int)
@@ -470,20 +474,21 @@ func renderDiagnostic(env Env, report diagnosticReport, asJSON bool, code int) i
 		}
 		return code
 	}
-	th := tui.NewTheme(env.Stdout, env.Getenv)
+	out := env.output()
+	th := out.Theme
 	if report.Mode != nil {
 		headerLine := fmt.Sprintf(i18n.T("scope: sbc; mode: %s; route: %s; selected protocol: %s\n"), *report.Mode, diagnostic.SafeText(*report.Route), diagnostic.SafeText(*report.Protocol))
-		if th.Colored {
+		if th.Styled() {
 			headerLine = th.Header.Render(strings.TrimSuffix(headerLine, "\n")) + "\n"
 		}
-		width, _ := tui.TerminalSize(env.Stdout)
-		fmt.Fprint(env.Stdout, tui.FitLines(headerLine, width))
+		width, _ := out.Size()
+		fmt.Fprint(out, tui.FitLines(headerLine, width))
 	}
 	for _, warning := range slices.Compact(report.Warnings) {
 		fmt.Fprintln(env.Stderr, diagnosticMessage(warning))
 	}
 	rows, _ := buildDiagnosticTableRows(report.Observations)
-	fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, diagnosticHeaders(report.Command), rows, tui.DiagnosticCellStyler))
+	printTable(env, diagnosticHeaders(report.Command), rows, tui.DiagnosticCellStyler)
 	for _, row := range report.Observations {
 		if row.Policy != "" {
 			continue

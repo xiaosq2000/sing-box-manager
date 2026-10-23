@@ -19,7 +19,15 @@ import (
 
 // Run creates a fresh command tree for each invocation. Handlers retain their
 // exit codes: 0 for success, 1 for an operation failure, and 2 for CLI syntax errors.
-func Run(env Env, args []string) int {
+func Run(env Env, args []string) (code int) {
+	env.outputState = &humanOutput{}
+	defer func() {
+		if out := env.outputState.stdout; out != nil {
+			if err := out.Close(); err != nil {
+				code = fail(env, err)
+			}
+		}
+	}()
 	exit := 0
 	root := newCommand(env, &exit)
 	args = normalizeArgs(root, args)
@@ -60,8 +68,8 @@ func newCommand(env Env, exit *int) *cobra.Command {
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
 	root.SetVersionTemplate("sbc {{.Version}}\n")
-	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) { printHelp(cmd) })
-	root.SetUsageFunc(func(cmd *cobra.Command) error { printHelp(cmd); return nil })
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) { printHelp(cmd, env.output()) })
+	root.SetUsageFunc(func(cmd *cobra.Command) error { printHelp(cmd, env.output()); return nil })
 	root.SetFlagErrorFunc(localizeFlagError)
 	root.CompletionOptions.SetDefaultShellCompDirective(cobra.ShellCompDirectiveNoFileComp)
 	root.AddGroup(
@@ -483,9 +491,8 @@ func localizeFlagError(cmd *cobra.Command, err error) error {
 }
 
 // Help uses command and flag metadata, not a second list of command syntax.
-func printHelp(cmd *cobra.Command) {
-	out := cmd.OutOrStdout()
-	th := tui.NewTheme(out, nil)
+func printHelp(cmd *cobra.Command, out *tui.Output) {
+	th := out.Theme
 	description := cmd.Short
 	if cmd.Long != "" {
 		description = cmd.Long

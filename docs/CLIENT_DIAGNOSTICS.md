@@ -1,6 +1,6 @@
 # Client diagnostics design
 
-Checked on 2026-10-22.
+Checked on 2026-10-23.
 
 Status: implemented, with local fixtures and KVM core acceptance.
 Independent Astra xhigh review and one fix iteration are complete.
@@ -257,9 +257,12 @@ failures and unverified scope. Preserve useful partial results.
 Interactive terminals use an inline, scrollable progress view that adapts to
 window size changes. Narrow tables use stacked fields without dropping data.
 The complete final report remains in terminal history. Pipes, files, and
-`TERM=dumb` use static output. `NO_COLOR` disables colors, not keyboard input.
-Live and final views use the same semantic styles. Display cells remove terminal
-control sequences and format controls.
+`TERM=dumb` use static output. `NO_COLOR` disables styling, not keyboard input.
+Live and final views share semantic ANSI slots and inherit the terminal's default
+foreground and background. The spinner uses ordinary ASCII frames.
+Display cells remove terminal control sequences and format controls.
+UI startup and write failures cancel the operation and return failure.
+See [terminal output](README_SBC.md#terminal-output) for controls and tiny windows.
 
 `--json` emits one versioned result to stdout, without progress text. Use a shared
 envelope with `schema_version: 1`, `command`, `scope`, `mode`, `route`, `protocol`,
