@@ -2,7 +2,7 @@
 
 Checked on 2026-10-23.
 
-This page records local implementation evidence, not a release or deployment approval.
+This page records isolated G0 evidence, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
 | Gate                         | Status               | Evidence boundary                                                         |
@@ -75,7 +75,8 @@ HTTP response headers could explain the observed excess download bytes, but thei
 Do not label the difference TLS/network overhead or use it to claim accounting accuracy.
 
 The analysis did not resolve the runtime anomalies. Harness phase diagnostics do not resolve them either.
-G1–G4, complete accounting accuracy, remote G0 acceptance, iOS acceptance and two-hour stability remain unverified.
+G1–G4, complete accounting accuracy, iOS acceptance and two-hour stability remain unverified.
+The hosted KVM run passes the same limited G0 checks. It does not resolve the four runtime and evidence limits.
 Android remains unverified and non-blocking. Failed-start forward repair belongs to G1 without simultaneous credential revocation.
 Keep detailed private review artifacts, run paths, raw logs and identity observations outside public source.
 
@@ -127,7 +128,10 @@ This changes device access only on the disposable hosted runner. It does not cha
 Named-user ACL grants can disappear during KVM VM lifecycle events on the tested runner.
 The [minimal reproduction](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39971638135) records the runner UID entry disappearing while the ACL mask remains unchanged.
 KVM and udev events, uaccess tags and candidate rules support the uaccess path, but do not identify the ACL writer.
-Two unreadable rule files limit that observation. Remote G0 verification of the ownership grant remains pending.
+Two unreadable rule files limit that observation.
+The [hosted KVM G0 check](https://github.com/xiaosq2000/sing-box-manager/actions/runs/39973353519) passes with the ownership grant at `c915fef`.
+Read/write access remains available after the preflight, and the actual VM completes the full G0 flow.
+All 11 PR checks pass at that commit. This verifies the hosted-runner fix, not the identity of the ACL writer.
 
 A bounded observation records device state before the probe, after the probe and when polling first detects QEMU exit.
 The snapshot contains numeric identity and device metadata, an ACL fingerprint or errno, and the read/write-open outcome.
