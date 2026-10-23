@@ -109,6 +109,7 @@ SBM_NODE_G0=1 pixi run -e node-g0 python scripts/dev/node-g0/run.py \
 
 The runner requires QEMU, OpenSSH server/client, OpenBSD netcat and OpenSSL on the host.
 It requires a successful read/write open of `/dev/kvm` and a KVM startup probe before selection, otherwise it selects TCG.
+The paused probe uses the actual VM's disk, devices, network arguments and environment. It does not boot the guest.
 A failed acceptance run does not retry with another accelerator.
 Root execution is refused. Ansible can modify only a loopback-forwarded guest with the disposable marker.
 No operator SSH keys, SSH config, `SBM_CONFIG` or proxy environment enters the fixture.
@@ -121,9 +122,10 @@ Failed runs remain for diagnosis. Removal requires explicit cleanup authorizatio
 
 The dedicated GitHub-hosted workflow runs the same contracts, cgo-free module checks and native fixture.
 It does not upload or cache private run directories.
-Remote G0 acceptance is blocked by a KVM device access failure. The startup probe selects KVM, but the actual QEMU process cannot access it.
-QEMU exits with permission denied before guest boot. A read/write device-open guard now precedes accelerator selection.
-Remote verification of this guard remains pending. Longer readiness timeouts do not address an exited process.
+Remote G0 acceptance is blocked by QEMU's KVM access denial before guest boot.
+A Python read/write device open and the minimal startup probe both succeed. They do not establish access for the actual VM.
+The OS security cause remains unknown. The selector now probes the complete VM arguments and environment before acceptance.
+Remote verification remains pending. Longer readiness timeouts do not address an exited process.
 A local result does not establish remote acceptance or acceptance of a changed source fingerprint.
 
 The runner prints fixed phase names and the selected accelerator.

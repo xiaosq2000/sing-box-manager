@@ -591,6 +591,8 @@ The native fixture installs services only inside a marked disposable VM.
 Its controller runs as private development subprocesses, not host system services.
 Read the [artifact and run requirements](NODE_ACCEPTANCE.md#reproduce) before execution.
 The dedicated GitHub-hosted workflow keeps raw run artifacts private.
+G0 passes its complete VM options to `scripts/dev/tun-vm/select-accel.py` in the actual VM environment.
+The paused preflight initializes devices without booting the guest. The selector's default TUN options remain unchanged.
 These checks do not establish production deployment or the remaining M5/M6 gates.
 
 ## Traffic accounting checks

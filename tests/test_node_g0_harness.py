@@ -286,7 +286,10 @@ def test_inaccessible_kvm_selects_tcg_before_a_vm_starts(
         harness, "run", lambda *a, **kw: pytest.fail("started a VM probe")
     )
     log = tmp_path / "probe.log"
-    assert harness.select_acceleration(log) == "tcg"
+    assert (
+        harness.select_acceleration(log, ["-device", "fixture"], {"FIXTURE": "1"})
+        == "tcg"
+    )
     assert "PRIVATE-device-error" not in capsys.readouterr().out
     assert "Selecting TCG" in log.read_text()
 
@@ -297,18 +300,29 @@ def test_accessible_kvm_still_requires_startup_probe(monkeypatch, tmp_path, resu
     monkeypatch.setattr(harness.os, "open", lambda path, flags: 99)
     monkeypatch.setattr(harness.os, "close", closed.append)
     log = tmp_path / "probe.log"
+    options = [
+        "-drive",
+        "file=PRIVATE-fixture-disk",
+        "-netdev",
+        "PRIVATE-fixture-network",
+    ]
+    process_env = {"FIXTURE": "1"}
 
     def probe(argv, **kwargs):
         assert closed == [99]
         assert argv == [
             harness.sys.executable,
             str(harness.ROOT / "scripts/dev/tun-vm/select-accel.py"),
+            *options,
         ]
-        assert kwargs == {"log": log}
+        assert kwargs == {"log": log, "env": process_env}
         return result
 
     monkeypatch.setattr(harness, "run", probe)
-    assert harness.select_acceleration(log) == result.decode().strip()
+    assert (
+        harness.select_acceleration(log, options, process_env)
+        == result.decode().strip()
+    )
 
 
 def test_state_timeout_is_not_success():

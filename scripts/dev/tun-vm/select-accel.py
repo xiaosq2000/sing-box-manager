@@ -6,21 +6,25 @@ import subprocess
 import sys
 
 
-def select_accelerator() -> str:
-    # Match the acceptance CPU, memory and vCPU settings. Do not boot a guest.
+def select_accelerator(machine_options: list[str] | None = None) -> str:
+    # Initialize the requested machine without booting a guest.
+    if machine_options is None:
+        machine_options = [
+            "-cpu",
+            "max",
+            "-m",
+            "2048",
+            "-smp",
+            "2",
+            "-nodefaults",
+            "-display",
+            "none",
+        ]
     command = [
         "qemu-system-x86_64",
         "-machine",
         "accel=kvm",
-        "-cpu",
-        "max",
-        "-m",
-        "2048",
-        "-smp",
-        "2",
-        "-nodefaults",
-        "-display",
-        "none",
+        *machine_options,
         "-S",
         "-qmp",
         "stdio",
@@ -62,4 +66,4 @@ def select_accelerator() -> str:
 
 
 if __name__ == "__main__":
-    print(select_accelerator())
+    print(select_accelerator(sys.argv[1:] or None))

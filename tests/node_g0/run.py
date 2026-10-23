@@ -302,7 +302,7 @@ def reachable(number):
         return False
 
 
-def select_acceleration(log):
+def select_acceleration(log, machine_options, process_env):
     try:
         descriptor = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
     except OSError:
@@ -313,7 +313,12 @@ def select_acceleration(log):
     print("G0 KVM device: accessible", flush=True)
     return (
         run(
-            [sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")],
+            [
+                sys.executable,
+                str(ROOT / "scripts/dev/tun-vm/select-accel.py"),
+                *machine_options,
+            ],
+            env=process_env,
             log=log,
         )
         .decode()
@@ -761,39 +766,39 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             ]
         )
         run(["qemu-img", "resize", str(root / "disk.qcow2"), "8G"])
-        accel = select_acceleration(root / "accelerator-probe.log")
+        net = f"user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:{guest_ssh}-:22,hostfwd=tcp:127.0.0.1:{guest_proxy}-:8443,guestfwd=tcp:10.0.2.100:{seed_port}-cmd:nc -N 127.0.0.1 {seed_port},guestfwd=tcp:10.0.2.100:{https_port}-cmd:nc -N 127.0.0.1 {https_port}"
+        machine_options = [
+            "-cpu",
+            "max",
+            "-m",
+            "2048",
+            "-smp",
+            "2",
+            "-drive",
+            f"file={root}/disk.qcow2,if=virtio,format=qcow2",
+            "-smbios",
+            f"type=1,serial=ds=nocloud-net;s=http://10.0.2.100:{seed_port}/",
+            "-netdev",
+            net,
+            "-device",
+            "virtio-net-pci,netdev=net0",
+            "-display",
+            "none",
+            "-serial",
+            f"file:{root}/serial.log",
+            "-monitor",
+            "none",
+            "-no-reboot",
+        ]
+        accel = select_acceleration(
+            root / "accelerator-probe.log", machine_options, env
+        )
         if accel not in {"kvm", "tcg"}:
             raise RuntimeError("invalid VM accelerator result")
         diagnostics.acceleration = accel
         print(f"G0 acceleration: {accel}", flush=True)
-        net = f"user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:{guest_ssh}-:22,hostfwd=tcp:127.0.0.1:{guest_proxy}-:8443,guestfwd=tcp:10.0.2.100:{seed_port}-cmd:nc -N 127.0.0.1 {seed_port},guestfwd=tcp:10.0.2.100:{https_port}-cmd:nc -N 127.0.0.1 {https_port}"
         start(
-            [
-                "qemu-system-x86_64",
-                "-machine",
-                f"accel={accel}",
-                "-cpu",
-                "max",
-                "-m",
-                "2048",
-                "-smp",
-                "2",
-                "-drive",
-                f"file={root}/disk.qcow2,if=virtio,format=qcow2",
-                "-smbios",
-                f"type=1,serial=ds=nocloud-net;s=http://10.0.2.100:{seed_port}/",
-                "-netdev",
-                net,
-                "-device",
-                "virtio-net-pci,netdev=net0",
-                "-display",
-                "none",
-                "-serial",
-                f"file:{root}/serial.log",
-                "-monitor",
-                "none",
-                "-no-reboot",
-            ],
+            ["qemu-system-x86_64", "-machine", f"accel={accel}", *machine_options],
             "qemu",
         )
 

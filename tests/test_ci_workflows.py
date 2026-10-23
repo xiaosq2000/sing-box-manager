@@ -148,6 +148,50 @@ def test_accelerator_requires_successful_kvm_startup_and_qmp_proof(
     assert f"Selecting {expected.upper()}" in captured.err
 
 
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_accelerator_can_probe_exact_guest_devices_without_retry(
+    monkeypatch: pytest.MonkeyPatch, returncode: int
+) -> None:
+    module = accelerator_module()
+    options = [
+        "-cpu",
+        "max",
+        "-m",
+        "2048",
+        "-smp",
+        "2",
+        "-drive",
+        "file=private-fixture.qcow2,if=virtio,format=qcow2",
+        "-netdev",
+        "user,id=net0,restrict=on",
+        "-device",
+        "virtio-net-pci,netdev=net0",
+        "-display",
+        "none",
+        "-serial",
+        "file:private-serial.log",
+    ]
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert command == [
+            "qemu-system-x86_64",
+            "-machine",
+            "accel=kvm",
+            *options,
+            "-S",
+            "-qmp",
+            "stdio",
+        ]
+        assert "-nodefaults" not in command
+        return subprocess.CompletedProcess(command, returncode, qmp_response(), "")
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    assert module.select_accelerator(options) == ("kvm" if returncode == 0 else "tcg")
+    assert len(calls) == 1
+
+
 def test_accelerator_probe_timeout_selects_tcg(monkeypatch: pytest.MonkeyPatch) -> None:
     module = accelerator_module()
 
