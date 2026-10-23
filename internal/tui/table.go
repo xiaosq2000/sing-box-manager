@@ -79,7 +79,7 @@ func cleanCells(cells []string) []string {
 }
 
 // DiagnosticCellStyler applies semantic colors to the 7-column diagnostic table
-// (Target/source, First response, Responses, HTTP, Capture, Path, Exit IP/rate).
+// (Target/source, First response, Responses, HTTP, Capture, Path, Exit IP/rate/category).
 func DiagnosticCellStyler(_ int, col int, value string, th Theme) lipgloss.Style {
 	if !th.Colored {
 		return th.Base
@@ -129,7 +129,7 @@ func DiagnosticCellStyler(_ int, col int, value string, th Theme) lipgloss.Style
 			return th.Muted
 		}
 		return th.Base
-	case 6: // Exit IP / rate
+	case 6: // Exit IP / rate / category
 		if trimmed == "-" || trimmed == "unknown" || trimmed == "未知" {
 			return th.Muted
 		}

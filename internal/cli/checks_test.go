@@ -100,7 +100,7 @@ func TestIPUsesOrdinaryAuthenticatedProxyAndRetainsSources(t *testing.T) {
 	if string(before) != string(after) || len(h.svc.calls) != 0 || h.api.mode != "china" || h.api.protocol != "trojan" {
 		t.Fatal("diagnostic mutated runtime")
 	}
-	if strings.Contains(h.out.String(), "s3cret") || strings.Contains(h.out.String(), "api_port") {
+	if strings.Contains(h.out.String(), "s3cret") || strings.Contains(h.out.String(), "api_port") || strings.Contains(h.out.String(), `"category"`) {
 		t.Fatal("private runtime data escaped")
 	}
 }
@@ -215,7 +215,7 @@ func TestWebsiteChecksDistinguishHTTPAndTransportGoals(t *testing.T) {
 				t.Fatalf("%d, %d: %s%s", code, calls.Load(), h.out, h.errOut)
 			}
 			report := reportFrom(t, h)
-			if len(report.Observations) != 1 || len(report.Observations[0].Samples) != 3 {
+			if len(report.Observations) != 1 || len(report.Observations[0].Samples) != 3 || report.Observations[0].Category != "custom" {
 				t.Fatal(h.out)
 			}
 			for _, sample := range report.Observations[0].Samples {
@@ -418,10 +418,11 @@ func TestTargetOperationsAreOfflinePrivateAndRoundTrip(t *testing.T) {
 	h.out.Reset()
 	Run(h.env, []string{"check", "targets", "export"})
 	list, err := diagnostic.DecodeList(strings.NewReader(h.out.String()))
-	if err != nil || len(list.Targets) != 5 {
+	defaults, _ := diagnostic.Preset("default")
+	if err != nil || len(list.Targets) != len(defaults.Targets)+1 {
 		t.Fatal(err, h.out)
 	}
-	if list.Targets[4].URL != "https://fixture.test/private?secret=fixture" {
+	if list.Targets[len(defaults.Targets)].URL != "https://fixture.test/private?secret=fixture" {
 		t.Fatal("export lost URL semantics")
 	}
 	before, _ := os.ReadFile(targetPath(h.layout))

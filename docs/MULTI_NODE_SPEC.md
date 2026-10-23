@@ -1,6 +1,6 @@
 # Node agent and multi-node specification
 
-Checked on 2026-10-22.
+Checked on 2026-10-23.
 
 Status: design contract for M5/M6, not implemented behavior or production authorization.
 All commands and interfaces in this document are targets unless identified as existing.
@@ -697,6 +697,42 @@ Device management is reviewed only after M6. It is not a prerequisite for retiri
 
 ## 11. Acceptance and evidence
 
+### Gate sequence and operator involvement
+
+G0 through G3 proceed without per-gate approval. Report a concrete blocker when a required check cannot pass.
+Stop before public-network acceptance or production changes. Both require explicit target-specific authorization.
+
+| Gate                         | Required evidence                                                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| G0: minimum working system   | Ansible/SSH installation and registration, authenticated config pull, real proxy traffic, local SQLite and PostgreSQL upload |
+| G1: single-node reliability  | Real systemd/engine failures, invalid config rejection, outage autonomy, crash/reboot recovery and forward repair            |
+| G2: accounting and migration | Differential collector checks, historical parity, replay/idempotency, source recovery and honest coverage gaps               |
+| G3: two nodes and clients    | Ordinary selection, fixed AI routing/DNS, client upgrades, native desktop checks and required iOS evidence                   |
+| G4: pre-release review       | Gate reports, remaining limits, migration/repair procedure and an authorized public-network acceptance plan                  |
+
+G0 uses one synthetic account and one protocol before broader protocol and migration tests.
+Run Linux service tests in isolated disposable VMs with real PostgreSQL, systemd, SSH, TLS and sing-box.
+Use GitHub-hosted native desktop jobs and the isolated Linux TUN VM for platform evidence.
+Do not contact or change production nodes during these gates.
+Local VMs do not establish public reachability, public ACME issuance or stable public exit addresses.
+
+Before G4, run one two-hour isolated stability test with traffic, polling, upload, disconnection and recovery.
+Check accounting consistency, backlog convergence, unexpected restarts, memory and resource growth.
+Use controlled clocks and synthetic state for midnight, DST and long-backlog tests.
+A two-hour run does not establish long-term production reliability.
+
+Require recorded iOS device acceptance for the first release. Android acceptance does not block it.
+Mark Android unverified until tested. Never infer device acceptance from core fixtures.
+
+The failed-startup scenario verifies forward repair: correct the config, publish a newer generation and restore proxy service.
+It does not require a simultaneous credential-revocation scenario.
+This test boundary does not remove authentication, access control or existing revocation requirements.
+
+Each gate report records the commit, environment, commands, expected/observed results and remaining limits.
+Skipped, unavailable and untested checks are not passes.
+
+### Behavior matrix
+
 | Area             | Required checks                                                                                                               |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Policy           | Concurrent Admin/SSH edits, failed render rollback, equal-generation conflicts and capacity measurements                      |
@@ -711,7 +747,7 @@ Device management is reviewed only after M6. It is not a prerequisite for retiri
 | History          | Exact retained totals, domain/IP buckets, calendars and tombstones. No imported-baseline double counting                      |
 | Routing          | Ordinary auto/manual selection, fixed AI IP and DNS, pin failure, direct mode and no AI interruption from ordinary switches   |
 | Client lifecycle | Signed v1-to-v2 upgrade, selection mapping, invalid metadata, Linux/macOS/Windows services and TUN console maintenance        |
-| Mobile           | Recorded official iOS/Android import, selection, refresh, persistence and capture evidence                                    |
+| Mobile           | Recorded official iOS import, selection, refresh, persistence and capture evidence. Android remains unverified until tested   |
 | Deployment       | Host-key checks, real SSH port, dual-stack NAT, certificate renewal and no leaked secret output                               |
 | Recovery         | Quarantined PostgreSQL restore, lost revocation barriers, stale local DB and binary downgrade refusal                         |
 
