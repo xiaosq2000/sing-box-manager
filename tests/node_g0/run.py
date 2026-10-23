@@ -302,6 +302,25 @@ def reachable(number):
         return False
 
 
+def select_acceleration(log):
+    try:
+        descriptor = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
+    except OSError:
+        print("G0 KVM device: unavailable", flush=True)
+        write(log, "KVM device is not accessible. Selecting TCG.\n")
+        return "tcg"
+    os.close(descriptor)
+    print("G0 KVM device: accessible", flush=True)
+    return (
+        run(
+            [sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")],
+            log=log,
+        )
+        .decode()
+        .strip()
+    )
+
+
 def wait_for_guest(guest, diagnostics, log, seconds=180):
     def ready():
         diagnostics.guest_attempts += 1
@@ -742,14 +761,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             ]
         )
         run(["qemu-img", "resize", str(root / "disk.qcow2"), "8G"])
-        accel = (
-            run(
-                [sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")],
-                log=root / "accelerator-probe.log",
-            )
-            .decode()
-            .strip()
-        )
+        accel = select_acceleration(root / "accelerator-probe.log")
         if accel not in {"kvm", "tcg"}:
             raise RuntimeError("invalid VM accelerator result")
         diagnostics.acceleration = accel

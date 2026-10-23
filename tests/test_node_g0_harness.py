@@ -272,6 +272,45 @@ def test_absent_qemu_logs_do_not_hide_original_failure(tmp_path):
     assert harness.qemu_diagnostic(tmp_path)["log_category"] == "empty"
 
 
+@pytest.mark.parametrize("failure", [PermissionError, FileNotFoundError])
+def test_inaccessible_kvm_selects_tcg_before_a_vm_starts(
+    monkeypatch, tmp_path, capsys, failure
+):
+    def denied(path, flags):
+        assert path == "/dev/kvm"
+        assert flags == harness.os.O_RDWR | harness.os.O_CLOEXEC
+        raise failure("PRIVATE-device-error")
+
+    monkeypatch.setattr(harness.os, "open", denied)
+    monkeypatch.setattr(
+        harness, "run", lambda *a, **kw: pytest.fail("started a VM probe")
+    )
+    log = tmp_path / "probe.log"
+    assert harness.select_acceleration(log) == "tcg"
+    assert "PRIVATE-device-error" not in capsys.readouterr().out
+    assert "Selecting TCG" in log.read_text()
+
+
+@pytest.mark.parametrize("result", [b"kvm\n", b"tcg\n"])
+def test_accessible_kvm_still_requires_startup_probe(monkeypatch, tmp_path, result):
+    closed = []
+    monkeypatch.setattr(harness.os, "open", lambda path, flags: 99)
+    monkeypatch.setattr(harness.os, "close", closed.append)
+    log = tmp_path / "probe.log"
+
+    def probe(argv, **kwargs):
+        assert closed == [99]
+        assert argv == [
+            harness.sys.executable,
+            str(harness.ROOT / "scripts/dev/tun-vm/select-accel.py"),
+        ]
+        assert kwargs == {"log": log}
+        return result
+
+    monkeypatch.setattr(harness, "run", probe)
+    assert harness.select_acceleration(log) == result.decode().strip()
+
+
 def test_state_timeout_is_not_success():
     with pytest.raises(harness.StateTimeout):
         harness.wait(lambda: False, seconds=0)
