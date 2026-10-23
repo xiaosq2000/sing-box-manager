@@ -3,49 +3,55 @@
 Checked on 2026-10-22.
 
 This spec sets the target architecture for sing-box-manager and the milestones that
-move the repo there. Milestones preserve current access until the planned
-[clean break](#clean-break-and-legacy-removal). That cutover requires users to enroll
-again and rejects old credentials and links. It needs separate production authorization.
+move the repo there. Prefer clean breaks that reduce lifetime complexity, maintenance or runtime cost.
+Use mature frameworks instead of preserving custom machinery for compatibility alone.
+The [cutover boundaries](#clean-break-and-legacy-removal) separate client-contract upgrades from future device enrollment.
+Each production cutover needs separate authorization.
 When a milestone lands, update its status and affected docs. Review its scope before implementation.
+The [node agent and multi-node specification](MULTI_NODE_SPEC.md) defines the complete M5/M6 implementation contract.
+Its commands and interfaces are planned, not deployed functionality.
 
 ## Why
 
 The current design couples the manager to a single-VPS deployment. Much of its
 complexity comes from machinery built around premises that the target design drops.
 
-| Premise at the start                            | Machinery it needs                                            | Target                                        |
-| ----------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------- |
-| Each user's archive bundles the sing-box binary | Content-addressed store, manifest, archive splicing, `sbm gc` | The binary and the config download separately |
-| One sing-box process per protocol               | Three units and configs, six stats listeners                  | One process per node with every inbound       |
-| Two trackers count the same bytes               | A custom sing-box build, reconciliation tables                | The sing-box API stream only                  |
-| The client is bash 3.2 and PowerShell 5.1       | A 7,178-line sourced `setup.sh`, the same logic written twice | One Go binary on every desktop OS             |
-| Configs start as JSON templates                 | Nine near-identical templates that code then patches          | Configs built in code                         |
-| Users live in a SOPS file                       | Four credentials per person, two validators for one file      | Users in a database                           |
+| Premise at the start                            | Machinery it needs                                            | Target                                                        |
+| ----------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
+| Each user's archive bundles the sing-box binary | Content-addressed store, manifest, archive splicing, `sbm gc` | The binary and the config download separately                 |
+| One sing-box process per protocol               | Three units and configs, six stats listeners                  | One process per node with every inbound                       |
+| Accounting spans collectors and stores          | Separate collector processes and central SQLite               | One agent, local transactional storage and central PostgreSQL |
+| The client is bash 3.2 and PowerShell 5.1       | A 7,178-line sourced `setup.sh`, the same logic written twice | One Go binary on every desktop OS                             |
+| Configs start as JSON templates                 | Nine near-identical templates that code then patches          | Configs built in code                                         |
+| Users live in a SOPS file                       | Four credentials per person, two validators for one file      | Users in a database                                           |
 
 ## Decisions
 
-| Decision                                                                                                           | Status                                     |
-| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| Build a minimal Django control plane instead of adopting an existing panel                                         | Decided                                    |
-| Operators create free accounts and issue single-use device enrollment codes                                        | Decided                                    |
-| Ordinary users have no login password, public registration, or password-recovery flow                              | Decided                                    |
-| sing-box is the only proxy core on nodes and clients                                                               | Decided                                    |
-| Security fixes come first, then the client CLI                                                                     | Decided                                    |
-| The control plane uses Django and Postgres                                                                         | Decided                                    |
-| The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                                 | Decided                                    |
-| Add a node agent, with Go as the proposed language                                                                 | Planned after device management            |
-| Give each enrolled installation its own subscription token and proxy credentials                                   | Planned after M1b                          |
-| Support multiple nodes before invalidating all legacy user credentials and links                                   | Decided                                    |
-| A client runs one config per installation, with routes as Clash modes and protocols in a selector                  | Decided                                    |
-| Configs are built in code and pass `sing-box check` before release                                                 | Implemented                                |
-| Nodes run the official sing-box build                                                                              | Proposed                                   |
-| Per-user traffic comes from the sing-box API stream only                                                           | Deferred; requires accounting parity       |
-| Nodes apply user changes by reloading sing-box in batches                                                          | Proposed, revisit if reloads disturb users |
-| Support trojan, hysteria2, naive and optional Snell v6. VLESS-Reality remains an option for nodes without a domain | Snell decided. VLESS-Reality open until M6 |
-| The subscription envelope carries the Linux TUN config beside the mixed config                                     | Decided                                    |
-| Linux TUN answers DNS through its route rules, not through the systemd-resolved stub                               | Decided                                    |
-| Linux TUN is refused in WSL2, containers and remote shells                                                         | Decided                                    |
-| Linux TUN uses IPv4-only DNS and rejects public IPv6 without removing capture                                      | Decided                                    |
+| Decision                                                                                          | Status                                    |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Build a minimal Django control plane instead of adopting an existing panel                        | Decided                                   |
+| Operators create free accounts and issue single-use device enrollment codes                       | Decided                                   |
+| Ordinary users have no login password, public registration, or password-recovery flow             | Decided                                   |
+| sing-box is the only proxy core on nodes and clients                                              | Decided                                   |
+| Security fixes come first, then the client CLI                                                    | Decided                                   |
+| The control plane uses Django, Django Ninja and PostgreSQL                                        | Decided for M5/M6                         |
+| PostgreSQL is the only central policy and traffic database                                        | Decided for M5/M6                         |
+| Local sbm uses Ansible/OpenSSH for role-specific deployment                                       | Decided for M5/M6                         |
+| The client CLI, `sbc`, uses Go, Cobra and pflag, with cgo disabled                                | Decided                                   |
+| Add a Go node agent before device management                                                      | Next priority, followed by multiple nodes |
+| Give each enrolled installation its own subscription token and proxy credentials                  | Deferred for review after M6              |
+| Support multiple nodes before invalidating all legacy user credentials and links                  | Decided                                   |
+| A client runs one config per installation, with routes as Clash modes and protocols in a selector | Decided                                   |
+| Configs are built in code and pass `sing-box check` before release                                | Implemented                               |
+| Nodes run the official sing-box build                                                             | Proposed                                  |
+| Per-user traffic comes from the sing-box API stream only                                          | Deferred; requires accounting parity      |
+| Render policy transactionally and apply validated node configs forward only                       | Decided for M5/M6                         |
+| Use node-scoped account credentials and a v2 desktop contract before devices                      | Decided for M5/M6                         |
+| Support trojan, hysteria2, naive and optional Snell v6. Defer VLESS-Reality beyond M6             | Decided                                   |
+| The subscription envelope carries the Linux TUN config beside the mixed config                    | Decided                                   |
+| Linux TUN answers DNS through its route rules, not through the systemd-resolved stub              | Decided                                   |
+| Linux TUN is refused in WSL2, containers and remote shells                                        | Decided                                   |
+| Linux TUN uses IPv4-only DNS and rejects public IPv6 without removing capture                     | Decided                                   |
 
 sing-box 1.14.0 supports VLESS-Reality as both server and client, and `sing-box check`
 accepts a server config and a client config that use it.
@@ -54,14 +60,15 @@ accepts a server config and a client config that use it.
 
 The current system is one Django/PostgreSQL control plane and one sing-box node,
 with systemd-triggered config sync and SQLite traffic history.
-Linux TUN meets the agreed M1b acceptance scope. Device management, a node
-agent, and multiple nodes are the planned scope. Extended TUN network
-compatibility remains separate work. The
+Linux TUN meets the agreed M1b acceptance scope. The next priorities are the node
+agent and multiple nodes, in that order. Device management is deferred for review
+after multi-node acceptance. Extended TUN network compatibility remains separate work. The
 [diagnostic contract](CLIENT_DIAGNOSTICS.md) defines implemented mixed/TUN checks,
 capture limits, and acceptance gates.
-The diagram describes that target, not deployed functionality. Detailed schemas and
-interfaces need review in their implementation PRs. Quotas, public registration,
-plans, and payments remain outside this delivery sequence.
+The diagram describes that target, not deployed functionality.
+The [M5/M6 specification](MULTI_NODE_SPEC.md) defines data ownership, interfaces, recovery, deployment and acceptance.
+Review migrations and implementation details against that contract in each PR.
+Quotas, public registration, plans, and payments remain outside this delivery sequence.
 
 ```text
 browsers, client apps, sbc
@@ -75,17 +82,20 @@ accounts, devices, nodes, traffic, subscriptions, private admin
 node agent + sing-box on each VPS  ◀── proxy traffic from clients
 ```
 
-| Component     | Runs on                                 | Built with                          | Job                                                                                                                                                                         |
-| ------------- | --------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Control plane | Current VPS, hosting/CDN decision in M6 | Django, Postgres                    | Accounts, device enrollment, nodes, credentials, traffic, subscriptions, private admin and read-only user pages                                                             |
-| Node agent    | Each VPS                                | Go                                  | Fetches, checks and applies config. Reports applied revision, health and traffic through reviewed interfaces. Keeps the last good config during control-plane outages       |
-| sing-box      | Each VPS and client                     | Official or compatible custom build | Proxies traffic                                                                                                                                                             |
-| Client CLI    | Linux, macOS, Windows                   | Go (`sbc`)                          | Enrolls with a single-use code, installs signed artifacts, manages the proxy, switches route and protocol, shows usage, updates and uninstalls. Linux TUN. Users type `sbc` |
-| Mobile        | Android, iOS                            | Official sing-box apps              | Import the subscription as a remote profile                                                                                                                                 |
+| Component     | Runs on                             | Built with                          | Job                                                                                                                                                                         |
+| ------------- | ----------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Control plane | Current VPS, no CDN required for M6 | Django, Ninja, PostgreSQL           | Accounts, nodes, credentials, traffic, subscriptions and private admin. Devices follow M6 review                                                                            |
+| Node agent    | Each VPS                            | Go, gRPC, local SQLite              | Applies config forward only, collects traffic and reports status. Keeps local service during control-plane outages                                                          |
+| sing-box      | Each VPS and client                 | Official or compatible custom build | Proxies traffic                                                                                                                                                             |
+| Client CLI    | Linux, macOS, Windows               | Go (`sbc`)                          | Enrolls with a single-use code, installs signed artifacts, manages the proxy, switches route and protocol, shows usage, updates and uninstalls. Linux TUN. Users type `sbc` |
+| Mobile        | Android, iOS                        | Official sing-box apps              | Import the subscription as a remote profile                                                                                                                                 |
 
 ### Control plane data
 
 These are logical entities, not a finalized migration schema.
+M5 and M6 retain accounts and account subscriptions, with node-scoped protocol credentials.
+Original-node secrets and subscription URLs survive migration.
+Device entities and enrollment interfaces are deferred for review after M6.
 
 | Entity               | Responsibility                                                                                    |
 | -------------------- | ------------------------------------------------------------------------------------------------- |
@@ -93,7 +103,7 @@ These are logical entities, not a finalized migration schema.
 | Accounts (`Account`) | Proxy user identity and master enable switch, without a user login password                       |
 | Enrollment codes     | Operator-issued permission to enroll one device for one account, with expiry and single-use state |
 | Devices              | Account, installation identity, enable switch, and independent subscription state                 |
-| Credentials          | Device, protocol, and secret                                                                      |
+| Credentials          | Account, node, protocol and secret in M5/M6. Device ownership follows later review                |
 | Nodes                | Endpoint, supported protocols, and separate agent authentication                                  |
 | Traffic              | Account/device/node attribution and retained historical usage                                     |
 
@@ -108,24 +118,54 @@ and protocol access. There is no independent portal-only switch in the target mo
 Each enrolled installation gets distinct proxy credentials and a subscription.
 A copied profile still uses the same device identity. An enrollment limit counts
 registered installations, not physical devices. Keep existing traffic history and
-account attribution. No PostgreSQL traffic migration is required for this scope.
+account attribution. M5 migrates central traffic history into PostgreSQL.
+Node-local SQLite remains necessary for durable collection during control-plane outages.
+Device-specific paragraphs above describe the deferred target, not an M5/M6 prerequisite.
+
+#### Node data ownership
+
+In M5 and M6, control-plane PostgreSQL is authoritative for node domains, IP addresses, supported protocols, and ports.
+
+- Operators change desired node settings through private Admin or an authorized management command.
+- Local `sbm` can register initial node settings during the first deployment.
+  Repeat deployments read current control-plane settings. They must not overwrite those settings with an old local inventory.
+- Keep node SSH credentials and the build signing private key on the operator's machine, not in the control plane.
+- Keep desired settings separate from reported node state. A database edit does not prove that a node applied it.
+
+Define deployment checks and subscription publication rules before changing client-facing endpoints.
+A domain or port change also requires checks for certificate and firewall readiness.
+
+#### Operator node management
+
+In M5 and M6, local `sbm` invokes control-plane management commands over SSH.
+Reuse existing host SSH and sudo authorization. These commands do not require a Django login session.
+Do not add a separate operator HTTPS API or operator management tokens for this scope.
+
+- Management commands register node identities and API secret digests through existing SSH trust.
+- Local `sbm` invokes Ansible roles to install node components over SSH.
+  Nodes generate and retain their API secrets locally. No public enrollment endpoint is needed.
+- Node agents use separate node credentials over HTTPS. They can access only their own node interfaces, not operator management commands.
+- Keep Django Admin restricted to loopback and SSH tunnels.
+
+Operator management requires SSH access to the control-plane host. Routine agent operation does not require that SSH connection.
 
 ### Interfaces
 
 The device PR defines the enrollment request and response. It consumes an
 operator-issued code and returns a device subscription. Mobile enrollment must
 produce a device profile usable by a supported sing-box app.
-The subscription paths below remain read-only. Their legacy account tokens expire
-at the clean break, even if the URL shape stays the same.
+The subscription paths below remain read-only.
+M6 preserves account tokens. A future device credential cutover expires them when device subscriptions replace them.
 
 | Request                                           | Caller      | Purpose                                                                   |
 | ------------------------------------------------- | ----------- | ------------------------------------------------------------------------- |
 | `GET /sub/<token>?format=sbc&os=...&sing-box=...` | `sbc`       | Returns the envelope with the user's configs, nodes and latest versions   |
 | `GET /sub/<token>`                                | Mobile apps | Returns the user's sing-box config                                        |
 | `GET /sub/<token>/`                               | Browsers    | User page with the subscription link, QR code, install commands and usage |
-| `GET /node/config`                                | Node agent  | Returns the node's rendered sing-box config with an ETag                  |
-| `POST /node/traffic`                              | Node agent  | Per-user byte counts since the last report, with a sequence number        |
-| `POST /node/status`                               | Node agent  | Health, sing-box version and load                                         |
+| `GET /node/v1/config`                             | Node agent  | Stored versioned bundle with an ETag                                      |
+| `POST /node/v1/traffic`                           | Node agent  | Absolute versioned accounting snapshots                                   |
+| `POST /node/v1/status`                            | Node agent  | Applied generation, process identity and health                           |
+| `POST /node/v1/live`                              | Node agent  | Bounded current connection snapshot                                       |
 
 Subscription responses carry a `subscription-userinfo` header with upload, download,
 quota and expiry. Nodes authenticate with a per-node bearer token that the control
@@ -182,20 +222,23 @@ current location.
 
 ## Milestones
 
-| Milestone | Name                                       | Status                                   |
-| --------- | ------------------------------------------ | ---------------------------------------- |
-| M0        | Security fixes                             | Done                                     |
-| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                     |
-| M1b       | Linux TUN in the client CLI                | Done within the defined acceptance scope |
-| M2        | Client CLI for Windows                     | Done                                     |
-| M3        | Configs in code, one server process        | Done                                     |
-| M4b       | Control plane, devices and subscriptions   | Core deployed; devices planned           |
-| M5        | Node agent                                 | Planned after device management          |
-| M6        | Multiple nodes                             | Planned after the node agent             |
-| M7        | Invitation self-service and reusable plans | Deferred pending need                    |
-| M8        | Paid plans                                 | Deferred pending need                    |
+| Milestone | Name                                       | Status                                              |
+| --------- | ------------------------------------------ | --------------------------------------------------- |
+| M0        | Security fixes                             | Done                                                |
+| M1a       | Client CLI for Linux and macOS, mixed mode | Done                                                |
+| M1b       | Linux TUN in the client CLI                | Done within the defined acceptance scope            |
+| M2        | Client CLI for Windows                     | Done                                                |
+| M3        | Configs in code, one server process        | Done                                                |
+| M4b       | Control plane, devices and subscriptions   | Core deployed; devices deferred for review after M6 |
+| M5        | Node agent                                 | Next priority                                       |
+| M6        | Multiple nodes                             | Planned after the node agent                        |
+| M7        | Invitation self-service and reusable plans | Deferred pending need                               |
+| M8        | Paid plans                                 | Deferred pending need                               |
 
 ### Delivery order
+
+Milestone numbers identify scope, not delivery order. M5 and M6 precede the review
+of device management in M4b.
 
 1. **PR 1: control-plane reliability.** Merged and deployed as `4f1c115`.
    Isolated PostgreSQL, real sing-box, native systemd, and cross-platform CI passed.
@@ -230,43 +273,48 @@ current location.
    Product client code needs no further change for these lifecycle checks.
    No new client release or server deployment is implied. Do not restore the
    legacy Bash client.
-6. **M4b device management.** Add operator-issued single-use enrollment codes,
-   device subscriptions, independent credentials, and revocation. Do not add public user login.
-7. **M5 node agent.** Deliver authenticated config distribution, status, and safe
-   application of changes. Keep proven collectors until replacements pass acceptance.
-8. **M6 multiple nodes.** Validate device access and revocation across nodes.
-9. **Clean break.** Issue new device identities and invalidate the entire legacy
-   credential/subscription system. Remove its compatibility code and fields.
+6. **M5 node agent.** Deliver SSH bootstrap, Ansible deployment, typed HTTPS interfaces,
+   forward-only config application and integrated Go collectors. Migrate central history to PostgreSQL.
+   Preserve original-node credentials, account links and accounting semantics.
+7. **M6 multiple nodes and client contract.** Deliver node-scoped credentials, ordinary auto selection,
+   fixed AI egress and a v2 desktop envelope. Retire v1 and password/machine-token exchange at an explicit upgrade boundary.
+   Keep account subscriptions. Device management is not a prerequisite.
+8. **M4b device-management review.** Review scope and scheduling after M6 acceptance.
+   The target uses operator-issued codes and independent device access. Do not add public user login.
+9. **Device credential cutover.** After device acceptance, separately authorize enrollment and invalidation of account-level proxy access.
+   This is not the M6 client-contract cutover.
 
 Quotas, invitation self-service, plans, and payments remain deferred.
 Keep the current systemd sync path until the agent replaces it safely.
 
 ### Clean break and legacy removal
 
-This is an approved product direction, not authorization to reset production credentials now.
-The cutover follows M1b acceptance, device management, the node agent, and multi-node acceptance.
+These are design boundaries, not authorization to change production access.
+Preserve accounts, operator authentication, infrastructure settings, signed downloads and useful traffic history.
 
-- Preserve account records, operator authentication, infrastructure settings, signed
-  downloads, and traffic history. Do not reset the database or rewrite proven config builders.
-- Provide the new client, enrollment instructions, and operator-issued codes before
-  withdrawing old access. Users must enroll again through the new flow.
-- Revoke all old protocol credentials and terminate their existing sessions on every node.
-  A node without the revocation must not remain an available legacy entry point.
-- Invalidate old account subscriptions, portal passwords, and machine tokens together.
-  Remove the legacy exchange path so an old token cannot obtain a new subscription.
-- Remove `Account.portal_enabled`, `portal_password_hash`, and `is_portal_admin`.
-  Use account and device enable switches. Remove account-level subscription state
-  once device subscriptions replace it. Keep Django operator passwords and permissions.
-- Delete legacy Basic/Bearer authentication, its signing settings, compatibility APIs,
-  installer authentication migration, and obsolete inventory account-import code.
-  Keep installer checks that prevent conflicts with existing services or legacy TUN state.
-- Test that new devices work and that every old credential, token, and subscription fails.
-  A recovery procedure must not restore revoked legacy access.
+**M6 client-contract boundary:**
 
-Before cutover, existing users retain access. After cutover, old-client refusal is
-intentional, not an outage to repair by restoring compatibility. Infrastructure
-interruptions must still stay below 60 seconds. Version checks enforce supported
-contracts but do not prove which client binary runs on a user's device.
+- Ship a transition client that reads v1 and v2 before enabling v2-only server responses.
+- Require an explicit client upgrade. Do not maintain a single-node v1 projection indefinitely.
+- Keep account subscriptions and original-node protocol secrets. Import existing subscription-token digests without changing URLs.
+- Remove password/machine-token exchange, HMAC token derivation and their compatibility code after the upgrade window.
+- Remove legacy password/admin-parity fields. Preserve the portal switch as a renamed subscription switch.
+- Keep signed download access and installer service/TUN safety checks.
+- Test the upgrade path, old-client refusal and unchanged account URLs.
+
+**Future device credential boundary:**
+
+- First complete device management and cross-node device revocation acceptance.
+- Provide enrollment instructions and operator-issued codes before withdrawing account-level access.
+- Revoke old protocol credentials and terminate existing sessions on every affected node.
+- Invalidate account subscriptions only when device subscriptions replace them.
+- Keep unreachable nodes pending until confirmed removal or verified external isolation.
+- Test that new devices work and all retired credentials fail. Recovery must not restore retired access.
+
+Client-contract refusal does not revoke cached proxy profiles.
+Device deferral does not delay the M6 compatibility deletion.
+Each boundary needs an authorized production date and recovery procedure.
+Measure planned infrastructure interruptions against the 60-second gate.
 
 ### M0: Security fixes
 
@@ -377,7 +425,7 @@ Client:
   conflicting maintenance writes. A recovery record protects interrupted commits.
 - The installed build receipt prevents a successful upgrade from recreating its
   own notification. The old `update` task entry only migrates schedules. Remove
-  that entry at the device-enrollment clean break. See
+  that entry after the v2 client upgrade window. See
   [automatic maintenance](README_SBC.md#automatic-maintenance) for migration and
   recovery details.
 - `sbc` installs a downloaded binary only when it matches the signed manifest. It
@@ -753,8 +801,9 @@ successfully, and every protocol available to that client passed connection test
 
 Reuse the config builders, signed-download contract, and hosted installers.
 The single-node account, credential, and subscription core is deployed, including portal consolidation.
-Device management remains unimplemented, so M4b is not complete under its original acceptance criteria.
-Items 1–3 describe the deployed core. Item 4 is planned work.
+Device management remains unimplemented, so M4b is incomplete.
+Review its scope and scheduling after M6 acceptance.
+Items 1–3 describe the deployed core. Item 4 describes the deferred target.
 Neither this status nor the roadmap authorizes a production cutover.
 
 1. **Deployable foundation.** Implemented and deployed on the single VPS.
@@ -782,8 +831,8 @@ Neither this status nor the roadmap authorizes a production cutover.
    Migrations `0003_account_portal_enabled` and `0004_traffic_permission` are applied.
    Production acceptance passed.
    Operational details belong in [the control-plane guide](CONTROL_PLANE.md).
-4. **Device management: next after M1b.** Operators issue single-use
-   enrollment codes through private Admin. Each enrolled device gets its own
+4. **Device management: review after M6.** This target is not a prerequisite for M5 or M6.
+   Operators issue single-use enrollment codes through private Admin. Each enrolled device gets its own
    subscription and protocol credentials. Operators manage revocation and enrollment limits.
    No ordinary-user login or password recovery is required. Codes and subscription
    tokens grant no account-management or cross-device permissions.
@@ -797,49 +846,57 @@ compatibility remain because hosted installers use them. Mobile clients use remo
 profiles or current JSON downloads, not new per-user release archives.
 Traffic operators need a separate Django permission; old portal-admin flags grant nothing.
 Keep the shared store, signed manifests, hosted installers, `sbm gc`, and historical data.
-The next feature after automatic maintenance and official mobile import is native Linux TUN.
+The next delivery is M5, followed by M6. Neither requires device management.
 
 ### M5: Node agent
 
-Planned after device management. Config distribution and node status are the core scope.
-The agent does not require quotas, a traffic-storage rewrite, or an official-binary switch.
+Next priority. The [full specification](MULTI_NODE_SPEC.md) defines implementation slices and acceptance.
+Device management, quotas and an official-server-binary switch are not prerequisites.
 
-- Add a node agent, with Go as the proposed language. Use separate node authentication.
-  Validate candidate configs, apply them safely, and report the applied revision and health.
-- Preserve the last good config during control-plane outages. Define how stale or
-  unreachable nodes are excluded from a credential-revocation cutover.
-- Apply account/device revocation to new and existing connections. Measure propagation
-  delay and service interruption before production acceptance.
-- Reuse proven configuration builders, validation, locking, and recovery behavior.
-  Replace systemd sync and deployment duties only where the agent assumes them.
-- Preserve traffic collection, account attribution, and historical data. Define the
-  reporting contract before moving collection into the agent. Report replay must not double-count usage.
-- Keep code, binaries, and applied configs root-owned on nodes.
+- Use Django Ninja and synchronous PostgreSQL policy transactions, without a render worker.
+- Install node identity through operator SSH. Use Ansible for host provisioning and role-specific artifacts.
+- Run one cgo-free Go agent with integrated collectors and local SQLite. No project Python runtime is required on nodes.
+- Validate before stopping the working engine. Publish complete generations forward only.
+  Startup failure after publication requires repair, not automatic replay of old credentials.
+- Keep local proxy service during control-plane outages. Track offline revocation as pending.
+- Migrate central traffic history to PostgreSQL. Preserve counter authority, stream attribution and reconciliation semantics.
+- Use versioned absolute snapshots instead of a delta outbox and per-batch receipt history.
+- Adopt the original node without changing its secrets or subscription URLs. Remove the retired writer after acceptance.
 
-Done when authenticated distribution, repeat application, invalid-config rejection,
-outage recovery, revocation, and node status pass fixture and disposable native checks.
-The legacy client interfaces remain until the later clean break.
+Keep the custom counter-enabled server build until a separate accounting-parity project permits its removal.
+Prove history parity and crash recovery before replacing deployed collectors.
+Measure revocation against existing sessions, not only new-login refusal.
 
-API-stream-only accounting is separate work. Compare it with existing counters
-before removing the poller, reconciliation logic, or custom server build.
-Quota enforcement and a PostgreSQL traffic migration are not prerequisites for M5 or M6.
+#### Identity and node boundaries
+
+- Keep account permissions in the control plane. The agent consumes opaque credential IDs and a local roster.
+- Use node-scoped account credentials. Keep immutable identity mappings for historical and delayed traffic.
+- Separate subscription authentication from rendering and routing. Future devices must not require another node API.
+- Node UUIDs identify installation lifetimes. Replacement uses a new UUID and retains old revocation/history records.
+- Require confirmed process termination and durable roster exclusion for revocation, or verified external isolation.
+
+#### Deferred server permission management
+
+Retain root-based operations and root ownership of code, binaries, configs and private state.
+Privilege reduction and an agent/applier split are separate work, not M5/M6 prerequisites.
 
 ### M6: Multiple nodes
 
-Planned after the node agent and required before the clean break.
+Planned after M5 and before device review. Retain account subscriptions and use independent credentials on each node.
 
-- Enroll a node with one command and a one-time token. A provisioning script sets up
-  the agent, the hardened units and the firewall, and reads the real sshd port.
-- Decide control-plane hosting and CDN placement before provisioning additional infrastructure.
-  Review the separation between the public control-plane domain and node endpoints.
-- Add node groups. Subscriptions list every node in the user's groups, with an
-  auto-select group for normal traffic and a fixed node for proxied AI traffic.
-- Track each node's traffic against its provider allowance and reset day. KiwiVM
-  becomes one optional provider adapter.
-- Decide on VLESS-Reality for nodes without a domain.
+- Deploy a second node with one operator-local command. The control plane holds no SSH keys.
+- Use existing VPS hosting and the HTTPS origin. No CDN is required.
+- Grant node access through groups and publish only prepared, applied endpoint/credential pairs.
+- Offer all node/protocol pairs manually and one automatic ordinary pool.
+- Pin proxied AI traffic and DNS to an explicit node with verified static egress. Never fail over to another node implicitly.
+- Deliver a v2 desktop envelope and an explicit client upgrade boundary. Remove permanent v1 projection and password/machine-token exchange.
+- Preserve mixed/TUN safety, native mobile profiles, traffic history and per-node provider calendars.
+- Keep VLESS-Reality, new no-domain TLS options and devices outside this milestone.
 
-Done when a second VPS serves users and a blocked node can be replaced without
-touching clients.
+Done when two nodes pass routing, accounting, revocation, replacement and recovery gates.
+Replacement preserves subscription links, not immediate delivery of unknown endpoints to stale profiles.
+New endpoints require refresh, including console refresh for active Linux TUN.
+Review device management after this acceptance.
 
 ### M7: Invitation self-service and reusable plans
 
@@ -858,21 +915,23 @@ invites. Details are planned when M7 lands.
 
 ## Working rules
 
-- Each milestone lands in small pull requests. Preserve current access until the
-  explicitly authorized clean break, then reject the retired credentials and contracts.
-- Delete replaced code in the same milestone. Remove the legacy compatibility layer
-  at the clean break rather than carrying it into the new device model.
+- Each milestone lands in bounded pull requests with acceptance evidence.
+- Prefer a clean contract and mature framework over indefinite compatibility or custom infrastructure.
+- Separate technical upgrades from production access changes. Execute only the authorized cutover.
+- Delete replaced code after acceptance in the same milestone. Keep data and migration fixtures, not parallel maintained implementations.
 - Update the docs a milestone touches, and delete docs for removed parts.
 - Test behavior. Real sing-box binaries run in CI, and tests don't assert source
   text.
 
 ## Open questions
 
-| Question                                                 | Decide by           |
-| -------------------------------------------------------- | ------------------- |
-| Enrollment code expiry, delivery and safe retry behavior | Device PR           |
-| Agent outage handling and revocation acknowledgement     | M5                  |
-| Control plane host and CDN provider                      | M6                  |
-| VLESS-Reality for nodes without a domain                 | M6                  |
-| Production cutover date and recovery procedure           | After M6 acceptance |
-| Payment provider                                         | M8                  |
+M5/M6 design decisions are specified in [MULTI_NODE_SPEC.md](MULTI_NODE_SPEC.md).
+Implementation and native acceptance remain pending. These later decisions stay outside that scope.
+
+| Question                                                        | Decide by               |
+| --------------------------------------------------------------- | ----------------------- |
+| Device enrollment code expiry, delivery and safe retry behavior | Device PR               |
+| Device-management scope and scheduling                          | Review after M6         |
+| Production v2 client-contract cutover and recovery              | M6 acceptance           |
+| Production device credential cutover and recovery               | After device acceptance |
+| Payment provider                                                | M8                      |
