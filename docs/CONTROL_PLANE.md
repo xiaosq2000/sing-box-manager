@@ -1,6 +1,6 @@
 # Control-plane guide
 
-Checked on 2026-10-21.
+Checked on 2026-10-22.
 
 The Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
 accounts, proxy user accounts (`Account`), per-protocol credentials (`Credential`),
@@ -141,11 +141,17 @@ Account disablement removes those credentials from the node after a successful s
 A changed config requires a sing-box restart, which interrupts existing connections on this single node.
 All portal entry points query PostgreSQL. There is no inventory or authentication-snapshot fallback.
 
-The [planned clean break](REFACTOR_SPEC.md#clean-break-and-legacy-removal) follows
-Linux TUN, device management, the node agent, and multi-node acceptance.
-Its user flow uses operator-issued single-use device enrollment codes, not user login passwords.
-At that cutover, `portal_enabled`, `portal_password_hash`, and `is_portal_admin`
-are removed with legacy authentication and account subscriptions. They remain operational today.
+The [delivery order](REFACTOR_SPEC.md#delivery-order) prioritizes the node agent, then multiple nodes.
+The target retains account subscriptions and original-node secrets, with independent credentials on new nodes.
+Review device management after multi-node acceptance.
+The [multi-node specification](MULTI_NODE_SPEC.md) selects Ansible deployment, a Go agent, typed HTTPS APIs and central PostgreSQL traffic storage.
+The operational commands in this guide still describe the deployed single-node system.
+
+The [cutover plan](REFACTOR_SPEC.md#clean-break-and-legacy-removal) separates two boundaries.
+M6 requires a v2 client upgrade and retires password/machine-token compatibility without invalidating account links.
+It preserves the portal switch as subscription access and removes legacy password/admin-parity fields.
+A later device cutover replaces account subscriptions and proxy credentials only after device acceptance.
+`portal_enabled`, `portal_password_hash`, and `is_portal_admin` remain operational today.
 Do not reset credentials or remove these fields merely because the roadmap approves their retirement.
 Django operator authentication and permissions remain separate and are retained.
 
