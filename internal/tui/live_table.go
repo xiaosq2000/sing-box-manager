@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -33,10 +33,8 @@ type LiveTableModel struct {
 
 func NewLiveTableModel(th Theme, headerLine string, headers []string, rows [][]string, pending map[int]bool, testingLabel string, onInterrupt func()) LiveTableModel {
 	sp := spinner.New()
-	sp.Spinner = spinner.MiniDot
-	if th.Colored {
-		sp.Style = th.Primary
-	}
+	sp.Spinner = spinner.Line
+	sp.Style = th.Primary
 	return LiveTableModel{HeaderLine: headerLine, Headers: headers, Rows: rows, Pending: pending,
 		TestingLabel: testingLabel, Spinner: sp, Theme: th, OnInterrupt: onInterrupt}
 }
@@ -47,7 +45,7 @@ func (m LiveTableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = msg.Width, msg.Height
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			m.Interrupted, m.Done = true, true
@@ -82,11 +80,11 @@ func (m LiveTableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m LiveTableModel) View() string {
+func (m LiveTableModel) View() tea.View {
 	if m.Done {
-		return ""
+		return tea.NewView("")
 	}
-	return m.RenderFrame()
+	return tea.NewView(m.RenderFrame())
 }
 
 func (m LiveTableModel) lines() []string {
@@ -114,6 +112,9 @@ func (m LiveTableModel) contentHeight() int {
 }
 
 func (m LiveTableModel) RenderFrame() string {
+	if m.Width > 0 && m.Width < 4 {
+		return ansi.Truncate("<>", m.Width, "")
+	}
 	lines := m.lines()
 	h := m.contentHeight()
 	start := max(0, min(m.offset, max(0, len(lines)-h)))

@@ -3,65 +3,49 @@
 package tui
 
 import (
-	"io"
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
 // StatusKeyWidth is the display column width used by sbc status key labels in
 // both English and Simplified Chinese.
 const StatusKeyWidth = 10
 
-// Theme holds a Lipgloss renderer and semantic styles bound to an output writer.
+// Theme contains semantic ANSI styles for one effective color profile.
 type Theme struct {
-	Renderer *lipgloss.Renderer
-	Colored  bool
-	Base     lipgloss.Style
-	Header   lipgloss.Style
-	Key      lipgloss.Style
-	Primary  lipgloss.Style
-	Success  lipgloss.Style
-	Warning  lipgloss.Style
-	Danger   lipgloss.Style
-	Muted    lipgloss.Style
-	Border   lipgloss.Style
+	profile colorprofile.Profile
+	Base    lipgloss.Style
+	Header  lipgloss.Style
+	Key     lipgloss.Style
+	Primary lipgloss.Style
+	Success lipgloss.Style
+	Warning lipgloss.Style
+	Danger  lipgloss.Style
+	Muted   lipgloss.Style
+	Border  lipgloss.Style
 }
 
-// NewTheme builds a Theme for w, disabling ANSI escape codes when w is not a
-// terminal or NO_COLOR is set.
-func NewTheme(w io.Writer, getenv func(string) string) Theme {
-	if w == nil {
-		w = io.Discard
+// NewTheme builds styles without reading the terminal or its background.
+// ANSI slots retain the user's palette even on truecolor terminals.
+func NewTheme(profile colorprofile.Profile) Theme {
+	base := lipgloss.NewStyle()
+	th := Theme{profile: profile, Base: base, Header: base, Key: base,
+		Primary: base, Success: base, Warning: base, Danger: base, Muted: base, Border: base}
+	if th.Styled() {
+		th.Header, th.Key = base.Bold(true), base.Bold(true)
+		th.Primary = base.Foreground(lipgloss.Cyan)
+		th.Success = base.Foreground(lipgloss.Green)
+		th.Warning = base.Foreground(lipgloss.Yellow)
+		th.Danger = base.Foreground(lipgloss.Red)
 	}
-	r := lipgloss.NewRenderer(w)
-	colored := ColorEnabled(w, getenv)
-	if !colored {
-		r.SetColorProfile(termenv.Ascii)
-	}
-	primaryColor := lipgloss.AdaptiveColor{Light: "#0284C7", Dark: "#38BDF8"}
-	successColor := lipgloss.AdaptiveColor{Light: "#16A34A", Dark: "#4ADE80"}
-	warningColor := lipgloss.AdaptiveColor{Light: "#D97706", Dark: "#FBBF24"}
-	dangerColor := lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#F87171"}
-	mutedColor := lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#9CA3AF"}
-	borderColor := lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#4B5563"}
-
-	return Theme{
-		Renderer: r,
-		Colored:  colored,
-		Base:     r.NewStyle(),
-		Header:   r.NewStyle().Bold(true).Foreground(primaryColor),
-		Key:      r.NewStyle().Bold(true).Foreground(primaryColor),
-		Primary:  r.NewStyle().Foreground(primaryColor),
-		Success:  r.NewStyle().Foreground(successColor),
-		Warning:  r.NewStyle().Foreground(warningColor),
-		Danger:   r.NewStyle().Foreground(dangerColor),
-		Muted:    r.NewStyle().Foreground(mutedColor),
-		Border:   r.NewStyle().Foreground(borderColor),
-	}
+	return th
 }
+
+// Styled reports whether this profile permits colors and other SGR attributes.
+func (th Theme) Styled() bool { return th.profile > colorprofile.ASCII }
 
 // DisplayWidth returns the visible terminal column width of s, accounting for
 // East Asian wide characters (2 cells per CJK ideograph or fullwidth mark) and
@@ -91,10 +75,9 @@ func PadLeft(s string, width int) string {
 }
 
 // FormatKV formats a key-value row with key padded to keyWidth display columns.
-// When w is a color-capable terminal, the key and recognized status values are
-// styled semantically; otherwise plain aligned text is returned.
-func FormatKV(w io.Writer, getenv func(string) string, key string, keyWidth int, value string) string {
-	th := NewTheme(w, getenv)
+// Styled themes highlight the key and recognized status values.
+// Plain themes retain the same aligned text.
+func FormatKV(th Theme, key string, keyWidth int, value string) string {
 	key, value = SafeText(key), SafeText(value)
 	pad := 0
 	if kw := DisplayWidth(key); kw < keyWidth {
@@ -102,7 +85,7 @@ func FormatKV(w io.Writer, getenv func(string) string, key string, keyWidth int,
 	}
 	styledKey := key
 	styledVal := value
-	if th.Colored {
+	if th.Styled() {
 		styledKey = th.Key.Render(key)
 		styledVal = StyleStatusValue(th, value)
 	}
@@ -112,15 +95,14 @@ func FormatKV(w io.Writer, getenv func(string) string, key string, keyWidth int,
 // FormatColonLine formats one or more newline-separated lines that start with a
 // "key: value" or "键：值" label. When keyWidth > 0, each key is padded to
 // keyWidth display columns so English and Chinese rows align vertically.
-func FormatColonLine(w io.Writer, getenv func(string) string, text string, keyWidth int) string {
-	th := NewTheme(w, getenv)
+func FormatColonLine(th Theme, text string, keyWidth int) string {
 	trailingNewline := strings.HasSuffix(text, "\n")
 	rawLines := strings.Split(strings.TrimSuffix(SafeLines(text), "\n"), "\n")
 	out := make([]string, 0, len(rawLines))
 	for _, line := range rawLines {
 		key, val, sep, ok := splitColonKV(line)
 		if !ok {
-			if th.Colored {
+			if th.Styled() {
 				out = append(out, th.Warning.Render(line))
 			} else {
 				out = append(out, line)
@@ -128,10 +110,10 @@ func FormatColonLine(w io.Writer, getenv func(string) string, text string, keyWi
 			continue
 		}
 		if keyWidth > 0 {
-			out = append(out, FormatKV(w, getenv, key, keyWidth, val))
+			out = append(out, FormatKV(th, key, keyWidth, val))
 			continue
 		}
-		if th.Colored {
+		if th.Styled() {
 			out = append(out, th.Key.Render(key)+sep+StyleStatusValue(th, val))
 		} else {
 			out = append(out, key+sep+val)
@@ -172,9 +154,9 @@ func isLabel(s string) bool {
 	return true
 }
 
-// StyleStatusValue highlights status tokens in value when th.Colored is true.
+// StyleStatusValue highlights status tokens when the theme permits styling.
 func StyleStatusValue(th Theme, value string) string {
-	if !th.Colored {
+	if !th.Styled() {
 		return value
 	}
 	lower := strings.ToLower(strings.TrimSpace(value))

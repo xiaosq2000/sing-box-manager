@@ -1,23 +1,14 @@
 package tui
 
 import (
-	"io"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 )
 
 // CellStyler returns a Lipgloss style for a data cell at (row, col).
 type CellStyler func(row, col int, value string, th Theme) lipgloss.Style
-
-// RenderTable renders a rounded-border table with CJK-aware column alignment.
-// When w is not a terminal or NO_COLOR is set, ANSI codes are omitted while
-// preserving box-drawing borders and exact display-width padding.
-func RenderTable(w io.Writer, getenv func(string) string, headers []string, rows [][]string, styler CellStyler) string {
-	width, _ := TerminalSize(w)
-	return RenderTableTheme(NewTheme(w, getenv), width, headers, rows, styler)
-}
 
 // RenderTableTheme keeps the caller's styles and terminal capabilities.
 // A narrow terminal uses stacked fields instead of hidden columns.
@@ -81,7 +72,7 @@ func cleanCells(cells []string) []string {
 // DiagnosticCellStyler applies semantic colors to the 7-column diagnostic table
 // (Target/source, First response, Responses, HTTP, Capture, Path, Exit IP/rate/category).
 func DiagnosticCellStyler(_ int, col int, value string, th Theme) lipgloss.Style {
-	if !th.Colored {
+	if !th.Styled() {
 		return th.Base
 	}
 	trimmed := strings.TrimSpace(value)

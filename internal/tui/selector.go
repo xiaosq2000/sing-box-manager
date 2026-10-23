@@ -2,13 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -38,11 +37,11 @@ type SelectorModel struct {
 	Theme                         Theme
 	Width, Height                 int
 	offset                        int
+	itemOffset                    int
 }
 
-func NewSelectorModel(w io.Writer, getenv func(string) string, title, currentBadge, helpText string, items []SelectorItem) SelectorModel {
-	m := SelectorModel{Title: title, CurrentBadge: currentBadge, HelpText: helpText, Items: items, Theme: NewTheme(w, getenv)}
-	m.Width, m.Height = TerminalSize(w)
+func NewSelectorModel(th Theme, title, currentBadge, helpText string, items []SelectorItem) SelectorModel {
+	m := SelectorModel{Title: title, CurrentBadge: currentBadge, HelpText: helpText, Items: items, Theme: th}
 	for i, item := range items {
 		if item.Current {
 			m.Cursor = i
@@ -65,8 +64,13 @@ func (m SelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case selectorSignalMsg:
 		m.InterruptCode, m.Done = int(msg), true
 		return m, tea.Quit
-	case tea.KeyMsg:
-		switch msg.String() {
+	case tea.KeyPressMsg:
+		key := msg.String()
+		switch key {
+		case "up", "k", "ctrl+p", "down", "j", "ctrl+n", "home", "end":
+			m.itemOffset = 0
+		}
+		switch key {
 		case "up", "k", "ctrl+p":
 			if len(m.Items) > 0 {
 				m.Cursor = (m.Cursor - 1 + len(m.Items)) % len(m.Items)
@@ -79,6 +83,10 @@ func (m SelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Cursor = 0
 		case "end":
 			m.Cursor = max(0, len(m.Items)-1)
+		case "pgdown", "ctrl+f":
+			m.itemOffset += max(1, m.contentHeight()-1)
+		case "pgup", "ctrl+b":
+			m.itemOffset -= max(1, m.contentHeight()-1)
 		case "enter":
 			if m.Cursor >= 0 && m.Cursor < len(m.Items) {
 				m.Chosen = m.Items[m.Cursor].Value
@@ -97,11 +105,11 @@ func (m SelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m SelectorModel) View() string {
+func (m SelectorModel) View() tea.View {
 	if m.Done {
-		return ""
+		return tea.NewView("")
 	}
-	return m.RenderFrame()
+	return tea.NewView(m.RenderFrame())
 }
 
 func (m SelectorModel) itemLines() ([]string, []int) {
@@ -119,22 +127,29 @@ func (m SelectorModel) itemLines() ([]string, []int) {
 		starts[i] = len(lines)
 		prefix := "  "
 		if i == m.Cursor {
-			prefix = "❯ "
+			prefix = "> "
 		}
 		label := SafeText(item.Value)
 		if item.Current {
 			label += " " + SafeText(m.CurrentBadge)
 		}
-		text := prefix + PadRight(label, maxWidth)
+		text := PadRight(label, maxWidth)
 		if item.Description != "" {
 			text += "  " + SafeText(item.Description)
 		}
-		wrapped := strings.Split(FitLines(strings.TrimRight(text, " "), m.Width), "\n")
+		width := 0
+		if m.Width > 0 {
+			width = max(2, m.Width-2)
+		}
+		wrapped := strings.Split(FitLines(strings.TrimRight(text, " "), width), "\n")
 		for _, line := range wrapped {
-			if i == m.Cursor {
-				line = m.Theme.Primary.Bold(true).Render(line)
-			} else if item.Current {
-				line = m.Theme.Success.Render(line)
+			line = prefix + line
+			if m.Theme.Styled() {
+				if i == m.Cursor {
+					line = m.Theme.Primary.Bold(true).Render(line)
+				} else if item.Current {
+					line = m.Theme.Success.Render(line)
+				}
 			}
 			lines = append(lines, line)
 		}
@@ -146,7 +161,14 @@ func (m SelectorModel) contentHeight() int {
 	if m.Height <= 0 {
 		return 0
 	}
-	return max(1, m.Height-2)
+	h := m.Height
+	if m.Title != "" && m.Height >= 3 {
+		h--
+	}
+	if m.HelpText != "" && m.Height >= 2 {
+		h--
+	}
+	return max(1, h)
 }
 
 func (m *SelectorModel) ensureVisible() {
@@ -161,6 +183,12 @@ func (m *SelectorModel) ensureVisible() {
 	if m.Cursor+1 < len(starts) {
 		end = starts[m.Cursor+1]
 	}
+	if end-start > h {
+		m.itemOffset = max(0, min(m.itemOffset, end-start-h))
+		m.offset = start + m.itemOffset
+		return
+	}
+	m.itemOffset = 0
 	if start < m.offset || start >= m.offset+h {
 		m.offset = start
 	} else if end > m.offset+h {
@@ -171,6 +199,9 @@ func (m *SelectorModel) ensureVisible() {
 
 // RenderFrame keeps the cursor visible, including after a terminal resize.
 func (m SelectorModel) RenderFrame() string {
+	if m.Width > 0 && m.Width < 4 {
+		return ansi.Truncate("<>", m.Width, "")
+	}
 	lines, _ := m.itemLines()
 	if h := m.contentHeight(); h > 0 {
 		start := min(m.offset, len(lines))
@@ -197,7 +228,7 @@ func (m SelectorModel) headerWidth() int {
 }
 
 // RenderChoices uses the same labels in static and interactive output.
-func RenderChoices(w io.Writer, getenv func(string) string, title, currentBadge string, items []SelectorItem) string {
+func RenderChoices(th Theme, width int, title, currentBadge string, items []SelectorItem) string {
 	rows := make([][]string, len(items))
 	for i, item := range items {
 		label := SafeText(item.Value)
@@ -206,12 +237,17 @@ func RenderChoices(w io.Writer, getenv func(string) string, title, currentBadge 
 		}
 		rows[i] = []string{label, item.Description}
 	}
-	return RenderTable(w, getenv, []string{title, ""}, rows, nil)
+	return RenderTableTheme(th, width, []string{title, ""}, rows, nil)
 }
 
-func RunSelector(in io.Reader, out io.Writer, getenv func(string) string, title, currentBadge, helpText string, items []SelectorItem) (string, bool, error) {
-	model := NewSelectorModel(out, getenv, title, currentBadge, helpText, items)
-	prog := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithoutSignalHandler())
+func RunSelector(output *Output, title, currentBadge, helpText string, items []SelectorItem) (string, bool, error) {
+	model := NewSelectorModel(output.Theme, title, currentBadge, helpText, items)
+	model.Width, model.Height = output.Size()
+	model.ensureVisible()
+	prog, err := output.Program(model)
+	if err != nil {
+		return "", false, err
+	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)

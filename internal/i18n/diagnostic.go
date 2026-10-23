@@ -64,7 +64,7 @@ func init() {
 		"Select route strategy": "选择路由策略",
 		"Select protocol":       "选择代理协议",
 		"(current)":             "（当前）",
-		"↑/↓ move • enter switch • esc cancel": "↑/↓ 移动 • enter 切换 • esc 取消",
+		"↑/↓ move • PgUp/PgDn scroll • enter switch • esc cancel": "↑/↓ 移动 • PgUp/PgDn 滚动 • enter 切换 • esc 取消",
 		"testing...":                 "检测中...",
 		"↑/↓ scroll • ctrl+c cancel": "↑/↓ 滚动 • ctrl+c 取消",
 	} {

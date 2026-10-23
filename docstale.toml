@@ -219,6 +219,8 @@ control-plane = [
   "tests/test_desktop_config.py",
 ]
 
+"docs/TUI_REFACTOR_PLAN.md" = ["@sbc", "docs/DEVELOPMENT.md"]
+
 "docs/README_SBC.md" = [
   "@sbc",
   "@unix-installer",

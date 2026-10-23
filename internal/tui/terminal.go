@@ -29,11 +29,6 @@ func Interactive(in io.Reader, out io.Writer, getenv func(string) string) bool {
 	return IsTerminal(in) && IsTerminal(out) && lookup(getenv, "TERM") != "dumb"
 }
 
-// ColorEnabled reports whether output can contain color escape sequences.
-func ColorEnabled(w io.Writer, getenv func(string) string) bool {
-	return IsTerminal(w) && lookup(getenv, "NO_COLOR") == "" && lookup(getenv, "TERM") != "dumb"
-}
-
 // TerminalSize returns zero dimensions for files and pipes.
 func TerminalSize(w io.Writer) (int, int) {
 	if f, ok := w.(*os.File); ok && IsTerminal(f) {

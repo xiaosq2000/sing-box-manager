@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func TestTerminalDetectionRejectsFilesPipesAndNull(t *testing.T) {
@@ -38,8 +38,8 @@ func TestTerminalDetectionRejectsFilesPipesAndNull(t *testing.T) {
 
 func TestSelectorRequiresEnterAndPreservesRawValue(t *testing.T) {
 	raw := "trojan\x1b]52;c;ZmFrZQ==\a\u202e\nnext"
-	m := NewSelectorModel(&bytes.Buffer{}, nil, "Protocol", "(current)", "help", []SelectorItem{{Value: raw}})
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	m := NewSelectorModel(NewTheme(colorprofile.NoTTY), "Protocol", "(current)", "help", []SelectorItem{{Value: raw}})
+	next, cmd := m.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
 	m = next.(SelectorModel)
 	if m.Done || m.Chosen != "" || cmd != nil {
 		t.Fatal("space submitted a selection")
@@ -48,12 +48,12 @@ func TestSelectorRequiresEnterAndPreservesRawValue(t *testing.T) {
 	if strings.ContainsAny(frame, "\x1b\a\u202e") || strings.Contains(frame, "\nnext") {
 		t.Fatalf("unsafe frame: %q", frame)
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if next.(SelectorModel).Chosen != raw {
 		t.Fatal("display sanitization changed the API value")
 	}
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune{'q'}}, {Type: tea.KeyCtrlC}} {
-		model := NewSelectorModel(&bytes.Buffer{}, nil, "", "", "", []SelectorItem{{Value: raw}})
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEscape}, {Code: 'q', Text: "q"}, {Code: 'c', Mod: tea.ModCtrl}} {
+		model := NewSelectorModel(NewTheme(colorprofile.NoTTY), "", "", "", []SelectorItem{{Value: raw}})
 		next, _ = model.Update(key)
 		if next.(SelectorModel).Chosen != "" {
 			t.Fatal("cancel selected a value")
@@ -66,24 +66,24 @@ func TestSelectorResizeKeepsCursorVisible(t *testing.T) {
 	for i := range items {
 		items[i] = SelectorItem{Value: fmt.Sprintf("route-%02d", i), Description: "中文说明 mixed English description"}
 	}
-	m := NewSelectorModel(&bytes.Buffer{}, nil, "路由策略", "（当前）", "↑/↓ move • enter switch • esc cancel", items)
+	m := NewSelectorModel(NewTheme(colorprofile.NoTTY), "路由策略", "（当前）", "help", items)
 	for _, size := range []tea.WindowSizeMsg{{Width: 120, Height: 30}, {Width: 40, Height: 3}, {Width: 20, Height: 6}} {
 		next, _ := m.Update(size)
 		m = next.(SelectorModel)
 		for range items {
 			frame := m.RenderFrame()
-			if !strings.Contains(frame, "❯ "+items[m.Cursor].Value) {
+			if !strings.Contains(frame, "> "+items[m.Cursor].Value) {
 				t.Fatalf("cursor hidden at %d: %q", m.Cursor, frame)
 			}
 			assertFits(t, frame, size.Width, size.Height)
-			next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 			m = next.(SelectorModel)
 		}
 	}
 }
 
 func TestAdaptiveTableKeepsAllFieldsAndRemovesControls(t *testing.T) {
-	th := NewTheme(&bytes.Buffer{}, nil)
+	th := NewTheme(colorprofile.NoTTY)
 	headers := []string{"目标", "首响应", "响应次数", "HTTP", "接管", "路径", "出口 IP"}
 	rows := [][]string{{"target.test\x1b[2J\u202e\nspoof", "10.0 ms", "1/1", "200", "已验证", "proxy/trojan", "203.0.113.7"}}
 	for _, width := range []int{40, 80, 160} {
@@ -101,10 +101,7 @@ func TestAdaptiveTableKeepsAllFieldsAndRemovesControls(t *testing.T) {
 }
 
 func TestLiveTableScrollResizeAndThemeParity(t *testing.T) {
-	th := NewTheme(&bytes.Buffer{}, nil)
-	th.Renderer.SetColorProfile(termenv.ANSI256)
-	th.Renderer.SetHasDarkBackground(true)
-	th.Colored = true
+	th := NewTheme(colorprofile.ANSI256)
 	rows := make([][]string, 24)
 	for i := range rows {
 		rows[i] = []string{fmt.Sprintf("target-%02d", i), "12.0 ms", "1/1", "200", "verified", "proxy/trojan", "203.0.113.7"}
@@ -122,12 +119,12 @@ func TestLiveTableScrollResizeAndThemeParity(t *testing.T) {
 	if !strings.Contains(frame, "\x1b[") || !strings.Contains(frame, "203.0.113.7") {
 		t.Fatal("live view lost colors or the IP")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	m = next.(LiveTableModel)
 	if !strings.Contains(ansi.Strip(m.RenderFrame()), "target-23") {
 		t.Fatal("last target is not accessible")
 	}
-	m.Theme = NewTheme(&bytes.Buffer{}, nil)
+	m.Theme = NewTheme(colorprofile.NoTTY)
 	if strings.Contains(m.RenderFrame(), "\x1b") {
 		t.Fatal("plain theme emitted ANSI")
 	}
@@ -138,7 +135,7 @@ func TestPanelAlignsValuesAndPreservesNotices(t *testing.T) {
 		"Browser protection: on\nChrome languages: off\nChrome geolocation saved choice: on\nRegion matching: off\n",
 		"浏览器保护：开启\nChrome 语言：关闭\nChrome 定位防护已保存选项：开启\n地区匹配：关闭\n",
 	} {
-		out := RenderPanel(&bytes.Buffer{}, nil, text)
+		out := RenderPanel(NewTheme(colorprofile.NoTTY), 0, text)
 		column := -1
 		for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
 			key, value, _, ok := splitColonKV(line)
@@ -155,7 +152,7 @@ func TestPanelAlignsValuesAndPreservesNotices(t *testing.T) {
 		}
 	}
 	notice := "Local files do not prove Chrome's policy. Check chrome://policy.\n"
-	if got := RenderPanel(&bytes.Buffer{}, nil, notice); got != notice {
+	if got := RenderPanel(NewTheme(colorprofile.NoTTY), 0, notice); got != notice {
 		t.Fatalf("notice changed: %q", got)
 	}
 }
@@ -166,7 +163,7 @@ func TestSelectorStartupErrorIsReturned(t *testing.T) {
 		t.Fatal(err)
 	}
 	in.Close()
-	_, _, err = RunSelector(in, &bytes.Buffer{}, nil, "", "", "", nil)
+	_, _, err = RunSelector(NewOutput(in, &bytes.Buffer{}, nil), "", "", "", nil)
 	if err == nil {
 		t.Fatal("closed input reported success")
 	}

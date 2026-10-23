@@ -48,8 +48,24 @@ func TestTerminalHelper(t *testing.T) {
 	h := newHarness(t)
 	h.env.Stdin, h.env.Stdout, h.env.Stderr = os.Stdin, os.Stdout, os.Stderr
 	h.env.Getenv = os.Getenv
+	if os.Getenv("SBC_TTY_INJECT_NO_COLOR") == "1" {
+		h.env.Getenv = func(key string) string {
+			if key == "NO_COLOR" {
+				return "1"
+			}
+			return os.Getenv(key)
+		}
+	}
 	kind := os.Getenv("SBC_TTY_KIND")
 	args := []string{"route"}
+	switch kind {
+	case "help":
+		args = []string{"help"}
+	case "shell":
+		args = []string{"init", "bash"}
+	case "completion":
+		args = []string{"completion", "bash"}
+	}
 	if kind == "hostile" {
 		h.api.protocols = []string{"trojan", "naive\x1b]52;c;ZmFrZQ==\a\u202e\nRoute: direct\r\t"}
 		args = []string{"protocol"}
@@ -119,13 +135,24 @@ func TestTerminalHelper(t *testing.T) {
 
 type terminalCapture struct {
 	sync.Mutex
-	buf bytes.Buffer
+	buf        bytes.Buffer
+	queryReply io.Writer
+	queries    int
 }
 
 func (c *terminalCapture) Write(p []byte) (int, error) {
 	c.Lock()
 	defer c.Unlock()
-	return c.buf.Write(p)
+	n, err := c.buf.Write(p)
+	if c.queryReply != nil {
+		// Emulate replies from a terminal, including queries sent during Go init.
+		queries := bytes.Count(c.buf.Bytes(), []byte("\x1b[6n"))
+		for c.queries < queries {
+			fmt.Fprint(c.queryReply, "\x1b]11;rgb:0000/0000/0000\x1b\\\x1b[1;1R")
+			c.queries++
+		}
+	}
+	return n, err
 }
 func (c *terminalCapture) text() string { c.Lock(); defer c.Unlock(); return c.buf.String() }
 
@@ -139,7 +166,12 @@ type terminalSession struct {
 	readDone      chan struct{}
 }
 
-func startTerminal(t *testing.T, kind, stdin, stdout, term, color string, width, height uint16) *terminalSession {
+type terminalSettings struct {
+	foreground bool
+	env        map[string]string
+}
+
+func startTerminal(t *testing.T, kind, stdin, stdout, term, color string, width, height uint16, settings ...terminalSettings) *terminalSession {
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0)
 	if err != nil {
@@ -170,8 +202,19 @@ func startTerminal(t *testing.T, kind, stdin, stdout, term, color string, width,
 	t.Cleanup(cancel)
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestTerminalHelper$", "-test.count=1")
 	resultFile := filepath.Join(t.TempDir(), "result.json")
-	cmd.Env = append(os.Environ(), "SBC_TTY_RESULT="+resultFile, "SBC_TTY_KIND="+kind, "TERM="+term, "NO_COLOR="+color, "COLORTERM=truecolor")
+	cmd.Env = append(os.Environ(), "SBC_TTY_RESULT="+resultFile, "SBC_TTY_KIND="+kind, "TERM="+term, "NO_COLOR="+color, "COLORTERM=truecolor",
+		"CI=", "CLICOLOR=", "CLICOLOR_FORCE=", "COLORFGBG=", "TERM_PROGRAM=", "GOOGLE_CLOUD_SHELL=", "SBC_LANG=en",
+		"SBC_TTY_INJECT_NO_COLOR=", "TTY_FORCE=", "TEA_TRACE=", "TEA_DEBUG=")
 	capture := &terminalCapture{}
+	for _, setting := range settings {
+		for key, value := range setting.env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+		if setting.foreground {
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
+			capture.queryReply = master
+		}
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	if stdin == "null" {
 		f, err := os.Open(os.DevNull)
@@ -265,7 +308,7 @@ func TestTerminalSelectorConfirmationAndSignals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := startTerminal(t, tc.kind, "pty", "pty", "xterm-256color", "", 120, 24)
-			s.waitText(t, "❯ ")
+			s.waitText(t, "> ")
 			if tc.kind == "dirty" {
 				if err := os.WriteFile(s.resultFile+".gate", nil, 0600); err != nil {
 					t.Fatal(err)
@@ -313,7 +356,7 @@ func TestTerminalStaticFallbacks(t *testing.T) {
 			}
 			text := s.output.text()
 			withoutColors := regexp.MustCompile(`\x1b\[[0-9;:]*m`).ReplaceAllString(text, "")
-			if strings.Contains(text, "❯ ") || strings.Contains(withoutColors, "\x1b") {
+			if strings.Contains(text, "> ") || strings.Contains(withoutColors, "\x1b") {
 				t.Fatalf("static output used cursor controls: %q", text)
 			}
 			if (tc.out == "pipe" || tc.term == "dumb") && strings.Contains(text, "\x1b") {
@@ -333,7 +376,7 @@ func TestTerminalIncompleteChoiceListsStayReadOnly(t *testing.T) {
 				s := startTerminal(t, kind, "pty", output, "xterm-256color", "", 80, 24)
 				r := s.finish(t)
 				text := s.output.text()
-				if r.Code != 0 || r.Protocol != "retained-protocol" || !strings.Contains(text, "retained-protocol") || strings.Contains(text, "❯ ") {
+				if r.Code != 0 || r.Protocol != "retained-protocol" || !strings.Contains(text, "retained-protocol") || strings.Contains(text, "> ") {
 					t.Fatalf("incomplete list changed or hid the selection: %+v: %q", r, text)
 				}
 			})

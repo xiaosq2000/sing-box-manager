@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Checked on 2026-10-22.
+Checked on 2026-10-23.
 
 This repo builds `sing-box` releases, serves authenticated downloads, and deploys
 the code and an already-built release directory to a VPS. Use Pixi and Python 3.12.
@@ -36,6 +36,7 @@ surrounding context.
 | Changing                                           | Read                                                                                                                                                                                                                                                                                                  |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Snell protocol, credentials and rollout            | [SNELL.md](docs/SNELL.md), [SECRET_HANDLING.md](docs/SECRET_HANDLING.md), [CONTROL_PLANE.md](docs/CONTROL_PLANE.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                                            |
+| Client terminal UI, colors and glyphs              | [DEVELOPMENT.md](docs/DEVELOPMENT.md#terminal-ui-design), [TUI_REFACTOR_PLAN.md](docs/TUI_REFACTOR_PLAN.md), [README_SBC.md](docs/README_SBC.md#terminal-output)                                                                                                                                      |
 | CLI or settings                                    | [README.md](README.md)                                                                                                                                                                                                                                                                                |
 | CLI message language                               | [README_SBC.md](docs/README_SBC.md#cli-language), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                                                                                                               |
 | Inventory, credentials, TLS, config rendering      | [SECRET_HANDLING.md](docs/SECRET_HANDLING.md)                                                                                                                                                                                                                                                         |
@@ -72,6 +73,10 @@ surrounding context.
 - `sbc` uses Cobra and pflag for its command layer and Charmbracelet (`lipgloss`,
   `bubbletea`, and `bubbles`) for terminal rendering and interactive selection.
   Keep other client code standard-library-only. Build with cgo off.
+- Use modern terminal features when supported. Respect the user's theme through
+  default foreground/background colors and ANSI palette slots. Keep the UI usable
+  in Ubuntu 18.04's default GNOME Terminal without Nerd Fonts or other patched
+  fonts. Follow the [terminal UI design requirements](docs/DEVELOPMENT.md#terminal-ui-design).
 
 ## Completion
 
