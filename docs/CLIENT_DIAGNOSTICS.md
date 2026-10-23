@@ -130,7 +130,7 @@ Normal request counters and engine caches can change during diagnostics.
 
 | Operation        | Contract                                                                                   |
 | ---------------- | ------------------------------------------------------------------------------------------ |
-| Missing list     | Use a small built-in non-AI default in memory. Do not write a file                         |
+| Missing list     | Use the 17 built-in non-AI defaults in memory. Do not write a file                         |
 | Saved empty list | Keep it empty. A check with no targets fails before requests                               |
 | Add/remove       | Change only the requested saved targets, using stable target IDs                           |
 | Import           | Read a bounded local file, validate all entries, then atomically replace the saved list    |
@@ -138,10 +138,32 @@ Normal request counters and engine caches can change during diagnostics.
 | Reset            | Explicitly replace the saved list with the built-in default                                |
 | Preset           | Select a small read-only built-in set for this invocation, without changing the saved list |
 
-Provide small `default`, `china`, `global`, and explicitly selected `ai` presets.
-Review exact endpoints during implementation. Prefer stable HTTPS resources on the
-target host. A 200 response with a small body can improve evidence collection,
-but must not become a required server behavior.
+Provide read-only `default`, `china`, `global`, and explicitly selected `ai` presets.
+
+| Preset    | Targets                                                                                      |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `china`   | Baidu, Bilibili, WeChat, Taobao, Zhihu, Douyin, University of Macau, University of Hong Kong |
+| `global`  | GitHub, Cloudflare, Google, YouTube, X, TikTok, Reddit, Telegram, IEEE                       |
+| `default` | All 8 `china` targets, then all 9 `global` targets. No AI target                             |
+| `ai`      | ChatGPT, Claude, Gemini                                                                      |
+
+Non-AI targets request `/favicon.ico` on the target host. AI targets request
+provider homepages. Keep HTTP errors and redirects visible. Do not follow them
+or retry another endpoint. A resource response does not prove application access.
+Public endpoint availability needs a separate authorized live check.
+
+Schema version 1 target entries accept an optional `category` field. Allow only
+`china`, `global`, `ai`, `custom`, or an empty string. Missing or empty categories
+use exact built-in URL matching for display and reports. Other URLs use `custom`.
+Do not infer categories from IDs or rewrite saved lists during reads.
+Import and export preserve explicit categories. Built-in changes do not add
+websites to saved lists. `reset` explicitly replaces the saved list.
+
+Categories describe website groups, not route decisions or observed outbounds.
+The `china` group includes the Macau and Hong Kong university targets.
+The website-list table and both diagnostic views show localized category labels.
+Website JSON observations include a stable `category` value. IP and download
+observations omit that field. The diagnostic envelope remains at schema version 1.
 
 Reject non-HTTPS URLs, embedded credentials, invalid ports, control characters,
 and obvious local literal destinations by default. Preserve legitimate paths and

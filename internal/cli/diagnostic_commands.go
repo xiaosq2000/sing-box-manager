@@ -178,9 +178,9 @@ func runTargetCommand(env Env, action string, args []string) int {
 	case "list":
 		rows := make([][]string, 0, len(list.Targets))
 		for _, target := range list.Targets {
-			rows = append(rows, []string{target.ID, diagnostic.Host(target.URL)})
+			rows = append(rows, []string{target.ID, diagnostic.Host(target.URL), diagnosticCategoryLabel(diagnostic.TargetCategory(target))})
 		}
-		fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, []string{i18n.T("ID"), i18n.T("Host")}, rows, nil))
+		fmt.Fprint(env.Stdout, tui.RenderTable(env.Stdout, env.Getenv, []string{i18n.T("ID"), i18n.T("Host"), i18n.T("Category")}, rows, nil))
 		return 0
 	case "export":
 		if json.NewEncoder(env.Stdout).Encode(list) != nil {
