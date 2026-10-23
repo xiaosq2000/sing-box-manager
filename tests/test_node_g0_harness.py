@@ -251,6 +251,12 @@ def test_qemu_diagnostic_uses_only_fixed_categories(tmp_path, capsys, output, ca
     (tmp_path / "serial.log").write_bytes(b"Linux version\nKernel panic\n" + private)
     result = harness.qemu_diagnostic(tmp_path)
     assert result["log_category"] == category
+    assert result["kvm_markers"]["initialize"] == (
+        b"failed to initialize kvm" in output.lower()
+    )
+    assert result["errno_markers"]["permission-denied"] == (
+        b"permission denied" in output.lower()
+    )
     assert result["boot_markers"]["kernel-start"]
     assert result["boot_markers"]["kernel-panic"]
     assert not result["boot_markers"]["cloud-init"]

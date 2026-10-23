@@ -169,6 +169,30 @@ def qemu_diagnostic(root):
     serial = contents("serial.log")
     return {
         "log_category": category,
+        "kvm_markers": {
+            name: marker in output
+            for name, marker in (
+                ("initialize", b"failed to initialize kvm"),
+                ("access", b"could not access kvm"),
+                ("unsupported", b"kvm is not supported"),
+                ("vcpu", b"vcpu"),
+                ("irqchip", b"irqchip"),
+            )
+        },
+        "errno_markers": {
+            name: marker in output
+            for name, marker in (
+                ("permission-denied", b"permission denied"),
+                ("operation-not-permitted", b"operation not permitted"),
+                ("not-found", b"no such file or directory"),
+                ("invalid-argument", b"invalid argument"),
+                ("busy", b"device or resource busy"),
+                ("unsupported", b"not supported"),
+                ("no-device", b"no such device"),
+                ("no-memory", b"cannot allocate memory"),
+                ("io-error", b"input/output error"),
+            )
+        },
         "boot_markers": {
             name: marker in serial
             for name, marker in (
@@ -719,7 +743,10 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
         )
         run(["qemu-img", "resize", str(root / "disk.qcow2"), "8G"])
         accel = (
-            run([sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")])
+            run(
+                [sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")],
+                log=root / "accelerator-probe.log",
+            )
             .decode()
             .strip()
         )
