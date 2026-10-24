@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +14,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/accounting"
 	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/contract"
+	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/counter"
+	"google.golang.org/grpc"
 )
 
 func TestInitIsPrivateIdempotentAndDoesNotPrintSecret(t *testing.T) {
@@ -82,6 +86,64 @@ func TestHTTPSIgnoresProxyAndRefusesRedirect(t *testing.T) {
 	status, _, err := request(context.Background(), client, id, "GET", "/node-g0/v1/config", nil, "")
 	if err != nil || status != http.StatusFound || received != "Bearer "+id.NodeID+"."+id.Secret {
 		t.Fatalf("request result %d, %v", status, err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestCycleRejectsInvocationChangeWhileWaitingForCounters(t *testing.T) {
+	f := newLifecycleFixture(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "v2ray.core.app.stats.command.StatsService",
+		HandlerType: (*interface{})(nil),
+		Methods: []grpc.MethodDesc{{MethodName: "QueryStats", Handler: func(_ any, _ context.Context, decode func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
+			if err := decode(&counter.QueryStatsRequest{}); err != nil {
+				return nil, err
+			}
+			properties, err := os.ReadFile(f.properties)
+			if err != nil {
+				return nil, err
+			}
+			changed := strings.ReplaceAll(string(properties), f.receipt.Invocation, strings.Repeat("b", 32))
+			if err := os.WriteFile(f.properties, []byte(changed), 0600); err != nil {
+				return nil, err
+			}
+			return &counter.QueryStatsResponse{Stat: []*counter.Stat{{Name: "user>>>trojan:alice>>>traffic>>>downlink", Value: 20}}}, nil
+		}}},
+	}, &struct{}{})
+	go server.Serve(listener)
+	t.Cleanup(server.Stop)
+	posts := 0
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != "GET" {
+			posts++
+		}
+		return &http.Response{StatusCode: http.StatusNotModified, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	store, err := accounting.Open(filepath.Join(f.state, "traffic.sqlite3"), f.identity.SourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	f.bundle.StatsAddress = listener.Addr().String()
+	putJSON(t, filepath.Join(f.state, "generations/1/bundle.json"), f.bundle)
+	current := &f.bundle
+	err = cycle(context.Background(), client, f.identity, f.state, f.engine, "sbm-g0-proxy.service", store, &current)
+	if err == nil || err.Error() != "engine identity unconfirmed after sample" || posts != 0 {
+		t.Fatalf("changed invocation accepted: error=%v posts=%d", err, posts)
+	}
+	rows, err := store.Snapshots(context.Background())
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("changed-invocation counters committed: rows=%d error=%v", len(rows), err)
 	}
 }
 

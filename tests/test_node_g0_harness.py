@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from tests.node_g0 import run as harness
+from tests.node_g0 import reliability
 
 
 def test_guard_refuses_execution_without_explicit_opt_in(monkeypatch, tmp_path):
@@ -295,7 +296,101 @@ def test_ci_uses_disposable_runner_and_never_uploads_private_runs():
         step for step in steps if "scripts/dev/node-g0/run.py" in step.get("run", "")
     )
     assert native["env"]["SBM_NODE_G0"] == "1"
+    assert "--startup-checks" in native["run"]
     assert "continue-on-error" not in native
     assert not any("upload-artifact" in step.get("uses", "") for step in steps)
     assert all("self-hosted" not in json.dumps(step) for step in steps)
     assert "node-agent/**" in config["on"]["pull_request"]["paths"]
+
+
+@pytest.mark.parametrize("ready_after", [2, None])
+def test_restart_listener_wait_accepts_delay_but_bounds_unavailability(
+    monkeypatch, ready_after
+):
+    elapsed = 0
+    attempts = 0
+
+    def sleep(seconds):
+        nonlocal elapsed
+        elapsed += seconds
+
+    def guest(command):
+        nonlocal attempts
+        attempts += 1
+        assert "socket.create_connection" in command
+        assert "timeout=0.25" in command
+        return (
+            b"ready\n"
+            if ready_after is not None and attempts > ready_after
+            else b"pending\n"
+        )
+
+    monkeypatch.setattr(harness.time, "monotonic", lambda: elapsed)
+    monkeypatch.setattr(harness.time, "sleep", sleep)
+    if ready_after is None:
+        with pytest.raises(harness.StateTimeout):
+            reliability.wait_proxy(guest, harness.wait)
+        assert elapsed == 5
+    else:
+        reliability.wait_proxy(guest, harness.wait)
+        assert attempts == 3 and elapsed == 0.5
+
+
+def test_restart_listener_poll_budget_allows_a_completed_late_probe(monkeypatch):
+    elapsed = 0
+
+    def guest(command):
+        nonlocal elapsed
+        elapsed += 6
+        return b"ready\n"
+
+    monkeypatch.setattr(harness.time, "monotonic", lambda: elapsed)
+    reliability.wait_proxy(guest, harness.wait)
+    assert elapsed == 6
+
+
+def test_restart_listener_wait_does_not_hide_ssh_failure():
+    def guest(command):
+        raise harness.CommandFailure("ssh-transport", 255)
+
+    with pytest.raises(harness.CommandFailure):
+        reliability.wait_proxy(guest, harness.wait)
+
+
+def test_proxy_starts_through_the_locked_exec_wrapper():
+    root = Path(__file__).parents[1]
+    unit = (root / "scripts/dev/node-g0/templates/sbm-g0-proxy.service.j2").read_text()
+    assert "ExecStart=/opt/sbm-node-g0/sbm-node-g0 exec " in unit
+    assert "--engine /opt/sbm-node-g0/sing-box" in unit
+    assert "current/config.json" not in unit
+    assert "KillMode=control-group" in unit
+
+
+@pytest.mark.parametrize(
+    ("code", "output", "accepted"),
+    [
+        (1, b"G0 failed: agent writer already active\n", True),
+        (255, b"G0 failed: agent writer already active\n", False),
+        (1, b"PRIVATE-credential SSH error\n", False),
+        (1, b"PRIVATE-credential\nG0 failed: agent writer already active\n", False),
+        (None, b"G0 failed: agent writer already active\n", False),
+        (0, b"", False),
+    ],
+)
+def test_startup_rejection_requires_the_exact_agent_failure(
+    code, output, accepted, tmp_path
+):
+    def guest(command, *, log):
+        assert command == reliability.ONCE
+        log.write_bytes(output)
+        if code != 0:
+            raise harness.CommandFailure("command-exit", code)
+        return output
+
+    log = tmp_path / "rejection.log"
+    if accepted:
+        reliability.reject_once(guest, log, "agent writer already active")
+    else:
+        with pytest.raises(RuntimeError, match="startup negative control") as error:
+            reliability.reject_once(guest, log, "agent writer already active")
+        assert "PRIVATE" not in str(error.value)

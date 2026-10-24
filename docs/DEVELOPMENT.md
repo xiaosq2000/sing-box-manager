@@ -591,6 +591,10 @@ The native fixture installs services only inside a marked disposable VM.
 Its controller runs as private development subprocesses, not host system services.
 Read the [artifact and run requirements](NODE_ACCEPTANCE.md#reproduce) before execution.
 The dedicated GitHub-hosted workflow keeps raw run artifacts private.
+It adds `--startup-checks` to the native runner for receipt rejection, service restart, lifecycle contention and duplicate-writer checks.
+The proxy starts through a locked exec wrapper with a private config-digest/invocation/PID receipt.
+This subset does not establish full G1 acceptance. OS reboot, crash recovery, final sampling and forward repair remain pending.
+See the [G1 progress record](NODE_ACCEPTANCE.md#g1-progress) for exact boundaries.
 G0 grants `/dev/kvm` ownership to its disposable runner UID, matching TUN CI rather than relying on a named-user ACL.
 It does not change device ownership on developer hosts.
 G0 reuses the basic QMP startup probe in `scripts/dev/tun-vm/select-accel.py` without changing its TUN behavior.

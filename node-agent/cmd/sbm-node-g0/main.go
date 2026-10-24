@@ -25,7 +25,6 @@ import (
 
 	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/accounting"
 	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/contract"
-	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/counter"
 )
 
 func main() {
@@ -37,7 +36,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("expected init or run")
+		return errors.New("expected init, run or exec")
 	}
 	flags := flag.NewFlagSet("sbm-node-g0", flag.ContinueOnError)
 	identityPath := flags.String("identity", "", "private identity file")
@@ -47,28 +46,43 @@ func run() error {
 	engine := flags.String("engine", "", "installed sing-box executable")
 	service := flags.String("service", "sbm-g0-proxy.service", "disposable proxy unit")
 	interval := flags.Duration("interval", 2*time.Second, "fixture cycle interval")
+	once := flags.Bool("once", false, "run one fixture cycle")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return err
 	}
 	if *identityPath == "" || flags.NArg() != 0 {
 		return errors.New("identity is required")
 	}
+	if *once && os.Args[1] != "run" {
+		return errors.New("once requires run")
+	}
 	if os.Args[1] == "init" {
 		return initialize(*identityPath, *origin, *ca)
 	}
-	if os.Args[1] != "run" || *state == "" || *engine == "" || *service != "sbm-g0-proxy.service" || *interval < time.Second {
+	if (os.Args[1] != "run" && os.Args[1] != "exec") || !filepath.IsAbs(*state) || !filepath.IsAbs(*engine) || *service != "sbm-g0-proxy.service" || *interval < time.Second {
 		return errors.New("invalid disposable agent options")
 	}
 	var identity contract.Identity
 	if err := readJSON(*identityPath, &identity); err != nil {
 		return errors.New("identity read failed")
 	}
-	client, err := apiClient(identity)
-	if err != nil {
-		return err
+	if os.Args[1] == "exec" {
+		return executeEngine(identity, *state, *engine)
 	}
 	if err := os.MkdirAll(*state, 0700); err != nil {
 		return errors.New("state creation failed")
+	}
+	owner, err := tryLock(*state, "agent.lock")
+	if errors.Is(err, errLocked) {
+		return errors.New("agent writer already active")
+	}
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
+	client, err := apiClient(identity)
+	if err != nil {
+		return err
 	}
 	store, err := accounting.Open(filepath.Join(*state, "traffic.sqlite3"), identity.SourceID)
 	if err != nil {
@@ -78,17 +92,23 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	var current *contract.Bundle
-	var saved contract.Bundle
-	if readJSON(filepath.Join(*state, "current", "bundle.json"), &saved) == nil {
-		if saved.Validate(identity.NodeID) != nil {
-			return errors.New("invalid saved bundle")
+	if _, err := os.Lstat(filepath.Join(*state, "current")); err == nil {
+		saved, _, err := currentBundle(*state, identity.NodeID)
+		if err != nil {
+			return err
 		}
 		current = &saved
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return errors.New("current generation inspection failed")
 	}
 	ticker := time.NewTicker(*interval)
 	defer ticker.Stop()
 	for {
-		if err := cycle(ctx, client, identity, *state, *engine, *service, store, &current); err != nil {
+		err := cycle(ctx, client, identity, *state, *engine, *service, store, &current)
+		if *once {
+			return err
+		}
+		if err != nil {
 			// Never print raw HTTP, checker, database or subprocess errors.
 			fmt.Fprintln(os.Stderr, "G0 cycle:", err)
 		}
@@ -194,10 +214,17 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 			return errors.New("generation conflict")
 		}
 		if *current == nil || candidate.Generation != (*current).Generation {
-			if err := apply(ctx, state, engine, service, candidate); err != nil {
-				return err
+			applyErr := apply(ctx, state, engine, service, candidate)
+			// Publication selects policy even when startup fails. Never reuse an older cache.
+			if published, _, err := currentBundle(state, identity.NodeID); err == nil && published.Generation == candidate.Generation && published.ConfigSHA256 == candidate.ConfigSHA256 {
+				*current = &published
 			}
-			*current = &candidate
+			if applyErr != nil {
+				return applyErr
+			}
+			if *current == nil || (*current).Generation != candidate.Generation {
+				return errors.New("published generation unconfirmed")
+			}
 		}
 	}
 	// A failed pull must not stop collection or the locally running proxy.
@@ -205,21 +232,9 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 		return errors.New("no accepted bundle")
 	}
 	b := *current
-	invocation, err := command(ctx, "systemctl", "show", service, "--property=InvocationID", "--value")
-	if err != nil || invocation == "" {
-		return errors.New("engine identity unavailable")
-	}
-	if _, err := command(ctx, "systemctl", "is-active", "--quiet", service); err != nil {
-		return errors.New("engine inactive")
-	}
-	pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	up, down, err := counter.Read(pollCtx, b.StatsAddress, b.Roster[0].WireName)
-	cancel()
+	invocation, err := recordSample(ctx, state, engine, service, *b, store)
 	if err != nil {
-		return errors.New("counter sample failed")
-	}
-	if err := store.Record(ctx, invocation, b.Roster[0].CredentialID, up, down, time.Now()); err != nil {
-		return errors.New("accounting commit failed")
+		return err
 	}
 	snapshots, err := store.Snapshots(ctx)
 	if err != nil {
@@ -229,57 +244,13 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 	if err != nil || status != 200 {
 		return errors.New("traffic upload pending")
 	}
+	observed, err := observeRunning(ctx, state, engine, service, *b)
+	if err != nil || observed != invocation {
+		return errors.New("engine identity unconfirmed before status")
+	}
 	status, _, err = request(ctx, client, identity, "POST", "/node-g0/v1/status", map[string]any{"generation": b.Generation, "config_sha256": b.ConfigSHA256, "invocation": invocation}, "")
 	if err != nil || status != 200 {
 		return errors.New("status upload pending")
-	}
-	return nil
-}
-
-func apply(ctx context.Context, state, engine, service string, b contract.Bundle) error {
-	dir := filepath.Join(state, "generations", fmt.Sprint(b.Generation))
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return errors.New("generation creation failed")
-	}
-	config := filepath.Join(dir, "config.json")
-	if previous, err := os.ReadFile(config); err == nil {
-		if !bytes.Equal(previous, b.Config) {
-			return errors.New("generation content conflict")
-		}
-	} else if err := writeNew(config, b.Config); err != nil {
-		return errors.New("config staging failed")
-	}
-	data, _ := json.Marshal(b)
-	if previous, err := os.ReadFile(filepath.Join(dir, "bundle.json")); err == nil {
-		if !bytes.Equal(previous, data) {
-			return errors.New("generation metadata conflict")
-		}
-	} else if err := writeNew(filepath.Join(dir, "bundle.json"), data); err != nil {
-		return errors.New("bundle staging failed")
-	}
-	if _, err := command(ctx, engine, "check", "-D", state, "-c", config); err != nil {
-		return errors.New("config check failed")
-	}
-	if _, err := command(ctx, "systemctl", "stop", service); err != nil {
-		return errors.New("engine stop failed")
-	}
-	pid, err := command(ctx, "systemctl", "show", service, "--property=MainPID", "--value")
-	if err != nil || pid != "0" {
-		return errors.New("engine termination unconfirmed")
-	}
-	next := filepath.Join(state, ".current-"+contract.UUID())
-	if err := os.Symlink(dir, next); err != nil {
-		return errors.New("pointer staging failed")
-	}
-	defer os.Remove(next)
-	if err := os.Rename(next, filepath.Join(state, "current")); err != nil {
-		return errors.New("pointer publication failed")
-	}
-	if err := syncDir(state); err != nil {
-		return errors.New("pointer durability failed")
-	}
-	if _, err := command(ctx, "systemctl", "start", service); err != nil {
-		return errors.New("published engine startup failed")
 	}
 	return nil
 }
