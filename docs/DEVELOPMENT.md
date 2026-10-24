@@ -593,8 +593,8 @@ Read the [artifact and run requirements](NODE_ACCEPTANCE.md#reproduce) before ex
 The dedicated GitHub-hosted workflow keeps raw run artifacts private.
 G0 grants `/dev/kvm` ownership to its disposable runner UID, matching TUN CI rather than relying on a named-user ACL.
 It does not change device ownership on developer hosts.
-G0 passes its complete VM options to `scripts/dev/tun-vm/select-accel.py` in the actual VM environment.
-The paused preflight initializes devices without booting the guest. The selector's default TUN options remain unchanged.
+G0 reuses the basic QMP startup probe in `scripts/dev/tun-vm/select-accel.py` without changing its TUN behavior.
+The actual VM must pass the complete native fixture. A failed run does not retry with another accelerator.
 These checks do not establish production deployment or the remaining M5/M6 gates.
 
 ## Traffic accounting checks

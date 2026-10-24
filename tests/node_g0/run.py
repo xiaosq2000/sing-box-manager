@@ -111,102 +111,6 @@ def ssh_category(returncode, stderr):
     return "ssh-transport"
 
 
-def qemu_diagnostic(root):
-    def contents(name):
-        try:
-            with (root / name).open("rb") as file:
-                return file.read(65536).lower()
-        except OSError:
-            return b""
-
-    output = contents("qemu.log")
-    category = "unclassified" if output else "empty"
-    for markers, candidate in (
-        (
-            (b"kvm: entry failed", b"kvm internal error", b"kvm run failed"),
-            "kvm-run-error",
-        ),
-        (
-            (
-                b"failed to initialize kvm",
-                b"could not access kvm",
-                b"kvm is not supported",
-            ),
-            "kvm-init-error",
-        ),
-        ((b"host forwarding rule", b"address already in use"), "host-forward-error"),
-        ((b"guest forwarding rule", b"guestfwd"), "guest-forward-error"),
-        (
-            (
-                b"failed to get",
-                b"failed to lock",
-                b"is another process using the image",
-            ),
-            "drive-lock-error",
-        ),
-        (
-            (b"could not open", b"could not read", b"image is not in qcow2 format"),
-            "drive-open-error",
-        ),
-        (
-            (
-                b"cannot set up guest memory",
-                b"cannot allocate memory",
-                b"failed to allocate",
-            ),
-            "memory-error",
-        ),
-        ((b"could not load pc bios", b"could not find rom image"), "firmware-error"),
-        (
-            (b"invalid option", b"invalid parameter", b"unsupported machine type"),
-            "option-error",
-        ),
-        ((b"terminating on signal",), "signal"),
-    ):
-        if any(marker in output for marker in markers):
-            category = candidate
-            break
-    serial = contents("serial.log")
-    return {
-        "log_category": category,
-        "kvm_markers": {
-            name: marker in output
-            for name, marker in (
-                ("initialize", b"failed to initialize kvm"),
-                ("access", b"could not access kvm"),
-                ("unsupported", b"kvm is not supported"),
-                ("vcpu", b"vcpu"),
-                ("irqchip", b"irqchip"),
-            )
-        },
-        "errno_markers": {
-            name: marker in output
-            for name, marker in (
-                ("permission-denied", b"permission denied"),
-                ("operation-not-permitted", b"operation not permitted"),
-                ("not-found", b"no such file or directory"),
-                ("invalid-argument", b"invalid argument"),
-                ("busy", b"device or resource busy"),
-                ("unsupported", b"not supported"),
-                ("no-device", b"no such device"),
-                ("no-memory", b"cannot allocate memory"),
-                ("io-error", b"input/output error"),
-            )
-        },
-        "boot_markers": {
-            name: marker in serial
-            for name, marker in (
-                ("kernel-start", b"linux version"),
-                ("kernel-panic", b"kernel panic"),
-                ("reboot", b"reboot: restarting system"),
-                ("poweroff", b"power down"),
-                ("cloud-init", b"cloud-init"),
-                ("login", b"node-g0 login:"),
-            )
-        },
-    }
-
-
 def safe_error(error):
     if isinstance(error, CommandFailure):
         category = (
@@ -238,7 +142,7 @@ class Diagnostics:
         self.current = name
         print(f"G0 phase: {name}", flush=True)
 
-    def failure(self, error, processes, root=None):
+    def failure(self, error, processes):
         result = {
             "phase": self.current if self.current in PHASES else "unknown",
             **safe_error(error),
@@ -254,8 +158,6 @@ class Diagnostics:
         }
         if self.guest_last is not None:
             result["guest_last"] = safe_error(self.guest_last)
-        if root is not None and "qemu" in processes:
-            result["qemu"] = qemu_diagnostic(root)
         print("G0 diagnostic: " + json.dumps(result, sort_keys=True), flush=True)
 
 
@@ -302,80 +204,12 @@ def reachable(number):
         return False
 
 
-def kvm_snapshot(root, point, returncode=None):
-    if point not in {"before-probe", "after-probe", "after-qemu-exit"}:
-        raise ValueError("invalid KVM observation point")
-    result = {
-        "point": point,
-        "monotonic_ns": time.monotonic_ns(),
-        "euid": os.geteuid(),
-        "egid": os.getegid(),
-        "groups": os.getgroups(),
-    }
-    if type(returncode) is int:
-        result["qemu_returncode"] = returncode
-    try:
-        state = os.stat("/dev/kvm")
-        result["device"] = {
-            "mode": state.st_mode & 0o7777,
-            "uid": state.st_uid,
-            "gid": state.st_gid,
-            "inode": state.st_ino,
-        }
-    except OSError as error:
-        result["stat_errno"] = error.errno
-    try:
-        acl = os.getxattr("/dev/kvm", "system.posix_acl_access")
-        result["acl_sha256"] = hashlib.sha256(acl).hexdigest()
-    except OSError as error:
-        result["acl_errno"] = error.errno
-    try:
-        descriptor = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
-    except OSError as error:
-        result["rdwr_open"] = False
-        result["open_errno"] = error.errno
-    else:
-        os.close(descriptor)
-        result["rdwr_open"] = True
-    write(root / f"kvm-{point}.json", canonical(result) + b"\n")
-    print("G0 KVM snapshot: " + json.dumps(result, sort_keys=True), flush=True)
-    return result
-
-
-def select_acceleration(log, machine_options, process_env):
-    try:
-        descriptor = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
-    except OSError:
-        print("G0 KVM device: unavailable", flush=True)
-        write(log, "KVM device is not accessible. Selecting TCG.\n")
-        return "tcg"
-    os.close(descriptor)
-    print("G0 KVM device: accessible", flush=True)
-    return (
-        run(
-            [
-                sys.executable,
-                str(ROOT / "scripts/dev/tun-vm/select-accel.py"),
-                *machine_options,
-            ],
-            env=process_env,
-            log=log,
-        )
-        .decode()
-        .strip()
-    )
-
-
 def wait_for_guest(guest, diagnostics, log, seconds=180, *, qemu_process=None):
-    exit_observed = False
-
     def ready():
-        nonlocal exit_observed
-        if qemu_process is not None and not exit_observed:
+        if qemu_process is not None:
             returncode = qemu_process.poll()
             if returncode is not None:
-                kvm_snapshot(log.parent, "after-qemu-exit", returncode)
-                exit_observed = True
+                raise CommandFailure("command-exit", returncode)
         diagnostics.guest_attempts += 1
         try:
             ready = (
@@ -838,11 +672,14 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "none",
             "-no-reboot",
         ]
-        kvm_snapshot(root, "before-probe")
-        accel = select_acceleration(
-            root / "accelerator-probe.log", machine_options, env
+        accel = (
+            run(
+                [sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")],
+                log=root / "accelerator-probe.log",
+            )
+            .decode()
+            .strip()
         )
-        kvm_snapshot(root, "after-probe")
         if accel not in {"kvm", "tcg"}:
             raise RuntimeError("invalid VM accelerator result")
         diagnostics.acceleration = accel
@@ -1054,7 +891,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             flush=True,
         )
     except Exception as error:
-        diagnostics.failure(error, processes, root)
+        diagnostics.failure(error, processes)
         write(root / "failure.log", traceback.format_exc())
         raise RuntimeError(
             "fixture failed; inspect the retained private logs"
@@ -1066,13 +903,6 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                     root / "agent-journal.log",
                     guest(
                         "sudo journalctl -u sbm-g0-agent -u sbm-g0-proxy --no-pager -n 80"
-                    ),
-                )
-            with contextlib.suppress(Exception):
-                write(
-                    root / "guest-https.log",
-                    guest(
-                        f"timeout 8 curl --noproxy '*' --cacert /etc/sbm-node-g0/control.crt --max-time 5 -sS -o /dev/null -w '%{{http_code}}' https://10.0.2.100:{https_port}/node-g0/v1/config"
                     ),
                 )
         for process in reversed(list(processes.values())):

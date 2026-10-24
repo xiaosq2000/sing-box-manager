@@ -56,13 +56,13 @@ All four items remain open. Broader reliability and accounting claims remain uns
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Counter sampling            | Two transient failures followed engine starts. The agent does not wait for counter-API readiness                                                          | A startup race is likely. Discarded RPC causes prevent event-level diagnosis                                 | G1: bounded readiness and safe error classes. Test delayed and persistently unavailable listeners                                                         |
 | Shutdown and final sampling | A connection-API error occurred during intentional shutdown. Replacement completed, but the agent takes no final old-invocation sample                    | Internal close cause, complete cleanup and any unpolled loss remain unverified                               | G1: final collection before ordinary replacement and explicit failure handling. G2: transition coverage and accounting parity                             |
-| Optional HTTPS diagnostic   | The probe runs as `ubuntu` with a root-only CA path. Suppressed exceptions can prevent its output file                                                    | Actual exit status and stderr are absent. A permission failure is plausible, not a confirmed event cause     | Before G1 diagnostic acceptance: appropriate probe privilege and a recorded outcome. Missing output never counts as success                               |
+| Optional HTTPS diagnostic   | No supplemental HTTPS diagnostic outcome is retained. The actual G0 flow checks verified HTTPS                                                            | Supplemental probe status and stderr are unavailable                                                         | Do not count absent output as success. Any future supplemental probe needs appropriate privilege and a retained outcome                                   |
 | Retained evidence           | Runtime assertions compare selected numeric database values and reported invocation changes. Individual responses and both query outputs are not retained | Independent database re-audit, full bucket-key/digest equality and accounting completeness remain unverified | G1 evidence: retain response status, body length/hash, both keyed database results and invocation observations privately. G2: independent accuracy checks |
 
 Source boundaries: `node-agent/cmd/sbm-node-g0/main.go` controls startup, collection and replacement.
 `node-agent/internal/counter/client.go` reduces RPC failures to fixed errors.
-`tests/node_g0/run.py` performs the runtime assertions and suppresses optional diagnostic exceptions.
-The Ansible playbook installs the diagnostic CA under root-only permissions.
+`tests/node_g0/run.py` performs the runtime assertions and retains raw journals privately.
+The Ansible playbook installs the controller CA under root-only permissions.
 
 Successful applied-status reporting follows a successful sample, local commit and traffic upload.
 The fixture waits for that status before each payload transfer.
@@ -109,8 +109,8 @@ SBM_NODE_G0=1 pixi run -e node-g0 python scripts/dev/node-g0/run.py \
 ```
 
 The runner requires QEMU, OpenSSH server/client, OpenBSD netcat and OpenSSL on the host.
-It requires a successful read/write open of `/dev/kvm` and a KVM startup probe before selection, otherwise it selects TCG.
-The paused probe uses the actual VM's disk, devices, network arguments and environment. It does not boot the guest.
+The basic QMP probe checks KVM startup with the fixture CPU, memory and vCPU settings, otherwise it selects TCG.
+It does not initialize the actual VM's disk or network devices. Those must pass the real acceptance run.
 A failed acceptance run does not retry with another accelerator.
 Root execution is refused. Ansible can modify only a loopback-forwarded guest with the disposable marker.
 No operator SSH keys, SSH config, `SBM_CONFIG` or proxy environment enters the fixture.
@@ -133,15 +133,11 @@ The [hosted KVM G0 check](https://github.com/xiaosq2000/sing-box-manager/actions
 Read/write access remains available after the preflight, and the actual VM completes the full G0 flow.
 All 11 PR checks pass at that commit. This verifies the hosted-runner fix, not the identity of the ACL writer.
 
-A bounded observation records device state before the probe, after the probe and when polling first detects QEMU exit.
-The snapshot contains numeric identity and device metadata, an ACL fingerprint or errno, and the read/write-open outcome.
-It excludes raw ACL data, exception text and command output. The observation does not change selection, permissions, waits or retries.
-An observed permission change alone does not identify the process or mechanism that caused it.
 A local result does not establish remote acceptance or acceptance of a changed source fingerprint.
 
 The runner prints fixed phase names and the selected accelerator.
 On failure, it prints fixed error categories, numeric exit codes, guest readiness attempts and tracked process exit codes.
-QEMU diagnostics contain only fixed log categories and Boolean boot markers. Raw QEMU and serial logs remain private.
+Raw QEMU and serial logs remain private. Guest readiness stops immediately if QEMU exits.
 The last guest readiness outcome distinguishes SSH transport, host-key, authentication and remote readiness failures.
 These categories identify observed symptoms, not necessarily root causes.
 Raw command output, paths from commands and exception details stay in private run logs.
