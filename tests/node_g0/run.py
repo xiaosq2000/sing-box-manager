@@ -492,7 +492,8 @@ def main():
                 }
             ),
         )
-        password = secrets.token_urlsafe(32)
+        # Exercise literal HTML-sensitive bytes through config persistence and exec.
+        password = secrets.token_urlsafe(32) + "&<>"
         write(root / "bundle.json", canonical(engine_bundle(password)))
         write(root / "bundle-next.json", canonical(engine_bundle(password, 2)))
         certificate(root, "control", "IP:127.0.0.1,IP:10.0.2.100")

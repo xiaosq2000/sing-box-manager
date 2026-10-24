@@ -94,7 +94,9 @@ The disposable agent uses two private file locks:
 - `lifecycle.lock` serializes config publication, the startup wrapper and sampling. Its wait is limited to ten seconds.
 
 The proxy unit starts through `sbm-node-g0 exec`. The wrapper validates the selected config and writes an atomic, private startup receipt.
-It then executes sing-box with the immutable generation path. The receipt binds generation, config digest, systemd invocation and PID.
+`config.json` owns the exact config bytes. Saved bundle metadata omits the embedded config and retains its digest.
+Apply reloads and validates the staged bytes before stopping the old engine. JSON escaping or whitespace changes cannot alter the selected bytes.
+The wrapper executes sing-box with the immutable generation path. The receipt binds generation, config digest, systemd invocation and PID.
 The lifecycle lock closes at exec. Apply releases it before waiting for service startup, so the wrapper can acquire it.
 Sampling checks that receipt against disk, systemd and `/proc/PID/exe` before and after each counter query.
 A changed or unconfirmed identity prevents counter commit and upload. Status upload requires another identity check.
@@ -102,6 +104,7 @@ These checks establish an observed process identity, not permanent health or pro
 Published policy remains authoritative after a failed start. A fixture checks that the in-memory cache does not revert to an older generation.
 
 Go fixtures cover bounded locks, receipt mismatches, config/path rejection, executable identity, exec-time lock release and failed-start publication.
+Config fixtures preserve literal `&<>` and insignificant whitespace through persistence and exec without changing the selected digest.
 Loopback RPC fixtures cover delayed listeners, persistent unavailability, deadlines, cancellation and sanitized service rejections.
 The counter and lifecycle suites pass ten repeated fixture runs.
 
@@ -109,6 +112,7 @@ A local KVM run passes the full G0 flow and the optional `--startup-checks` subs
 
 1. A wrong receipt digest or invocation causes an exact, nonzero agent rejection without replacing the engine.
 2. A real service restart preserves the config digest and reports a new invocation after successful traffic and sampling.
+   The payload check waits at most five seconds for the guest proxy listener. Executable identity alone does not establish listener readiness.
 3. A held lifecycle lock prevents engine stop and pointer publication. Releasing it permits generation 3 without a startup deadlock.
 4. A second agent fails while the original writer and engine continue.
 5. Real traffic continues, and the selected SQLite/PostgreSQL accounting values agree.

@@ -210,6 +210,10 @@ func TestFailedStartupKeepsPublishedPolicyAndRejectsOlderGeneration(t *testing.T
 
 func TestExecuteEngineReleasesLockAtExecAndUsesImmutableConfig(t *testing.T) {
 	f := newLifecycleFixture(t)
+	f.bundle.Config = json.RawMessage("{\n  \"password\": \"fixture&<>secret\"\n}\n")
+	f.bundle.ConfigSHA256 = contract.Hash(f.bundle.Config)
+	put(t, filepath.Join(f.state, "generations/1/config.json"), f.bundle.Config)
+	putJSON(t, filepath.Join(f.state, "generations/1/bundle.json"), f.bundle)
 	engine := filepath.Join(f.state, "engine")
 	put(t, engine, []byte("#!/bin/sh\ncase \"$1\" in\ncheck) exit 0;;\nrun) printf '%s\\n' \"$@\" > \"$SBM_TEST_STATE/exec-args\"; exec \"$SBM_TEST_BINARY\" -test.run=TestEngineLockHelper;;\nesac\nexit 1\n"))
 	if err := os.Chmod(engine, 0700); err != nil {

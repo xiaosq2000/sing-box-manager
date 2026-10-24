@@ -303,6 +303,47 @@ def test_ci_uses_disposable_runner_and_never_uploads_private_runs():
     assert "node-agent/**" in config["on"]["pull_request"]["paths"]
 
 
+@pytest.mark.parametrize("ready_after", [2, None])
+def test_restart_listener_wait_accepts_delay_but_bounds_unavailability(
+    monkeypatch, ready_after
+):
+    elapsed = 0
+    attempts = 0
+
+    def sleep(seconds):
+        nonlocal elapsed
+        elapsed += seconds
+
+    def guest(command):
+        nonlocal attempts
+        attempts += 1
+        assert "socket.create_connection" in command
+        assert "timeout=0.25" in command
+        return (
+            b"ready\n"
+            if ready_after is not None and attempts > ready_after
+            else b"pending\n"
+        )
+
+    monkeypatch.setattr(harness.time, "monotonic", lambda: elapsed)
+    monkeypatch.setattr(harness.time, "sleep", sleep)
+    if ready_after is None:
+        with pytest.raises(harness.StateTimeout):
+            reliability.wait_proxy(guest, harness.wait)
+        assert elapsed == 5
+    else:
+        reliability.wait_proxy(guest, harness.wait)
+        assert attempts == 3 and elapsed == 0.5
+
+
+def test_restart_listener_wait_does_not_hide_ssh_failure():
+    def guest(command):
+        raise harness.CommandFailure("ssh-transport", 255)
+
+    with pytest.raises(harness.CommandFailure):
+        reliability.wait_proxy(guest, harness.wait)
+
+
 def test_proxy_starts_through_the_locked_exec_wrapper():
     root = Path(__file__).parents[1]
     unit = (root / "scripts/dev/node-g0/templates/sbm-g0-proxy.service.j2").read_text()

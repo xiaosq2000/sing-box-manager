@@ -75,14 +75,28 @@ func currentBundle(state, nodeID string) (contract.Bundle, string, error) {
 	if err != nil || filepath.Dir(dir) != filepath.Join(root, "generations") {
 		return b, "", errors.New("current generation unavailable")
 	}
-	if readJSON(filepath.Join(dir, "bundle.json"), &b) != nil || b.Validate(nodeID) != nil || dir != filepath.Join(root, "generations", fmt.Sprint(b.Generation)) {
+	b, err = generationBundle(dir, nodeID)
+	if err != nil || dir != filepath.Join(root, "generations", fmt.Sprint(b.Generation)) {
 		return b, "", errors.New("current generation invalid")
 	}
-	config, err := os.ReadFile(filepath.Join(dir, "config.json"))
-	if err != nil || !bytes.Equal(config, b.Config) || contract.Hash(config) != b.ConfigSHA256 {
-		return b, "", errors.New("current config digest mismatch")
-	}
 	return b, dir, nil
+}
+
+func generationBundle(dir, nodeID string) (contract.Bundle, error) {
+	var b contract.Bundle
+	if readJSON(filepath.Join(dir, "bundle.json"), &b) != nil {
+		return b, errors.New("generation metadata invalid")
+	}
+	// config.json owns the exact bytes. JSON encoding can change an embedded RawMessage.
+	config, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil || len(config) > 8<<20 {
+		return b, errors.New("generation config unavailable")
+	}
+	b.Config = config
+	if b.Validate(nodeID) != nil {
+		return b, errors.New("generation config invalid")
+	}
+	return b, nil
 }
 
 func validInvocation(value string) bool {
@@ -203,13 +217,19 @@ func apply(ctx context.Context, state, engine, service string, b contract.Bundle
 	} else if err := writeNew(config, b.Config); err != nil {
 		return errors.New("config staging failed")
 	}
-	data, _ := json.Marshal(b)
+	metadata := b
+	metadata.Config = nil
+	data, _ := json.Marshal(metadata)
 	if previous, err := os.ReadFile(filepath.Join(dir, "bundle.json")); err == nil {
 		if !bytes.Equal(previous, data) {
 			return errors.New("generation metadata conflict")
 		}
 	} else if err := writeNew(filepath.Join(dir, "bundle.json"), data); err != nil {
 		return errors.New("bundle staging failed")
+	}
+	staged, err := generationBundle(dir, b.NodeID)
+	if err != nil || staged.Generation != b.Generation || staged.ConfigSHA256 != b.ConfigSHA256 {
+		return errors.New("staged generation invalid")
 	}
 	if _, err := command(ctx, engine, "check", "-D", state, "-c", config); err != nil {
 		return errors.New("config check failed")

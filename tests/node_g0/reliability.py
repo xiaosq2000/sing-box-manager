@@ -29,6 +29,19 @@ def reject_once(guest, log, message):
     raise RuntimeError("startup negative control accepted invalid state")
 
 
+def wait_proxy(guest, wait):
+    # Exec identity does not imply that sing-box finished listener initialization.
+    source = """
+import socket
+try:
+    with socket.create_connection(('127.0.0.1',8443),timeout=0.25):
+        print('ready')
+except OSError:
+    print('pending')
+"""
+    wait(lambda: python(guest, source).strip() == b"ready", seconds=5)
+
+
 def observe(guest):
     return json.loads(
         python(
@@ -114,6 +127,7 @@ def startup_checks(*, guest, root, wait, write, control, report, fetch, next_bun
         or restarted["receipt"]["config_sha256"] != receipt["config_sha256"]
     ):
         raise RuntimeError("service restart did not preserve the selected config")
+    wait_proxy(guest, wait)
     extra_bytes = fetch()
     guest(ONCE, log=root / "startup-restart-cycle.log")
     if report()["nodes"][0]["invocation"] != restarted["receipt"]["invocation"]:
