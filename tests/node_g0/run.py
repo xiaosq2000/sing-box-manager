@@ -28,6 +28,8 @@ from pathlib import Path
 
 import yaml
 
+from tests.node_g0.reliability import startup_checks
+
 ROOT = Path(__file__).resolve().parents[2]
 CREDENTIAL = "33333333-3333-4333-8333-333333333333"
 ENV = {
@@ -88,6 +90,7 @@ PHASES = {
     "repeat-install",
     "next-generation",
     "second-traffic",
+    "startup-checks",
     "accounting",
     "result",
 }
@@ -338,6 +341,9 @@ def source_fingerprint():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, required=True)
+    parser.add_argument(
+        "--startup-checks", action="store_true", help="also run the G1 startup subset"
+    )
     parser.add_argument(
         "--image",
         type=Path,
@@ -840,6 +846,31 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
         diagnostics.phase("second-traffic")
         second_bytes = fetch()
         wait(lambda: report()["usage"][0]["download"] >= first_bytes + second_bytes)
+        startup_results = []
+        extra_bytes = 0
+        if args.startup_checks:
+            diagnostics.phase("startup-checks")
+            third = engine_bundle(password, 3)
+            third["config"]["log"]["level"] = "warn"
+            third["config_sha256"] = hashlib.sha256(
+                canonical(third["config"])
+            ).hexdigest()
+            extra_bytes, startup_results = startup_checks(
+                guest=guest,
+                root=root,
+                wait=wait,
+                write=write,
+                control=control,
+                report=report,
+                fetch=fetch,
+                next_bundle=third,
+            )
+            wait(
+                lambda: (
+                    report()["usage"][0]["download"]
+                    >= first_bytes + second_bytes + extra_bytes
+                )
+            )
         diagnostics.phase("accounting")
         # Wait for the final observed counters, then compare exact durable buckets.
         time.sleep(3)
@@ -872,7 +903,9 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                 "local SQLite and PostgreSQL equality",
                 "repeat install without engine restart",
                 "generation 2 application and traffic",
+                *startup_results,
             ],
+            "startup_subset": "PASS" if args.startup_checks else "not run",
             "accounting": {
                 "version": central["version"],
                 "upload": central["upload"],
@@ -881,7 +914,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "limits": [
                 "controller runs as isolated host subprocesses, node runs in a VM",
                 "one synthetic account and Trojan only",
-                "G1 crash/reboot, locking, startup identity and final-sample checks are not established",
+                "full G1 crash/reboot, final sampling and forward-repair acceptance is not established",
                 "no production command, account migration, client release or public-network acceptance",
             ],
         }
@@ -890,6 +923,8 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "G0 PASS: SSH/Ansible -> HTTPS -> real Trojan -> SQLite -> PostgreSQL",
             flush=True,
         )
+        if args.startup_checks:
+            print("G1 startup subset PASS; full G1 remains unaccepted", flush=True)
     except Exception as error:
         diagnostics.failure(error, processes)
         write(root / "failure.log", traceback.format_exc())
