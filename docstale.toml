@@ -128,6 +128,9 @@ control-plane = [
 "SECURITY.md" = ["@harness", ".sops.example.yaml"]
 
 "docs/DEVELOPMENT.md" = [
+  "node-agent/",
+  "tests/node_g0/",
+  "tests/test_node_g0*.py",
   "@cli",
   "@control-plane",
   "@harness",
@@ -268,7 +271,22 @@ control-plane = [
   "sing_box_manager/web/client/install.ps1",
 ]
 
+"docs/NODE_ACCEPTANCE.md" = [
+  "node-agent/",
+  "scripts/dev/node-g0/",
+  "scripts/dev/tun-vm/select-accel.py",
+  "tests/node_g0/",
+  "tests/test_node_g0*.py",
+  ".github/workflows/node-agent.yml",
+  "pixi.toml",
+  "pixi.lock",
+]
+
 "docs/MULTI_NODE_SPEC.md" = [
+  "node-agent/",
+  "scripts/dev/node-g0/",
+  "tests/node_g0/",
+  "tests/test_node_g0*.py",
   "@cli",
   "@control-plane",
   "sing_box_manager/proto/",

@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-23.
+Checked on 2026-10-24.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -574,6 +574,28 @@ Database records survive authority exit and disablement. Native node checks keep
 stats off; the separate runtime job tests the custom counter binary.
 Its local unit test mocks all host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
+
+## Node-agent feasibility checks
+
+The opt-in `node-g0` environment adds pinned Ansible tooling and PostgreSQL for the
+[isolated G0 fixture](NODE_ACCEPTANCE.md). The separate `node-agent/` Go module uses
+cgo-free gRPC and SQLite without changing `sbc` dependencies.
+
+```sh
+pixi run -e node-g0 test tests/test_node_g0.py tests/test_node_g0_harness.py
+pixi run test-node-agent
+pixi run lint-node-agent
+```
+
+The native fixture installs services only inside a marked disposable VM.
+Its controller runs as private development subprocesses, not host system services.
+Read the [artifact and run requirements](NODE_ACCEPTANCE.md#reproduce) before execution.
+The dedicated GitHub-hosted workflow keeps raw run artifacts private.
+G0 grants `/dev/kvm` ownership to its disposable runner UID, matching TUN CI rather than relying on a named-user ACL.
+It does not change device ownership on developer hosts.
+G0 reuses the basic QMP startup probe in `scripts/dev/tun-vm/select-accel.py` without changing its TUN behavior.
+The actual VM must pass the complete native fixture. A failed run does not retry with another accelerator.
+These checks do not establish production deployment or the remaining M5/M6 gates.
 
 ## Traffic accounting checks
 
