@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-23.
+Checked on 2026-10-24.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
