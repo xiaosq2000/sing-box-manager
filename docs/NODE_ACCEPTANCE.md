@@ -5,13 +5,13 @@ Checked on 2026-10-24.
 This page records isolated G0 evidence, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
-| Gate                         | Status               | Evidence boundary                                                         |
-| ---------------------------- | -------------------- | ------------------------------------------------------------------------- |
-| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                         |
-| G1: single-node reliability  | In progress          | Crash/reboot, locking, startup identity and forward repair                |
-| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                     |
-| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                     |
-| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization |
+| Gate                         | Status               | Evidence boundary                                                                               |
+| ---------------------------- | -------------------- | ----------------------------------------------------------------------------------------------- |
+| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                               |
+| G1: single-node reliability  | In progress          | Startup subset verified. Counter faults, crash/reboot, final sampling and forward repair remain |
+| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                                           |
+| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                           |
+| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization                       |
 
 G0 through G3 do not require per-gate approval. Report blockers rather than treating missing evidence as success.
 Android device acceptance does not block the first release. Mark it unverified until tested.
@@ -112,7 +112,8 @@ A local KVM run passes the full G0 flow and the optional `--startup-checks` subs
 
 1. A wrong receipt digest or invocation causes an exact, nonzero agent rejection without replacing the engine.
 2. A real service restart preserves the config digest and reports a new invocation after successful traffic and sampling.
-   The payload check waits at most five seconds for the guest proxy listener. Executable identity alone does not establish listener readiness.
+   The listener check uses a five-second polling budget. Each SSH probe has a fifteen-second timeout and can complete after that budget.
+   Executable identity alone does not establish listener readiness. The payload assertion remains strict.
 3. A held lifecycle lock prevents engine stop and pointer publication. Releasing it permits generation 3 without a startup deadlock.
 4. A second agent fails while the original writer and engine continue.
 5. Real traffic continues, and the selected SQLite/PostgreSQL accounting values agree.
@@ -121,6 +122,13 @@ Private evidence retains startup observations and exact expected-failure logs. A
 This is service-restart evidence, not OS-reboot acceptance. Native counter faults, crash/reboot recovery, final sampling and forward repair remain pending.
 The proxy unit is not enabled for boot. Ordinary replacement still takes no final old-invocation sample.
 G1 adds no production route, account migration, release or deployment.
+
+[PR #50](https://github.com/xiaosq2000/sing-box-manager/pull/50) contains this subset.
+Independent `openai-codex/gpt-6-astra:high` review confirms the config-byte and listener-readiness fixes at `520424e`.
+All five applicable hosted checks pass for that code: [general CI](https://github.com/xiaosq2000/sing-box-manager/actions/runs/40078936399)
+and the [native node check](https://github.com/xiaosq2000/sing-box-manager/actions/runs/40078936548).
+Fixtures distinguish the listener polling budget from a strict wall-clock deadline, including a late successful SSH probe.
+These results do not establish the remaining G1 requirements.
 
 ## Reproduce
 

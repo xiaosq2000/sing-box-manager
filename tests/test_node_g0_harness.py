@@ -336,6 +336,19 @@ def test_restart_listener_wait_accepts_delay_but_bounds_unavailability(
         assert attempts == 3 and elapsed == 0.5
 
 
+def test_restart_listener_poll_budget_allows_a_completed_late_probe(monkeypatch):
+    elapsed = 0
+
+    def guest(command):
+        nonlocal elapsed
+        elapsed += 6
+        return b"ready\n"
+
+    monkeypatch.setattr(harness.time, "monotonic", lambda: elapsed)
+    reliability.wait_proxy(guest, harness.wait)
+    assert elapsed == 6
+
+
 def test_restart_listener_wait_does_not_hide_ssh_failure():
     def guest(command):
         raise harness.CommandFailure("ssh-transport", 255)
