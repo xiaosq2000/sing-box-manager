@@ -624,6 +624,25 @@ migration fixture is the previous version's schema with synthetic usage.
 pixi run test tests/test_connection_stats.py tests/test_connection_collector.py tests/test_traffic_stats.py tests/test_traffic_stats_billing_day.py tests/test_traffic_stats_domains.py tests/test_traffic_reconciliation.py tests/test_traffic_store_migrations.py
 ```
 
+The shared counter fixture `tests/fixtures/node-g2-counter-parity.json` runs the
+same synthetic samples through the actual Python `TrafficStatsStore` and the Go
+`accounting.Store`. It compares keyed authoritative daily rows for four protocol
+labels, two synthetic accounts, increments, identical samples, a UTC midnight
+split, invocation restart and database reopen; Go performs the true close/reopen,
+while Python reconstructs its stateless store over the same SQLite state. In this
+slice the same-invocation counter regression is an asserted legacy-Python/Go-target
+divergence, not a shared result: Python resets upload and download independently,
+while Go rejects the whole credential observation if either regresses. Unchanged
+counters after UTC midnight (a zero-valued Python row but no Go row), one-component
+regressions and partial-credential rejection remain follow-up fixture gaps. Python
+daily rows expose no version or payload digest; those checks are Go-side. This
+starts G2; it is not native four-protocol or gate acceptance.
+
+```sh
+pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
+pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
+```
+
 `tests/test_routes.py` uses Django's test client in isolated PostgreSQL processes.
 It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer
 migration, token revocation, traffic-viewer permissions, personal-domain privacy,
