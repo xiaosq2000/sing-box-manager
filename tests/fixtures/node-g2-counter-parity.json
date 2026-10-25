@@ -1,0 +1,656 @@
+{
+  "schema": 1,
+  "description": "Shared synthetic counter-ledger cases for the legacy Python TrafficStatsStore and the target Go accounting.Store. Account names, protocol labels and credential IDs are fixtures, not native protocol acceptance. Ledger keys are '<usage_date>|<account>|<protocol>' and values are [upload, download].",
+  "source_id": "source-synthetic-g2-counter-parity",
+  "protocols": ["trojan", "hysteria2", "naive", "snell"],
+  "accounts": {
+    "synthetic-alpha": {
+      "trojan": "cred-synthetic-a1",
+      "hysteria2": "cred-synthetic-a2",
+      "naive": "cred-synthetic-a3",
+      "snell": "cred-synthetic-a4"
+    },
+    "synthetic-bravo": {
+      "trojan": "cred-synthetic-b1",
+      "hysteria2": "cred-synthetic-b2",
+      "naive": "cred-synthetic-b3",
+      "snell": "cred-synthetic-b4"
+    }
+  },
+  "cases": [
+    {
+      "name": "initial-cumulative-and-increments",
+      "description": "Initial cumulative counters followed by two increments, all on one UTC day.",
+      "samples": [
+        {
+          "at": "2026-05-01T00:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 120,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1100, 2100],
+              "naive": [1200, 2200],
+              "snell": [1300, 2300]
+            },
+            "synthetic-bravo": {
+              "trojan": [4000, 5000],
+              "hysteria2": [4100, 5100],
+              "naive": [4200, 5200],
+              "snell": [4300, 5300]
+            }
+          }
+        },
+        {
+          "at": "2026-05-01T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 420,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1100, 2200],
+              "hysteria2": [1210, 2310],
+              "naive": [1320, 2420],
+              "snell": [1430, 2530]
+            },
+            "synthetic-bravo": {
+              "trojan": [4400, 5500],
+              "hysteria2": [4510, 5610],
+              "naive": [4620, 5720],
+              "snell": [4730, 5830]
+            }
+          }
+        },
+        {
+          "at": "2026-05-01T00:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 720,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1150, 2300],
+              "hysteria2": [1265, 2415],
+              "naive": [1380, 2530],
+              "snell": [1495, 2645]
+            },
+            "synthetic-bravo": {
+              "trojan": [4600, 5750],
+              "hysteria2": [4715, 5865],
+              "naive": [4830, 5980],
+              "snell": [4945, 6095]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-01|synthetic-alpha|trojan": [1150, 2300],
+            "2026-05-01|synthetic-alpha|hysteria2": [1265, 2415],
+            "2026-05-01|synthetic-alpha|naive": [1380, 2530],
+            "2026-05-01|synthetic-alpha|snell": [1495, 2645],
+            "2026-05-01|synthetic-bravo|trojan": [4600, 5750],
+            "2026-05-01|synthetic-bravo|hysteria2": [4715, 5865],
+            "2026-05-01|synthetic-bravo|naive": [4830, 5980],
+            "2026-05-01|synthetic-bravo|snell": [4945, 6095]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-01|synthetic-alpha|trojan": [1150, 2300],
+            "2026-05-01|synthetic-alpha|hysteria2": [1265, 2415],
+            "2026-05-01|synthetic-alpha|naive": [1380, 2530],
+            "2026-05-01|synthetic-alpha|snell": [1495, 2645],
+            "2026-05-01|synthetic-bravo|trojan": [4600, 5750],
+            "2026-05-01|synthetic-bravo|hysteria2": [4715, 5865],
+            "2026-05-01|synthetic-bravo|naive": [4830, 5980],
+            "2026-05-01|synthetic-bravo|snell": [4945, 6095]
+          },
+          "versions": {
+            "2026-05-01|synthetic-alpha|trojan": 3,
+            "2026-05-01|synthetic-alpha|hysteria2": 3,
+            "2026-05-01|synthetic-alpha|naive": 3,
+            "2026-05-01|synthetic-alpha|snell": 3,
+            "2026-05-01|synthetic-bravo|trojan": 3,
+            "2026-05-01|synthetic-bravo|hysteria2": 3,
+            "2026-05-01|synthetic-bravo|naive": 3,
+            "2026-05-01|synthetic-bravo|snell": 3
+          },
+          "rejected_samples": [],
+          "gap_count": 0
+        }
+      }
+    },
+    {
+      "name": "repeated-identical-samples-are-no-op",
+      "description": "Three identical cumulative samples must not add bytes or bump the Go version.",
+      "samples": [
+        {
+          "at": "2026-05-01T01:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [700, 900],
+              "hysteria2": [710, 910],
+              "naive": [720, 920],
+              "snell": [730, 930]
+            },
+            "synthetic-bravo": {
+              "trojan": [1700, 1900],
+              "hysteria2": [1710, 1910],
+              "naive": [1720, 1920],
+              "snell": [1730, 1930]
+            }
+          }
+        },
+        {
+          "at": "2026-05-01T01:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 400,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [700, 900],
+              "hysteria2": [710, 910],
+              "naive": [720, 920],
+              "snell": [730, 930]
+            },
+            "synthetic-bravo": {
+              "trojan": [1700, 1900],
+              "hysteria2": [1710, 1910],
+              "naive": [1720, 1920],
+              "snell": [1730, 1930]
+            }
+          }
+        },
+        {
+          "at": "2026-05-01T01:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 700,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [700, 900],
+              "hysteria2": [710, 910],
+              "naive": [720, 920],
+              "snell": [730, 930]
+            },
+            "synthetic-bravo": {
+              "trojan": [1700, 1900],
+              "hysteria2": [1710, 1910],
+              "naive": [1720, 1920],
+              "snell": [1730, 1930]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-01|synthetic-alpha|trojan": [700, 900],
+            "2026-05-01|synthetic-alpha|hysteria2": [710, 910],
+            "2026-05-01|synthetic-alpha|naive": [720, 920],
+            "2026-05-01|synthetic-alpha|snell": [730, 930],
+            "2026-05-01|synthetic-bravo|trojan": [1700, 1900],
+            "2026-05-01|synthetic-bravo|hysteria2": [1710, 1910],
+            "2026-05-01|synthetic-bravo|naive": [1720, 1920],
+            "2026-05-01|synthetic-bravo|snell": [1730, 1930]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-01|synthetic-alpha|trojan": [700, 900],
+            "2026-05-01|synthetic-alpha|hysteria2": [710, 910],
+            "2026-05-01|synthetic-alpha|naive": [720, 920],
+            "2026-05-01|synthetic-alpha|snell": [730, 930],
+            "2026-05-01|synthetic-bravo|trojan": [1700, 1900],
+            "2026-05-01|synthetic-bravo|hysteria2": [1710, 1910],
+            "2026-05-01|synthetic-bravo|naive": [1720, 1920],
+            "2026-05-01|synthetic-bravo|snell": [1730, 1930]
+          },
+          "versions": {
+            "2026-05-01|synthetic-alpha|trojan": 1,
+            "2026-05-01|synthetic-alpha|hysteria2": 1,
+            "2026-05-01|synthetic-alpha|naive": 1,
+            "2026-05-01|synthetic-alpha|snell": 1,
+            "2026-05-01|synthetic-bravo|trojan": 1,
+            "2026-05-01|synthetic-bravo|hysteria2": 1,
+            "2026-05-01|synthetic-bravo|naive": 1,
+            "2026-05-01|synthetic-bravo|snell": 1
+          },
+          "rejected_samples": [],
+          "gap_count": 0
+        }
+      }
+    },
+    {
+      "name": "utc-midnight-keeps-keyed-days",
+      "description": "One increment crosses UTC midnight. Both days keep their own authoritative values.",
+      "samples": [
+        {
+          "at": "2026-05-01T23:55:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 500,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [100, 200],
+              "hysteria2": [110, 210],
+              "naive": [120, 220],
+              "snell": [130, 230]
+            },
+            "synthetic-bravo": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1010, 2010],
+              "naive": [1020, 2020],
+              "snell": [1030, 2030]
+            }
+          }
+        },
+        {
+          "at": "2026-05-02T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 1100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [150, 260],
+              "hysteria2": [165, 275],
+              "naive": [180, 290],
+              "snell": [195, 305]
+            },
+            "synthetic-bravo": {
+              "trojan": [1200, 2250],
+              "hysteria2": [1215, 2265],
+              "naive": [1230, 2280],
+              "snell": [1245, 2295]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-01|synthetic-alpha|trojan": [100, 200],
+            "2026-05-01|synthetic-alpha|hysteria2": [110, 210],
+            "2026-05-01|synthetic-alpha|naive": [120, 220],
+            "2026-05-01|synthetic-alpha|snell": [130, 230],
+            "2026-05-01|synthetic-bravo|trojan": [1000, 2000],
+            "2026-05-01|synthetic-bravo|hysteria2": [1010, 2010],
+            "2026-05-01|synthetic-bravo|naive": [1020, 2020],
+            "2026-05-01|synthetic-bravo|snell": [1030, 2030],
+            "2026-05-02|synthetic-alpha|trojan": [50, 60],
+            "2026-05-02|synthetic-alpha|hysteria2": [55, 65],
+            "2026-05-02|synthetic-alpha|naive": [60, 70],
+            "2026-05-02|synthetic-alpha|snell": [65, 75],
+            "2026-05-02|synthetic-bravo|trojan": [200, 250],
+            "2026-05-02|synthetic-bravo|hysteria2": [205, 255],
+            "2026-05-02|synthetic-bravo|naive": [210, 260],
+            "2026-05-02|synthetic-bravo|snell": [215, 265]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-01|synthetic-alpha|trojan": [100, 200],
+            "2026-05-01|synthetic-alpha|hysteria2": [110, 210],
+            "2026-05-01|synthetic-alpha|naive": [120, 220],
+            "2026-05-01|synthetic-alpha|snell": [130, 230],
+            "2026-05-01|synthetic-bravo|trojan": [1000, 2000],
+            "2026-05-01|synthetic-bravo|hysteria2": [1010, 2010],
+            "2026-05-01|synthetic-bravo|naive": [1020, 2020],
+            "2026-05-01|synthetic-bravo|snell": [1030, 2030],
+            "2026-05-02|synthetic-alpha|trojan": [50, 60],
+            "2026-05-02|synthetic-alpha|hysteria2": [55, 65],
+            "2026-05-02|synthetic-alpha|naive": [60, 70],
+            "2026-05-02|synthetic-alpha|snell": [65, 75],
+            "2026-05-02|synthetic-bravo|trojan": [200, 250],
+            "2026-05-02|synthetic-bravo|hysteria2": [205, 255],
+            "2026-05-02|synthetic-bravo|naive": [210, 260],
+            "2026-05-02|synthetic-bravo|snell": [215, 265]
+          },
+          "versions": {
+            "2026-05-01|synthetic-alpha|trojan": 1,
+            "2026-05-01|synthetic-alpha|hysteria2": 1,
+            "2026-05-01|synthetic-alpha|naive": 1,
+            "2026-05-01|synthetic-alpha|snell": 1,
+            "2026-05-01|synthetic-bravo|trojan": 1,
+            "2026-05-01|synthetic-bravo|hysteria2": 1,
+            "2026-05-01|synthetic-bravo|naive": 1,
+            "2026-05-01|synthetic-bravo|snell": 1,
+            "2026-05-02|synthetic-alpha|trojan": 1,
+            "2026-05-02|synthetic-alpha|hysteria2": 1,
+            "2026-05-02|synthetic-alpha|naive": 1,
+            "2026-05-02|synthetic-alpha|snell": 1,
+            "2026-05-02|synthetic-bravo|trojan": 1,
+            "2026-05-02|synthetic-bravo|hysteria2": 1,
+            "2026-05-02|synthetic-bravo|naive": 1,
+            "2026-05-02|synthetic-bravo|snell": 1
+          },
+          "rejected_samples": [],
+          "gap_count": 0
+        }
+      }
+    },
+    {
+      "name": "invocation-restart-starts-new-baseline",
+      "description": "A completed invocation is replaced by a new invocation with reset counters. Python infers the restart from lower uptime; Go uses the invocation identity.",
+      "samples": [
+        {
+          "at": "2026-05-03T00:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 5000,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [9000, 9500],
+              "hysteria2": [9100, 9600],
+              "naive": [9200, 9700],
+              "snell": [9300, 9800]
+            },
+            "synthetic-bravo": {
+              "trojan": [19000, 19500],
+              "hysteria2": [19100, 19600],
+              "naive": [19200, 19700],
+              "snell": [19300, 19800]
+            }
+          }
+        },
+        {
+          "at": "2026-05-03T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 5200,
+          "finish_after": true,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [9050, 9550],
+              "hysteria2": [9155, 9655],
+              "naive": [9260, 9760],
+              "snell": [9365, 9865]
+            },
+            "synthetic-bravo": {
+              "trojan": [19200, 19700],
+              "hysteria2": [19305, 19805],
+              "naive": [19410, 19910],
+              "snell": [19515, 20015]
+            }
+          }
+        },
+        {
+          "at": "2026-05-03T00:10:00Z",
+          "invocation": "invocation-synthetic-2",
+          "uptime_seconds": 20,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [40, 80],
+              "hysteria2": [45, 85],
+              "naive": [50, 90],
+              "snell": [55, 95]
+            },
+            "synthetic-bravo": {
+              "trojan": [400, 800],
+              "hysteria2": [405, 805],
+              "naive": [410, 810],
+              "snell": [415, 815]
+            }
+          }
+        },
+        {
+          "at": "2026-05-03T00:15:00Z",
+          "invocation": "invocation-synthetic-2",
+          "uptime_seconds": 320,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [60, 120],
+              "hysteria2": [70, 130],
+              "naive": [80, 140],
+              "snell": [90, 150]
+            },
+            "synthetic-bravo": {
+              "trojan": [600, 1200],
+              "hysteria2": [610, 1210],
+              "naive": [620, 1220],
+              "snell": [630, 1230]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-03|synthetic-alpha|trojan": [9110, 9670],
+            "2026-05-03|synthetic-alpha|hysteria2": [9225, 9785],
+            "2026-05-03|synthetic-alpha|naive": [9340, 9900],
+            "2026-05-03|synthetic-alpha|snell": [9455, 10015],
+            "2026-05-03|synthetic-bravo|trojan": [19800, 20900],
+            "2026-05-03|synthetic-bravo|hysteria2": [19915, 21015],
+            "2026-05-03|synthetic-bravo|naive": [20030, 21130],
+            "2026-05-03|synthetic-bravo|snell": [20145, 21245]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-03|synthetic-alpha|trojan": [9110, 9670],
+            "2026-05-03|synthetic-alpha|hysteria2": [9225, 9785],
+            "2026-05-03|synthetic-alpha|naive": [9340, 9900],
+            "2026-05-03|synthetic-alpha|snell": [9455, 10015],
+            "2026-05-03|synthetic-bravo|trojan": [19800, 20900],
+            "2026-05-03|synthetic-bravo|hysteria2": [19915, 21015],
+            "2026-05-03|synthetic-bravo|naive": [20030, 21130],
+            "2026-05-03|synthetic-bravo|snell": [20145, 21245]
+          },
+          "versions": {
+            "2026-05-03|synthetic-alpha|trojan": 4,
+            "2026-05-03|synthetic-alpha|hysteria2": 4,
+            "2026-05-03|synthetic-alpha|naive": 4,
+            "2026-05-03|synthetic-alpha|snell": 4,
+            "2026-05-03|synthetic-bravo|trojan": 4,
+            "2026-05-03|synthetic-bravo|hysteria2": 4,
+            "2026-05-03|synthetic-bravo|naive": 4,
+            "2026-05-03|synthetic-bravo|snell": 4
+          },
+          "rejected_samples": [],
+          "gap_count": 0
+        }
+      }
+    },
+    {
+      "name": "close-and-reopen-preserves-ledger",
+      "description": "Database close and reopen between samples, including an identical post-reopen sample, must not replay bytes.",
+      "samples": [
+        {
+          "at": "2026-05-04T12:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [10, 20],
+              "hysteria2": [11, 21],
+              "naive": [12, 22],
+              "snell": [13, 23]
+            },
+            "synthetic-bravo": {
+              "trojan": [100, 200],
+              "hysteria2": [110, 210],
+              "naive": [120, 220],
+              "snell": [130, 230]
+            }
+          }
+        },
+        {
+          "at": "2026-05-04T12:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 400,
+          "reopen_before": true,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [15, 30],
+              "hysteria2": [18, 33],
+              "naive": [21, 36],
+              "snell": [24, 39]
+            },
+            "synthetic-bravo": {
+              "trojan": [150, 300],
+              "hysteria2": [165, 315],
+              "naive": [180, 330],
+              "snell": [195, 345]
+            }
+          }
+        },
+        {
+          "at": "2026-05-04T12:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 700,
+          "reopen_before": true,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [15, 30],
+              "hysteria2": [18, 33],
+              "naive": [21, 36],
+              "snell": [24, 39]
+            },
+            "synthetic-bravo": {
+              "trojan": [150, 300],
+              "hysteria2": [165, 315],
+              "naive": [180, 330],
+              "snell": [195, 345]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-04|synthetic-alpha|trojan": [15, 30],
+            "2026-05-04|synthetic-alpha|hysteria2": [18, 33],
+            "2026-05-04|synthetic-alpha|naive": [21, 36],
+            "2026-05-04|synthetic-alpha|snell": [24, 39],
+            "2026-05-04|synthetic-bravo|trojan": [150, 300],
+            "2026-05-04|synthetic-bravo|hysteria2": [165, 315],
+            "2026-05-04|synthetic-bravo|naive": [180, 330],
+            "2026-05-04|synthetic-bravo|snell": [195, 345]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-04|synthetic-alpha|trojan": [15, 30],
+            "2026-05-04|synthetic-alpha|hysteria2": [18, 33],
+            "2026-05-04|synthetic-alpha|naive": [21, 36],
+            "2026-05-04|synthetic-alpha|snell": [24, 39],
+            "2026-05-04|synthetic-bravo|trojan": [150, 300],
+            "2026-05-04|synthetic-bravo|hysteria2": [165, 315],
+            "2026-05-04|synthetic-bravo|naive": [180, 330],
+            "2026-05-04|synthetic-bravo|snell": [195, 345]
+          },
+          "versions": {
+            "2026-05-04|synthetic-alpha|trojan": 2,
+            "2026-05-04|synthetic-alpha|hysteria2": 2,
+            "2026-05-04|synthetic-alpha|naive": 2,
+            "2026-05-04|synthetic-alpha|snell": 2,
+            "2026-05-04|synthetic-bravo|trojan": 2,
+            "2026-05-04|synthetic-bravo|hysteria2": 2,
+            "2026-05-04|synthetic-bravo|naive": 2,
+            "2026-05-04|synthetic-bravo|snell": 2
+          },
+          "rejected_samples": [],
+          "gap_count": 0
+        }
+      }
+    },
+    {
+      "name": "same-invocation-counter-regression-diverges",
+      "description": "A counter regression without a new invocation. This is the intentional Python/Go contract difference and is asserted with separate expected ledgers.",
+      "samples": [
+        {
+          "at": "2026-05-05T00:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1100, 2100],
+              "naive": [1200, 2200],
+              "snell": [1300, 2300]
+            },
+            "synthetic-bravo": {
+              "trojan": [4000, 5000],
+              "hysteria2": [4100, 5100],
+              "naive": [4200, 5200],
+              "snell": [4300, 5300]
+            }
+          }
+        },
+        {
+          "at": "2026-05-05T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 200,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [900, 1900],
+              "hysteria2": [990, 1990],
+              "naive": [1080, 2080],
+              "snell": [1170, 2170]
+            },
+            "synthetic-bravo": {
+              "trojan": [3600, 4500],
+              "hysteria2": [3690, 4590],
+              "naive": [3780, 4680],
+              "snell": [3870, 4770]
+            }
+          }
+        },
+        {
+          "at": "2026-05-05T00:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 300,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1100, 2100],
+              "hysteria2": [1210, 2210],
+              "naive": [1320, 2320],
+              "snell": [1430, 2430]
+            },
+            "synthetic-bravo": {
+              "trojan": [4400, 5500],
+              "hysteria2": [4510, 5610],
+              "naive": [4620, 5720],
+              "snell": [4730, 5830]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-05|synthetic-alpha|trojan": [2100, 4100],
+            "2026-05-05|synthetic-alpha|hysteria2": [2310, 4310],
+            "2026-05-05|synthetic-alpha|naive": [2520, 4520],
+            "2026-05-05|synthetic-alpha|snell": [2730, 4730],
+            "2026-05-05|synthetic-bravo|trojan": [8400, 10500],
+            "2026-05-05|synthetic-bravo|hysteria2": [8610, 10710],
+            "2026-05-05|synthetic-bravo|naive": [8820, 10920],
+            "2026-05-05|synthetic-bravo|snell": [9030, 11130]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-05|synthetic-alpha|trojan": [1100, 2100],
+            "2026-05-05|synthetic-alpha|hysteria2": [1210, 2210],
+            "2026-05-05|synthetic-alpha|naive": [1320, 2320],
+            "2026-05-05|synthetic-alpha|snell": [1430, 2430],
+            "2026-05-05|synthetic-bravo|trojan": [4400, 5500],
+            "2026-05-05|synthetic-bravo|hysteria2": [4510, 5610],
+            "2026-05-05|synthetic-bravo|naive": [4620, 5720],
+            "2026-05-05|synthetic-bravo|snell": [4730, 5830]
+          },
+          "versions": {
+            "2026-05-05|synthetic-alpha|trojan": 2,
+            "2026-05-05|synthetic-alpha|hysteria2": 2,
+            "2026-05-05|synthetic-alpha|naive": 2,
+            "2026-05-05|synthetic-alpha|snell": 2,
+            "2026-05-05|synthetic-bravo|trojan": 2,
+            "2026-05-05|synthetic-bravo|hysteria2": 2,
+            "2026-05-05|synthetic-bravo|naive": 2,
+            "2026-05-05|synthetic-bravo|snell": 2
+          },
+          "rejected_samples": [1],
+          "gap_count": 0
+        }
+      },
+      "divergence": "Intentional contract difference in this slice. Legacy Python resets upload and download independently: a decrease in either component records that component's whole observed value while the other component is diffed normally, so its daily ledger includes the regressed sample. The Go target requires explicit invocation identity and rejects the whole credential observation when either component regresses within one invocation, retaining the last checkpoint, so sample index 1 is rejected and does not change usage or version. This case regresses both components for every credential; one-component and partial-credential regressions are follow-up fixture gaps. Production Python collector behavior is unchanged."
+    }
+  ]
+}

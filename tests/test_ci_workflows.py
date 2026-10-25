@@ -167,3 +167,26 @@ def test_missing_qemu_is_a_setup_failure(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(module.subprocess, "run", run)
     with pytest.raises(FileNotFoundError):
         module.select_accelerator()
+
+
+def test_node_agent_parity_paths_trigger_the_separate_go_module_checks() -> None:
+    config = workflow("node-agent.yml")
+    parity_paths = {
+        "tests/fixtures/node-g2-counter-parity.json",
+        "tests/test_node_g2_counter_parity.py",
+    }
+    for event in ("push", "pull_request"):
+        assert parity_paths <= set(config["on"][event]["paths"])
+    assert config["permissions"] == {"contents": "read"}
+    job = config["jobs"]["node-g0"]
+    assert job["runs-on"] == "ubuntu-latest"
+    module_step = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Check the separate cgo-free agent module"
+    )
+    assert "go -C node-agent test -count=1 ./..." in module_step["run"]
+    assert "go -C node-agent vet ./..." in module_step["run"]
+    assert "if" not in module_step
+    assert "continue-on-error" not in module_step
+    assert module_step["shell"] == "pixi run -e node-g0 bash -e {0}"

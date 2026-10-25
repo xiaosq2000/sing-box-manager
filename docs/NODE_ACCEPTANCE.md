@@ -2,14 +2,14 @@
 
 Checked on 2026-10-25.
 
-This page records isolated G0/G1 evidence, not a release or deployment approval.
+This page records isolated G0/G1 evidence and the started G2 counter-ledger slice, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
 | Gate                         | Status               | Evidence boundary                                                                       |
 | ---------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
 | G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                       |
 | G1: single-node reliability  | Accepted with limits | Local VM and hosted runner: final sampling, process crashes, reboot, outages and repair |
-| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                                   |
+| G2: accounting and migration | In progress          | Shared UTC counter cases pass; stream, history and restore pending                      |
 | G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                   |
 | G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization               |
 
@@ -129,6 +129,30 @@ Stop/suspend policy, complete adoption and the production node contract remain t
 The workflow runs `--g1-checks`. [PR #50](https://github.com/xiaosq2000/sing-box-manager/pull/50) covers the earlier startup subset.
 [PR #52](https://github.com/xiaosq2000/sing-box-manager/pull/52) merged the complete isolated G1 result after all five applicable hosted jobs passed at head `08c310c`.
 No release, deployment or migration is part of this result.
+
+## G2 progress
+
+G2 is in progress. The counter-ledger slice is shared fixture evidence only; it does not accept the gate.
+Release, deployment and migration are not part of this G2 result.
+
+`tests/fixtures/node-g2-counter-parity.json` contains deterministic UTC counter cases that run against the actual Python `TrafficStatsStore.record_snapshot` and the actual Go `accounting.Store`. The adapters are fixture-only. Each case compares keyed daily rows (`usage_date|account|protocol`) rather than only a grand total.
+
+Coverage:
+
+- four protocol labels (Trojan, Hysteria2, Naive, Snell) and two synthetic accounts with eight opaque protocol credential IDs;
+- initial cumulative counts, increments, repeated identical samples, a UTC-midnight split, a completed invocation replacement and database close/reopen; the Go adapter performs a true close/reopen, while the Python adapter reconstructs its stateless store and reads the same persistent SQLite state;
+- Go snapshot version and payload digest behavior for no-op, changed and reopened rows.
+
+The one recorded divergence in this slice is intentional in the target contract: Python resets upload and download independently, so a decrease in either component records that component's whole observed value; the Go target uses explicit invocation identity and rejects the whole credential observation when either component regresses within one invocation, retaining the previous checkpoint. The fixture asserts both ledgers and the rejection; it does not change the Python oracle. Python daily rows expose no version or payload digest, so those checks apply only to the Go contract.
+
+Three coverage edges remain explicit follow-up fixture gaps: unchanged counters immediately after UTC midnight produce a zero-valued Python day row but no Go day row; a one-component regression is tested by neither adapter (Python resets that component, Go rejects the credential); and partial-credential rejection cannot be expressed because the current regression case requires every credential to reject. These are not current shared cases and do not change the gate status.
+
+No production collector, lifecycle or sampling behavior changed. Native four-protocol traffic, stream attribution/reconciliation, time zones and billing-day/DST boundaries, central version/digest ingestion conflicts, history import, source restore and disk-pressure coverage remain later G2 slices.
+
+```sh
+pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
+pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
+```
 
 ## Reproduce
 
