@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +18,10 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/counter"
 )
 
-var errLocked = errors.New("state lock is busy")
+var (
+	errLocked        = errors.New("state lock is busy")
+	errLifecycleWait = errors.New("lifecycle lock wait expired")
+)
 
 type startupReceipt struct {
 	Generation int64  `json:"generation"`
@@ -51,7 +53,7 @@ func lifecycleLock(ctx context.Context, state string) (*os.File, error) {
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
-			return nil, errors.New("lifecycle lock wait expired")
+			return nil, errLifecycleWait
 		}
 		file, err := tryLock(state, "lifecycle.lock")
 		if !errors.Is(err, errLocked) {
@@ -59,7 +61,7 @@ func lifecycleLock(ctx context.Context, state string) (*os.File, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return nil, errors.New("lifecycle lock wait expired")
+			return nil, errLifecycleWait
 		case <-ticker.C:
 		}
 	}
@@ -145,17 +147,9 @@ func runningIdentity(ctx context.Context, state, engine, service string, expecte
 	if readJSON(filepath.Join(state, "running.json"), &receipt) != nil {
 		return "", errors.New("startup receipt unavailable")
 	}
-	output, err := command(ctx, "systemctl", "show", service, "--property=ActiveState", "--property=MainPID", "--property=InvocationID")
-	properties := make(map[string]string)
-	for _, line := range strings.Split(output, "\n") {
-		key, value, ok := strings.Cut(line, "=")
-		if ok {
-			properties[key] = value
-		}
-	}
-	pid, pidErr := strconv.Atoi(properties["MainPID"])
-	invocation := properties["InvocationID"]
-	if err != nil || pidErr != nil || pid <= 0 || properties["ActiveState"] != "active" || !validInvocation(invocation) || receipt.PID != pid || receipt.Invocation != invocation || receipt.Generation != current.Generation || receipt.Digest != current.ConfigSHA256 {
+	status, err := inspectService(ctx, service)
+	pid, invocation := status.pid, status.invocation
+	if err != nil || pid <= 0 || status.active != "active" || !validInvocation(invocation) || receipt.PID != pid || receipt.Invocation != invocation || receipt.Generation != current.Generation || receipt.Digest != current.ConfigSHA256 {
 		return "", errors.New("engine startup identity unconfirmed")
 	}
 	actual, err := os.Stat(fmt.Sprintf("/proc/%d/exe", pid))
@@ -181,6 +175,11 @@ func recordSample(ctx context.Context, state, engine, service string, b contract
 		return "", err
 	}
 	defer lock.Close()
+	return sampleLocked(ctx, state, engine, service, b, store)
+}
+
+// The lifecycle lock covers the sample, its commit and the subsequent stop.
+func sampleLocked(ctx context.Context, state, engine, service string, b contract.Bundle, store *accounting.Store) (string, error) {
 	invocation, err := runningIdentity(ctx, state, engine, service, b)
 	if err != nil {
 		return "", err
@@ -199,7 +198,7 @@ func recordSample(ctx context.Context, state, engine, service string, b contract
 	return invocation, nil
 }
 
-func apply(ctx context.Context, state, engine, service string, b contract.Bundle) error {
+func apply(ctx context.Context, state, engine, service string, b contract.Bundle, store *accounting.Store) error {
 	lock, err := lifecycleLock(ctx, state)
 	if err != nil {
 		return err
@@ -231,15 +230,48 @@ func apply(ctx context.Context, state, engine, service string, b contract.Bundle
 	if err != nil || staged.Generation != b.Generation || staged.ConfigSHA256 != b.ConfigSHA256 {
 		return errors.New("staged generation invalid")
 	}
+	if syncDir(filepath.Dir(dir)) != nil || syncDir(state) != nil {
+		return errors.New("generation sync failed")
+	}
 	if _, err := command(ctx, engine, "check", "-D", state, "-c", config); err != nil {
 		return errors.New("config check failed")
+	}
+	status, err := inspectService(ctx, service)
+	if err != nil {
+		return err
+	}
+	invocation := ""
+	if status.stopped() {
+		if err := emptyGroup(status.group); err != nil {
+			return err
+		}
+		if err := missingEngine(ctx, state, store); err != nil {
+			return err
+		}
+	} else {
+		previous, _, err := currentBundle(state, b.NodeID)
+		if err != nil {
+			return errors.New("previous generation unconfirmed")
+		}
+		invocation, err = sampleLocked(ctx, state, engine, service, previous, store)
+		if err != nil {
+			return fmt.Errorf("final sample failed: %w", err)
+		}
 	}
 	if _, err := command(ctx, "systemctl", "stop", service); err != nil {
 		return errors.New("engine stop failed")
 	}
-	pid, err := command(ctx, "systemctl", "show", service, "--property=MainPID", "--value")
-	if err != nil || pid != "0" {
+	status, err = inspectService(ctx, service)
+	if err != nil || !status.stopped() {
 		return errors.New("engine termination unconfirmed")
+	}
+	if err := emptyGroup(status.group); err != nil {
+		return err
+	}
+	if invocation != "" {
+		if err := store.Finish(ctx, invocation); err != nil {
+			return errors.New("final accounting completion failed")
+		}
 	}
 	next := filepath.Join(state, ".current-"+contract.UUID())
 	if err := os.Symlink(dir, next); err != nil {
@@ -253,19 +285,10 @@ func apply(ctx context.Context, state, engine, service string, b contract.Bundle
 	if err := lock.Close(); err != nil {
 		return errors.New("lifecycle lock release failed")
 	}
-	if _, err := command(ctx, "systemctl", "start", service); err != nil {
-		return errors.New("published engine startup failed")
+	// A newly validated policy can repair a unit that exhausted its old startup limit.
+	// Ordinary local recovery does not reset that limit.
+	if _, err := command(ctx, "systemctl", "reset-failed", service); err != nil {
+		return errors.New("published engine reset failed")
 	}
-	ready, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for {
-		if _, err := observeRunning(ready, state, engine, service, b); err == nil {
-			return nil
-		}
-		select {
-		case <-ready.Done():
-			return errors.New("published startup identity unconfirmed")
-		case <-time.After(25 * time.Millisecond):
-		}
-	}
+	return startSelected(ctx, state, engine, service, b)
 }

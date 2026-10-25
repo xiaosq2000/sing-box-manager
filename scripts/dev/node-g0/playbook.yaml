@@ -90,6 +90,12 @@
         - sbm-g0-proxy.service
         - sbm-g0-agent.service
 
+    - name: Enable local proxy recovery at boot
+      ansible.builtin.systemd_service:
+        name: sbm-g0-proxy.service
+        daemon_reload: true
+        enabled: true
+
     - name: Enable the G0 agent
       ansible.builtin.systemd_service:
         name: sbm-g0-agent.service

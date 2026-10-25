@@ -19,6 +19,7 @@ func TestApplyPreservesExactConfigBytes(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newLifecycleFixture(t)
+			inactive(t, f)
 			candidate := f.bundle
 			candidate.Generation++
 			candidate.Config = config
@@ -29,7 +30,7 @@ func TestApplyPreservesExactConfigBytes(t *testing.T) {
 				t.Fatal(err)
 			}
 			// The fake service cannot start. Publication must still select exact bytes.
-			if err := apply(context.Background(), f.state, engine, "sbm-g0-proxy.service", candidate); err == nil || err.Error() != "published engine startup failed" {
+			if err := apply(context.Background(), f.state, engine, "sbm-g0-proxy.service", candidate, fixtureStore(t, f)); err == nil || err.Error() != "published engine startup failed" {
 				t.Fatalf("apply failed before startup: %v", err)
 			}
 			loaded, _, err := currentBundle(f.state, f.identity.NodeID)
@@ -50,7 +51,7 @@ func TestInvalidStagedConfigDoesNotStopOrPublish(t *testing.T) {
 	if err := os.Chmod(engine, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := apply(context.Background(), f.state, engine, "sbm-g0-proxy.service", candidate); err == nil || err.Error() != "staged generation invalid" {
+	if err := apply(context.Background(), f.state, engine, "sbm-g0-proxy.service", candidate, fixtureStore(t, f)); err == nil || err.Error() != "staged generation invalid" {
 		t.Fatalf("invalid staging accepted: %v", err)
 	}
 	if _, err := os.Stat(f.properties + ".stopped"); !errors.Is(err, os.ErrNotExist) {

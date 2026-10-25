@@ -296,7 +296,7 @@ def test_ci_uses_disposable_runner_and_never_uploads_private_runs():
         step for step in steps if "scripts/dev/node-g0/run.py" in step.get("run", "")
     )
     assert native["env"]["SBM_NODE_G0"] == "1"
-    assert "--startup-checks" in native["run"]
+    assert "--g1-checks" in native["run"]
     assert "continue-on-error" not in native
     assert not any("upload-artifact" in step.get("uses", "") for step in steps)
     assert all("self-hosted" not in json.dumps(step) for step in steps)
@@ -357,12 +357,39 @@ def test_restart_listener_wait_does_not_hide_ssh_failure():
         reliability.wait_proxy(guest, harness.wait)
 
 
+@pytest.mark.parametrize(
+    ("code", "output", "accepted"),
+    [
+        (1, b"G0 failed: first fixed failure\n", True),
+        (1, b"G0 failed: second fixed failure\n", True),
+        (255, b"G0 failed: first fixed failure\n", False),
+        (1, b"PRIVATE-value\nG0 failed: second fixed failure\n", False),
+    ],
+)
+def test_runtime_failure_accepts_only_named_agent_paths(
+    code, output, accepted, tmp_path
+):
+    def guest(command, *, log):
+        log.write_bytes(output)
+        raise harness.CommandFailure("command-exit", code)
+
+    messages = ("first fixed failure", "second fixed failure")
+    if accepted:
+        reliability.reject_once(guest, tmp_path / "failure.log", messages)
+    else:
+        with pytest.raises(RuntimeError, match="startup negative control"):
+            reliability.reject_once(guest, tmp_path / "failure.log", messages)
+
+
 def test_proxy_starts_through_the_locked_exec_wrapper():
     root = Path(__file__).parents[1]
     unit = (root / "scripts/dev/node-g0/templates/sbm-g0-proxy.service.j2").read_text()
     assert "ExecStart=/opt/sbm-node-g0/sbm-node-g0 exec " in unit
     assert "--engine /opt/sbm-node-g0/sing-box" in unit
-    assert "current/config.json" not in unit
+    start = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
+    assert "current/config.json" not in start
+    assert "ConditionPathExists=/var/lib/sbm-node-g0/current/config.json" in unit
+    assert "WantedBy=multi-user.target" in unit
     assert "KillMode=control-group" in unit
 
 

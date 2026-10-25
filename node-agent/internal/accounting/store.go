@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"os"
 	"time"
 
 	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/contract"
@@ -18,6 +19,18 @@ type Store struct {
 }
 
 func Open(path, source string) (*Store, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	err = file.Chmod(0600)
+	closeErr := file.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
@@ -28,6 +41,8 @@ func Open(path, source string) (*Store, error) {
 		`CREATE TABLE IF NOT EXISTS identity (source TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS checkpoints (invocation TEXT, credential TEXT, upload INTEGER NOT NULL, download INTEGER NOT NULL, PRIMARY KEY(invocation,credential))`,
 		`CREATE TABLE IF NOT EXISTS usage (credential TEXT, day TEXT, version INTEGER NOT NULL, upload INTEGER NOT NULL, download INTEGER NOT NULL, PRIMARY KEY(credential,day))`,
+		`CREATE TABLE IF NOT EXISTS finished (invocation TEXT PRIMARY KEY)`,
+		`CREATE TABLE IF NOT EXISTS gaps (invocation TEXT PRIMARY KEY, reason TEXT NOT NULL)`,
 	} {
 		if _, err := db.Exec(query); err != nil {
 			db.Close()
@@ -65,6 +80,10 @@ func (s *Store) Record(ctx context.Context, invocation, credential string, uploa
 	if upload < lastUp || download < lastDown {
 		return errors.New("counter regression within one invocation")
 	}
+	// An invocation without a confirmed final stop can have an unobserved tail.
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO gaps SELECT DISTINCT invocation,'unobserved_termination' FROM checkpoints WHERE credential=? AND invocation<>? AND invocation NOT IN (SELECT invocation FROM finished)`, credential, invocation); err != nil {
+		return err
+	}
 	du, dd := upload-lastUp, download-lastDown
 	if _, err := tx.ExecContext(ctx, `INSERT INTO checkpoints VALUES(?,?,?,?) ON CONFLICT(invocation,credential) DO UPDATE SET upload=excluded.upload,download=excluded.download`, invocation, credential, upload, download); err != nil {
 		return err
@@ -84,6 +103,33 @@ func (s *Store) Record(ctx context.Context, invocation, credential string, uploa
 		}
 	}
 	return tx.Commit()
+}
+
+// Finish records termination only after the final sample commits and systemd confirms an empty service.
+func (s *Store) Finish(ctx context.Context, invocation string) error {
+	result, err := s.db.ExecContext(ctx, `INSERT INTO finished SELECT DISTINCT invocation FROM checkpoints WHERE invocation=? ON CONFLICT(invocation) DO UPDATE SET invocation=excluded.invocation`, invocation)
+	if err != nil {
+		return err
+	}
+	if count, err := result.RowsAffected(); err != nil || count != 1 {
+		return errors.New("final checkpoint unavailable")
+	}
+	return nil
+}
+
+// Gap retains uncertainty, not an invented byte count. Repeated observations are idempotent.
+func (s *Store) Gap(ctx context.Context, invocation string) error {
+	if invocation == "" {
+		return errors.New("missing gap identity")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO gaps SELECT ?,'unobserved_termination' WHERE NOT EXISTS(SELECT 1 FROM finished WHERE invocation=?)`, invocation, invocation)
+	return err
+}
+
+func (s *Store) GapCount(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM gaps").Scan(&count)
+	return count, err
 }
 
 func (s *Store) Snapshots(ctx context.Context) ([]contract.Snapshot, error) {

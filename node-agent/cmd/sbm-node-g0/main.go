@@ -201,7 +201,13 @@ func request(ctx context.Context, client *http.Client, identity contract.Identit
 
 func cycle(ctx context.Context, client *http.Client, identity contract.Identity, state, engine, service string, store *accounting.Store, current **contract.Bundle) error {
 	etag := ""
+	var recoveryErr error
 	if *current != nil {
+		recoveryErr = recoverCurrent(ctx, state, engine, service, **current, store)
+		var pending *recoveryStartError
+		if recoveryErr != nil && !errors.As(recoveryErr, &pending) {
+			return recoveryErr
+		}
 		etag = fmt.Sprintf("\"%d:%s\"", (*current).Generation, (*current).ConfigSHA256)
 	}
 	status, data, fetchErr := request(ctx, client, identity, "GET", "/node-g0/v1/config", nil, etag)
@@ -214,7 +220,7 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 			return errors.New("generation conflict")
 		}
 		if *current == nil || candidate.Generation != (*current).Generation {
-			applyErr := apply(ctx, state, engine, service, candidate)
+			applyErr := apply(ctx, state, engine, service, candidate, store)
 			// Publication selects policy even when startup fails. Never reuse an older cache.
 			if published, _, err := currentBundle(state, identity.NodeID); err == nil && published.Generation == candidate.Generation && published.ConfigSHA256 == candidate.ConfigSHA256 {
 				*current = &published
@@ -222,6 +228,7 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 			if applyErr != nil {
 				return applyErr
 			}
+			recoveryErr = nil
 			if *current == nil || (*current).Generation != candidate.Generation {
 				return errors.New("published generation unconfirmed")
 			}
@@ -230,6 +237,9 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 	// A failed pull must not stop collection or the locally running proxy.
 	if *current == nil {
 		return errors.New("no accepted bundle")
+	}
+	if recoveryErr != nil {
+		return recoveryErr
 	}
 	b := *current
 	invocation, err := recordSample(ctx, state, engine, service, *b, store)
@@ -248,7 +258,11 @@ func cycle(ctx context.Context, client *http.Client, identity contract.Identity,
 	if err != nil || observed != invocation {
 		return errors.New("engine identity unconfirmed before status")
 	}
-	status, _, err = request(ctx, client, identity, "POST", "/node-g0/v1/status", map[string]any{"generation": b.Generation, "config_sha256": b.ConfigSHA256, "invocation": invocation}, "")
+	gaps, err := store.GapCount(ctx)
+	if err != nil {
+		return errors.New("accounting coverage unavailable")
+	}
+	status, _, err = request(ctx, client, identity, "POST", "/node-g0/v1/status", map[string]any{"generation": b.Generation, "config_sha256": b.ConfigSHA256, "invocation": invocation, "coverage_gaps": gaps}, "")
 	if err != nil || status != 200 {
 		return errors.New("status upload pending")
 	}

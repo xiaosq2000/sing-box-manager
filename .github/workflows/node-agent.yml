@@ -74,8 +74,8 @@ jobs:
           pixi run -e node-g0 fetch-sing-box-server
           sha256sum .cache/sing-box-manager/server/sing-box | cut -d ' ' -f 1 > .cache/sing-box-manager/server/sing-box.sha256
           bash scripts/dev/fetch-tun-image.sh
-      - name: Check isolated flow and startup reliability subset
-        run: pixi run -e node-g0 python scripts/dev/node-g0/run.py --engine .cache/sing-box-manager/server/sing-box --startup-checks
+      - name: Check isolated flow and G1 failure recovery
+        run: pixi run -e node-g0 python scripts/dev/node-g0/run.py --engine .cache/sing-box-manager/server/sing-box --g1-checks
         env:
           SBM_NODE_G0: "1"
       # The run directory contains synthetic credentials and private keys.
