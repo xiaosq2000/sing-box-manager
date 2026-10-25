@@ -1,6 +1,6 @@
 # Control-plane guide
 
-Checked on 2026-10-22.
+Checked on 2026-10-25.
 
 The Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
 accounts, proxy user accounts (`Account`), per-protocol credentials (`Credential`),
@@ -211,6 +211,10 @@ It does not grant account-edit permission. `Account.is_portal_admin` is retained
 It does not authorize an operator or a traffic view. Historical traffic remains visible after account removal.
 
 ## Traffic collection
+
+The pure [node traffic wire codec](NODE_TRAFFIC_PROTOCOL.md) is not wired into
+this service yet. No current route, collector, model or exporter calls
+`traffic_contract.py`; the collection behavior below is unchanged.
 
 In authoritative mode, the traffic collector reads accounts and enabled credentials from
 PostgreSQL. It includes accounts created only in Django Admin. Account and protocol

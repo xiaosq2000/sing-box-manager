@@ -660,8 +660,6 @@ functions. Its 27 cases cover local midnight, DST transitions with
 post-transition local-midnight checks, skipped local midnight, short months, leap
 years and billing days 1/3/28/29/30/31. Both adapters check that cycles tile
 the fixture's multi-year range without gaps or overlap.
-The node-agent workflow runs both shared Python oracles and the separate Go
-module checks; both fixture and adapter paths trigger push and PR checks.
 
 This is calendar arithmetic only. The ledger still buckets in UTC. Calendar
 migration, bundle/API wiring and provider-reset integration remain pending.
@@ -671,6 +669,29 @@ Python and Go do not share a pinned time-zone data artifact.
 pixi run -e node-g0 test tests/test_node_accounting_calendar.py tests/test_traffic_stats_billing_day.py
 pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
 ```
+
+The pure `node-traffic-v1` wire codec is implemented independently in
+`sing_box_manager/control_plane/traffic_contract.py` and
+`node-agent/internal/traffic/`. Both consume the frozen shared fixture
+`tests/fixtures/node-traffic-v1.json` (SHA-256
+`12f098d86018b5a82303eac188b418efde35d8c2935960277665a079ded52efb`).
+The suites check canonical payload, snapshot, request and receipt bytes;
+strict request and receipt rejections; raw, snapshot, page and named-identity
+bounds; and exact receipt coverage. Neither language invokes the other codec.
+
+```sh
+pixi run -e node-g0 test tests/test_node_traffic_contract.py
+pixi run -e node-g0 go -C node-agent test -count=1 ./internal/traffic
+```
+
+The node-agent workflow runs the counter-parity, calendar and traffic-codec
+Python oracles, then the separate Go tests and vet. Counter, calendar, codec
+fixture, adapter and production-codec paths trigger both push and PR checks.
+
+The wire codec is cross-language codec evidence only. No production
+`/node/v1/traffic` route, authorization registry, ingestion, persistence,
+exporter, history import or G2 acceptance exists. The isolated G0 transport
+remains in place. See the [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
 
 `tests/test_routes.py` uses Django's test client in isolated PostgreSQL processes.
 It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer

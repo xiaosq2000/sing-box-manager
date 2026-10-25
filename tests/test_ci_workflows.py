@@ -10,6 +10,20 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+NODE_AGENT_ORACLE_STEP = {
+    "name": "Check shared Python oracles",
+    "run": (
+        "pixi run -e node-g0 test tests/test_node_g2_counter_parity.py "
+        "tests/test_node_accounting_calendar.py "
+        "tests/test_node_traffic_contract.py"
+    ),
+}
+NODE_AGENT_GO_STEP = {
+    "name": "Check the separate cgo-free agent module",
+    "run": "go -C node-agent test -count=1 ./...\ngo -C node-agent vet ./...\n",
+    "shell": "pixi run -e node-g0 bash -e {0}",
+}
+
 
 def workflow(name: str) -> dict:
     return yaml.load(
@@ -169,6 +183,32 @@ def test_missing_qemu_is_a_setup_failure(monkeypatch: pytest.MonkeyPatch) -> Non
         module.select_accelerator()
 
 
+def assert_node_agent_shared_check_contract(
+    config: dict, required_paths: set[str]
+) -> None:
+    assert set(config) == {"name", "on", "permissions", "concurrency", "jobs"}
+    assert "env" not in config
+    assert "defaults" not in config
+    for event in ("push", "pull_request"):
+        assert required_paths <= set(config["on"][event]["paths"])
+    assert config["permissions"] == {"contents": "read"}
+    job = config["jobs"]["node-g0"]
+    assert set(job) == {"runs-on", "timeout-minutes", "steps"}
+    for key in ("if", "continue-on-error", "permissions", "env", "defaults"):
+        assert key not in job
+    assert job["runs-on"] == "ubuntu-latest"
+    oracle_step = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == NODE_AGENT_ORACLE_STEP["name"]
+    )
+    assert oracle_step == NODE_AGENT_ORACLE_STEP
+    module_step = next(
+        step for step in job["steps"] if step.get("name") == NODE_AGENT_GO_STEP["name"]
+    )
+    assert module_step == NODE_AGENT_GO_STEP
+
+
 def test_node_agent_parity_paths_trigger_the_separate_go_module_checks() -> None:
     config = workflow("node-agent.yml")
     parity_paths = {
@@ -177,28 +217,58 @@ def test_node_agent_parity_paths_trigger_the_separate_go_module_checks() -> None
         "tests/fixtures/node-accounting-calendar.json",
         "tests/test_node_accounting_calendar.py",
     }
-    for event in ("push", "pull_request"):
-        assert parity_paths <= set(config["on"][event]["paths"])
-    assert config["permissions"] == {"contents": "read"}
-    job = config["jobs"]["node-g0"]
-    assert job["runs-on"] == "ubuntu-latest"
-    module_step = next(
-        step
-        for step in job["steps"]
-        if step.get("name") == "Check the separate cgo-free agent module"
-    )
-    assert "go -C node-agent test -count=1 ./..." in module_step["run"]
-    assert "go -C node-agent vet ./..." in module_step["run"]
-    assert "if" not in module_step
-    assert "continue-on-error" not in module_step
-    assert module_step["shell"] == "pixi run -e node-g0 bash -e {0}"
+    assert_node_agent_shared_check_contract(config, parity_paths)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/fixtures/node-traffic-v1.json",
+        "tests/test_node_traffic_contract.py",
+        "sing_box_manager/control_plane/traffic_contract.py",
+    ],
+)
+def test_node_traffic_codec_paths_trigger_both_language_checks(path: str) -> None:
+    config = workflow("node-agent.yml")
+    required_paths = {
+        path,
+        "tests/fixtures/node-g2-counter-parity.json",
+        "tests/test_node_g2_counter_parity.py",
+        "tests/fixtures/node-accounting-calendar.json",
+        "tests/test_node_accounting_calendar.py",
+    }
+    assert_node_agent_shared_check_contract(config, required_paths)
+
+
+def test_node_agent_workflow_guard_rejects_job_continue_on_error() -> None:
+    # Mutate only the loaded YAML object; the workflow file is never written.
+    config = workflow("node-agent.yml")
+    assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+    config["jobs"]["node-g0"]["continue-on-error"] = "true"
+    with pytest.raises(AssertionError):
+        assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+
+
+def test_node_agent_workflow_guard_rejects_oracle_pytest_addopts() -> None:
+    # Mutate only the loaded YAML object; the workflow file is never written.
+    config = workflow("node-agent.yml")
+    assert_node_agent_shared_check_contract(config, {"node-agent/**"})
     oracle_step = next(
         step
-        for step in job["steps"]
-        if step.get("name") == "Check shared accounting oracles"
+        for step in config["jobs"]["node-g0"]["steps"]
+        if step.get("name") == NODE_AGENT_ORACLE_STEP["name"]
     )
-    assert "pixi run -e node-g0 test " in oracle_step["run"]
-    assert "tests/test_node_g2_counter_parity.py" in oracle_step["run"]
-    assert "tests/test_node_accounting_calendar.py" in oracle_step["run"]
-    assert "if" not in oracle_step
-    assert "continue-on-error" not in oracle_step
+    oracle_step["env"] = {
+        "PYTEST_ADDOPTS": "--ignore=tests/test_node_traffic_contract.py"
+    }
+    with pytest.raises(AssertionError):
+        assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+
+
+def test_node_agent_workflow_guard_rejects_workflow_env_suppression() -> None:
+    # Mutate only the loaded YAML object; the workflow file is never written.
+    config = workflow("node-agent.yml")
+    assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+    config["env"] = {"PYTEST_ADDOPTS": "--ignore=tests/test_node_traffic_contract.py"}
+    with pytest.raises(AssertionError):
+        assert_node_agent_shared_check_contract(config, {"node-agent/**"})
