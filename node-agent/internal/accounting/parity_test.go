@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -49,10 +50,15 @@ type paritySample struct {
 }
 
 type parityExpectation struct {
-	Ledger          map[string][2]int64 `json:"ledger"`
-	Versions        map[string]int64    `json:"versions"`
-	RejectedSamples []int               `json:"rejected_samples"`
-	GapCount        int64               `json:"gap_count"`
+	Ledger   map[string][2]int64 `json:"ledger"`
+	Versions map[string]int64    `json:"versions"`
+	Rejected []parityRejection   `json:"rejected"`
+	GapCount int64               `json:"gap_count"`
+}
+
+type parityRejection struct {
+	Sample      int      `json:"sample"`
+	Credentials []string `json:"credentials"`
 }
 
 type parityCredential struct {
@@ -68,8 +74,8 @@ type parityState struct {
 
 func TestSharedCounterParityCases(t *testing.T) {
 	fixture := loadParityFixture(t)
-	fixture.validate(t)
 	index := fixture.credentialIndex(t)
+	fixture.validate(t, index)
 	for _, testCase := range fixture.Cases {
 		t.Run(testCase.Name, func(t *testing.T) {
 			runParityCase(t, fixture, index, testCase)
@@ -92,9 +98,13 @@ func runParityCase(
 	}
 	defer func() { _ = store.Close() }()
 
-	rejected := map[int]bool{}
-	for _, sampleIndex := range testCase.Expected.Go.RejectedSamples {
-		rejected[sampleIndex] = true
+	rejections := map[int]map[string]bool{}
+	for _, rejection := range testCase.Expected.Go.Rejected {
+		identities := make(map[string]bool, len(rejection.Credentials))
+		for _, credential := range rejection.Credentials {
+			identities[credential] = true
+		}
+		rejections[rejection.Sample] = identities
 	}
 	var previous parityState
 	for sampleIndex, sample := range testCase.Samples {
@@ -111,18 +121,13 @@ func runParityCase(
 		if err != nil {
 			t.Fatalf("sample %d time: %v", sampleIndex, err)
 		}
+		checkpointsBefore := readParityCheckpoints(t, store)
 		recordErrors := recordParitySample(ctx, store, fixture, sample, at)
-		if rejected[sampleIndex] {
-			if len(recordErrors) != len(fixture.Accounts)*len(fixture.Protocols) {
-				t.Fatalf("sample %d rejected %d of %d counters", sampleIndex, len(recordErrors), len(fixture.Accounts)*len(fixture.Protocols))
-			}
-			for _, recordErr := range recordErrors {
-				if !strings.Contains(recordErr.Error(), "counter regression within one invocation") {
-					t.Fatalf("sample %d rejected with unexpected error: %v", sampleIndex, recordErr)
-				}
-			}
-		} else if len(recordErrors) != 0 {
-			t.Fatalf("sample %d: %v", sampleIndex, recordErrors[0])
+		expectedRejected := rejections[sampleIndex]
+		assertParityRejections(t, sampleIndex, expectedRejected, recordErrors)
+		if len(expectedRejected) > 0 {
+			checkpointsAfter := readParityCheckpoints(t, store)
+			assertParityCheckpoints(t, sampleIndex, index, expectedRejected, checkpointsBefore, checkpointsAfter, sample)
 		}
 		if sample.FinishAfter {
 			if err := store.Finish(ctx, sample.Invocation); err != nil {
@@ -135,6 +140,10 @@ func runParityCase(
 		}
 		current := readParityState(t, index, snapshots)
 		assertParitySnapshotContract(t, previous, current)
+		if len(expectedRejected) > 0 {
+			assertParityRejectedRowsUnchanged(t, sampleIndex, previous, current, expectedRejected)
+			assertParityHealthyCredentialsAdvance(t, sampleIndex, index, previous, current, expectedRejected)
+		}
 		previous = current
 	}
 
@@ -163,17 +172,169 @@ func recordParitySample(
 	fixture parityFixture,
 	sample paritySample,
 	at time.Time,
-) []error {
-	var recordErrors []error
+) map[string]error {
+	recordErrors := map[string]error{}
 	for account, protocols := range fixture.Accounts {
 		for _, protocol := range fixture.Protocols {
 			values := sample.Counters[account][protocol]
 			if err := store.Record(ctx, sample.Invocation, protocols[protocol], values[0], values[1], at); err != nil {
-				recordErrors = append(recordErrors, fmt.Errorf("%s/%s: %w", account, protocol, err))
+				recordErrors[protocols[protocol]] = fmt.Errorf("%s/%s: %w", account, protocol, err)
 			}
 		}
 	}
 	return recordErrors
+}
+
+func assertParityRejections(t *testing.T, sampleIndex int, expected map[string]bool, actual map[string]error) {
+	t.Helper()
+	for _, credential := range sortedParityIdentities(expected) {
+		recordErr, ok := actual[credential]
+		if !ok {
+			t.Fatalf("sample %d did not reject expected credential %q", sampleIndex, credential)
+		}
+		if !strings.Contains(recordErr.Error(), "counter regression within one invocation") {
+			t.Fatalf("sample %d rejected credential %q with unexpected error: %v", sampleIndex, credential, recordErr)
+		}
+	}
+	for _, credential := range sortedParityRecordErrors(actual) {
+		if !expected[credential] {
+			t.Fatalf("sample %d rejected unexpected credential %q: %v", sampleIndex, credential, actual[credential])
+		}
+	}
+}
+
+func readParityCheckpoints(t *testing.T, store *Store) map[string][2]int64 {
+	t.Helper()
+	rows, err := store.db.Query("SELECT credential,upload,download FROM checkpoints")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	checkpoints := map[string][2]int64{}
+	for rows.Next() {
+		var credential string
+		var upload, download int64
+		if err := rows.Scan(&credential, &upload, &download); err != nil {
+			t.Fatal(err)
+		}
+		checkpoints[credential] = [2]int64{upload, download}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return checkpoints
+}
+
+func assertParityCheckpoints(
+	t *testing.T,
+	sampleIndex int,
+	index map[string]parityCredential,
+	rejected map[string]bool,
+	before, after map[string][2]int64,
+	sample paritySample,
+) {
+	t.Helper()
+	for _, credential := range sortedParityIdentities(rejected) {
+		old, hadOld := before[credential]
+		current, hasCurrent := after[credential]
+		if !hadOld || !hasCurrent || old != current {
+			t.Fatalf("sample %d rejected credential %q changed checkpoint: before %v (present %t), after %v (present %t)", sampleIndex, credential, old, hadOld, current, hasCurrent)
+		}
+	}
+	for _, credential := range sortedParityCredentials(index) {
+		if rejected[credential] {
+			continue
+		}
+		position := index[credential]
+		values := sample.Counters[position.account][position.protocol]
+		want := [2]int64{values[0], values[1]}
+		got, ok := after[credential]
+		if !ok || got != want {
+			t.Fatalf("sample %d healthy credential %q checkpoint = %v (present %t), want %v", sampleIndex, credential, got, ok, want)
+		}
+	}
+}
+
+func assertParityRejectedRowsUnchanged(
+	t *testing.T,
+	sampleIndex int,
+	previous, current parityState,
+	rejected map[string]bool,
+) {
+	t.Helper()
+	for _, credential := range sortedParityIdentities(rejected) {
+		oldRows := parityCredentialRows(previous, credential)
+		newRows := parityCredentialRows(current, credential)
+		if len(oldRows) == 0 {
+			t.Fatalf("sample %d rejected credential %q has no previous ledger rows", sampleIndex, credential)
+		}
+		if !reflect.DeepEqual(oldRows, newRows) {
+			t.Fatalf("sample %d rejected credential %q changed ledger rows: before %v, after %v", sampleIndex, credential, oldRows, newRows)
+		}
+	}
+}
+
+func assertParityHealthyCredentialsAdvance(
+	t *testing.T,
+	sampleIndex int,
+	index map[string]parityCredential,
+	previous, current parityState,
+	rejected map[string]bool,
+) {
+	t.Helper()
+	if len(rejected) == len(index) {
+		return
+	}
+	for _, credential := range sortedParityCredentials(index) {
+		if rejected[credential] {
+			continue
+		}
+		oldRows := parityCredentialRows(previous, credential)
+		newRows := parityCredentialRows(current, credential)
+		if len(newRows) == 0 {
+			t.Fatalf("sample %d healthy credential %q has no ledger rows", sampleIndex, credential)
+		}
+		if reflect.DeepEqual(oldRows, newRows) {
+			t.Fatalf("sample %d healthy credential %q did not advance", sampleIndex, credential)
+		}
+	}
+}
+
+func parityCredentialRows(state parityState, credential string) map[string]contract.Snapshot {
+	rows := map[string]contract.Snapshot{}
+	for _, snapshot := range state.snapshots {
+		if snapshot.CredentialID == credential {
+			rows[snapshot.UsageDate] = snapshot
+		}
+	}
+	return rows
+}
+
+func sortedParityIdentities(identities map[string]bool) []string {
+	result := make([]string, 0, len(identities))
+	for identity := range identities {
+		result = append(result, identity)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sortedParityRecordErrors(recordErrors map[string]error) []string {
+	result := make([]string, 0, len(recordErrors))
+	for credential := range recordErrors {
+		result = append(result, credential)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sortedParityCredentials(index map[string]parityCredential) []string {
+	result := make([]string, 0, len(index))
+	for credential := range index {
+		result = append(result, credential)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func readParityState(
@@ -247,10 +408,10 @@ func (fixture parityFixture) credentialIndex(t *testing.T) map[string]parityCred
 	return index
 }
 
-func (fixture parityFixture) validate(t *testing.T) {
+func (fixture parityFixture) validate(t *testing.T, index map[string]parityCredential) {
 	t.Helper()
-	if fixture.Schema != 1 {
-		t.Fatalf("fixture schema = %d, want 1", fixture.Schema)
+	if fixture.Schema != 2 {
+		t.Fatalf("fixture schema = %d, want 2", fixture.Schema)
 	}
 	if fixture.SourceID == "" {
 		t.Fatal("fixture source ID is empty")
@@ -288,9 +449,27 @@ func (fixture parityFixture) validate(t *testing.T) {
 				}
 			}
 		}
-		for _, sampleIndex := range testCase.Expected.Go.RejectedSamples {
-			if sampleIndex < 0 || sampleIndex >= len(testCase.Samples) {
-				t.Fatalf("case %s rejected sample index %d is out of range", testCase.Name, sampleIndex)
+		seenRejectedSamples := map[int]bool{}
+		for _, rejection := range testCase.Expected.Go.Rejected {
+			if rejection.Sample < 0 || rejection.Sample >= len(testCase.Samples) {
+				t.Fatalf("case %s rejected sample index %d is out of range", testCase.Name, rejection.Sample)
+			}
+			if seenRejectedSamples[rejection.Sample] {
+				t.Fatalf("case %s repeats rejected sample index %d", testCase.Name, rejection.Sample)
+			}
+			seenRejectedSamples[rejection.Sample] = true
+			if len(rejection.Credentials) == 0 {
+				t.Fatalf("case %s rejected sample %d has no credential identities", testCase.Name, rejection.Sample)
+			}
+			seenCredentials := map[string]bool{}
+			for _, credential := range rejection.Credentials {
+				if _, ok := index[credential]; !ok {
+					t.Fatalf("case %s rejected sample %d names unknown credential %q", testCase.Name, rejection.Sample, credential)
+				}
+				if seenCredentials[credential] {
+					t.Fatalf("case %s rejected sample %d repeats credential %q", testCase.Name, rejection.Sample, credential)
+				}
+				seenCredentials[credential] = true
 			}
 		}
 		if len(testCase.Expected.Go.Ledger) == 0 || len(testCase.Expected.Python.Ledger) == 0 {
