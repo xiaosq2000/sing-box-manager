@@ -288,6 +288,14 @@ New accounts use subscription links and need no portal password.
   reached. That is a real step up in sensitivity from byte totals: keep the file
   where it is, and note that `traffic_stats.domain_top_n` bounds how much of it is
   retained by name
+- `TrafficSnapshot.payload` stores exact canonical node-traffic payloads in
+  PostgreSQL `bytea`, including domain and destination names with NUL, other C0
+  controls, quotes, backslashes and Unicode distinctions. This is sensitive user
+  data, not a secret, but it is also not anonymized or encrypted by canonical
+  encoding or digesting. Keep it under the protected PostgreSQL and backup
+  boundary, do not log raw request pages or names, and do not expose snapshots in
+  Admin. The unexposed `ingest_page` service returns receipt bytes only and does
+  not fetch protocol secrets
 - TLS certificate and key source files live at `deployment.tls.certificate_path` and `deployment.tls.key_path`
 - when `deployment.tls.self_signed_cert` is `true`, `sbm release` reads those files and inlines their PEM lines into the rendered sing-box JSON
 - use `pixi run sops <your config file>` to edit the encrypted inventory

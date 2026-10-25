@@ -580,21 +580,33 @@ stats off; the separate runtime job tests the custom counter binary.
 Its local unit test mocks all host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
 
-The node/source registry migration runs in the same real-PostgreSQL job because
-`tests/test_control_plane*.py` expands to
-`tests/test_control_plane_node_registry.py`. Its six groups cover the 0005-to-0006
-migration, UUID callback replay, reverse preflight, supplied node/source IDs and
-constraints, credential pair and `PROTECT` behavior, and unchanged
-constraints/Admin labels/HMAC behavior. CI sets `SBM_REQUIRE_POSTGRES=1`; the test
-has no skip, ignore, or deselect path. A focused run is:
+The node/source registry and traffic-ingestion tests run in the same
+real-PostgreSQL job because `tests/test_control_plane*.py` expands to
+`tests/test_control_plane_node_registry.py` and
+`tests/test_control_plane_traffic_ingest.py`. The registry suite covers the
+0005-to-0006 migration, UUID callback replay, reverse preflight, supplied
+node/source IDs and constraints, credential pair and `PROTECT` behavior, and
+unchanged constraints/Admin labels/HMAC behavior. Its historical assertions use
+project-state models; current-model checks migrate to the current graph leaf.
+
+The ingestion suite covers migration/constraints, `bytea` preservation, the
+version matrix, counter regressions, attribution shrink, page rollback and
+receipt coverage, ownership, disabled/retired history, deferred payload
+comparison, nested/autocommit and commit failure, missing-table failure and
+concurrency. The missing-table fixture migrates to the current graph leaf and
+drops only the snapshot table. Concurrency assertions decode every successful
+receipt with the codec and compare exact version/digest pairs. CI sets
+`SBM_REQUIRE_POSTGRES=1`; the wildcard has no skip, ignore, or deselect path.
+Focused runs are:
 
 ```sh
 SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_node_registry.py
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_traffic_ingest.py
 ```
 
-The migration creates no Node/TrafficSource/token rows and leaves existing
-credentials unbound. This is dormant schema evidence, not node registration or
-G2 acceptance.
+The registry migration creates no Node/TrafficSource/token rows and leaves
+existing credentials unbound. The ingestion service is unexposed. This is schema and
+service evidence, not node registration, activation or G2 acceptance.
 
 ## Node-agent feasibility checks
 
@@ -705,9 +717,30 @@ Python oracles, then the separate Go tests and vet. Counter, calendar, codec
 fixture, adapter and production-codec paths trigger both push and PR checks.
 
 The wire codec is cross-language codec evidence only. No production
-`/node/v1/traffic` route, authorization registry, ingestion, persistence,
-exporter, history import or G2 acceptance exists. The isolated G0 transport
-remains in place. See the [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
+`/node/v1/traffic` route, bearer resolver, authorization registry, exporter,
+history import or G2 acceptance exists. The isolated G0 transport remains in
+place. See the [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
+
+### Traffic ingestion checks
+
+The unexposed `control_plane/traffic_ingest.py` service uses the actual codec and
+a top-level durable PostgreSQL transaction. It locks sorted source/credential
+rows scoped to a trusted node UUID, rejects missing, cross-node and unbound
+identities, compares exact versions and digests with deferred payloads, applies
+counter/attribution rules, and returns canonical receipts only after commit.
+Migration `0007_traffic_snapshot` stores exact canonical payloads in `bytea`,
+including NUL/C0/Unicode names that JSONB cannot represent. Normal Django
+managers raise on a missing table; there is no runtime fallback.
+
+The existing control-plane CI wildcard includes
+`tests/test_control_plane_traffic_ingest.py`; no workflow change is needed.
+Focused runs are listed in the registry section above. This is unexposed
+PostgreSQL evidence only: no HTTP/auth route, node/source registration or
+binding, exporter/ack scheduler, local ledger, policy generation, calendar
+inference, retention, history import or G2 acceptance is included. The retained
+G0 transport and legacy SQLite writers remain unchanged. See
+[CONTROL_PLANE.md](CONTROL_PLANE.md#traffic-ingestion-service) and
+[SECRET_HANDLING.md](SECRET_HANDLING.md#where-the-real-secrets-live).
 
 `tests/test_routes.py` uses Django's test client in isolated PostgreSQL processes.
 It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer

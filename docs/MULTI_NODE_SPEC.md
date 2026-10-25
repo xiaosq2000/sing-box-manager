@@ -8,9 +8,13 @@ All commands and interfaces in this document are targets unless identified as ex
 The [roadmap](REFACTOR_SPEC.md#delivery-order) puts M5 and M6 before device management.
 
 Current implementation note (2026-10-25): migration `0006_node_source_registry`
-adds dormant `Node`, `TrafficSource`, and `Credential` identity metadata only. It
-creates no node, source, token, binding, auth/API, ingestion, exporter, or policy
-records, and it does not implement the target contract below.
+adds dormant `Node`, `TrafficSource`, and `Credential` identity metadata only.
+Migration `0007_traffic_snapshot` adds an unexposed `TrafficSnapshot` table and
+`ingest_page` service that validates codec pages, commits snapshots in
+PostgreSQL, and returns receipts after commit. These migrations implement only that local subset; the target
+contract below remains the target. There is no HTTP route, bearer resolver,
+node/source registration or binding, exporter/ack scheduler, local ledger,
+policy generation, calendar inference, retention or history import.
 
 ## 1. Design decisions
 
