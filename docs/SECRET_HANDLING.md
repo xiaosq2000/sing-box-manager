@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-22.
+Checked on 2026-10-25.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -237,6 +237,12 @@ New accounts use subscription links and need no portal password.
 ## Where the real secrets live
 
 - PostgreSQL stores account verifiers and protocol secrets. Inventory user fields are legacy initial-import inputs
+- the dormant node/source schema stores `Node.token_digest`, a non-recoverable
+  lowercase SHA-256 digest, not a raw node credential. Migration 0006 creates no
+  node, source, token, or digest record; a later controlled operation must supply
+  the node installation UUID, local source UUID, and digest. `TrafficSource` has
+  no secret field. `Credential.node` and `Credential.wire_name` are nullable,
+  hidden metadata and stay NULL until binding
 - Django operator permissions are separate from proxy accounts and legacy inventory flags
 - the shared Hysteria2 obfs secret lives under `hysteria2.obfs_password`
 - KiwiVM credentials live under `vps_info.kiwi_veid` and

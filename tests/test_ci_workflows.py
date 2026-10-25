@@ -272,3 +272,28 @@ def test_node_agent_workflow_guard_rejects_workflow_env_suppression() -> None:
     config["env"] = {"PYTEST_ADDOPTS": "--ignore=tests/test_node_traffic_contract.py"}
     with pytest.raises(AssertionError):
         assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+
+
+def test_control_plane_job_runs_node_registry_schema_with_postgres() -> None:
+    config = workflow("ci.yml")
+    job = config["jobs"]["control-plane"]
+    step = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Check PostgreSQL portal and private HTTP lifecycle"
+    )
+    assert step["run"] == (
+        "pixi run -e control-plane-test test tests/test_control_plane*.py "
+        "tests/test_routes.py tests/test_deploy.py tests/test_provision.py "
+        "tests/test_remote_config.py"
+    )
+    assert step["env"] == {"SBM_REQUIRE_POSTGRES": "1"}
+    assert (ROOT / "tests" / "test_control_plane_node_registry.py").is_file()
+    assert "tests/test_control_plane*.py" in step["run"]
+    assert "--ignore" not in step["run"]
+    assert "--deselect" not in step["run"]
+    assert "PYTEST_ADDOPTS" not in step["env"]
+    for key in ("if", "continue-on-error"):
+        assert key not in step
+    for key in ("env", "if", "continue-on-error", "defaults"):
+        assert key not in job
