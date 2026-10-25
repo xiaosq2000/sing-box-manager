@@ -44,6 +44,11 @@ class StrictParser(Parser):
 
 class NodeAuth(HttpBearer):
     def authenticate(self, request, token):
+        # Fixed local fault injection for the isolated reliability fixture only.
+        from django.conf import settings
+
+        if (settings.RUN_DIR / "deny-auth").exists():
+            return None
         if not re.fullmatch(r"[a-f0-9-]{36}\.[a-f0-9]{64}", token):
             return None
         node_id, secret = token.split(".")
@@ -89,6 +94,7 @@ class Status(StrictSchema):
     generation: Version
     config_sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     invocation: Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
+    coverage_gaps: Counter = 0
 
 
 @api.get("/config")
@@ -113,7 +119,8 @@ def status(request, value: Status):
             raise HttpError(409, "generation conflict")
         node.applied_generation = value.generation
         node.invocation = value.invocation
-        node.save(update_fields=["applied_generation", "invocation"])
+        node.coverage_gaps = value.coverage_gaps
+        node.save(update_fields=["applied_generation", "invocation", "coverage_gaps"])
     return {"accepted_generation": value.generation}
 
 

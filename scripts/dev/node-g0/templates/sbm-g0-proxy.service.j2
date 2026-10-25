@@ -1,6 +1,7 @@
 [Unit]
 Description=Disposable G0 sing-box fixture
 ConditionPathExists=/etc/sbm-node-g0-disposable
+ConditionPathExists=/var/lib/sbm-node-g0/current/config.json
 
 [Service]
 Type=simple
@@ -10,3 +11,6 @@ RestartSec=1
 TimeoutStopSec=10
 KillMode=control-group
 UMask=0077
+
+[Install]
+WantedBy=multi-user.target

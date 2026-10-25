@@ -18,6 +18,29 @@ import (
 	"github.com/xiaosq2000/sing-box-manager/node-agent/internal/contract"
 )
 
+func TestMain(m *testing.M) {
+	// The fixture executable stands in for sing-box check, while /proc still proves identity.
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func fixtureStore(t *testing.T, f lifecycleFixture) *accounting.Store {
+	t.Helper()
+	store, err := accounting.Open(filepath.Join(f.state, "traffic.sqlite3"), f.identity.SourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
+}
+
+func inactive(t *testing.T, f lifecycleFixture) {
+	t.Helper()
+	put(t, f.properties, []byte("ActiveState=inactive\nMainPID=0\nInvocationID=\nControlGroup=\n"))
+}
+
 type lifecycleFixture struct {
 	state, engine, properties string
 	identity                  contract.Identity
@@ -63,13 +86,13 @@ func newLifecycleFixture(t *testing.T) lifecycleFixture {
 	receipt := startupReceipt{1, bundle.ConfigSHA256, strings.Repeat("a", 32), os.Getpid()}
 	putJSON(t, filepath.Join(state, "running.json"), receipt)
 	properties := filepath.Join(state, "properties")
-	put(t, properties, []byte(fmt.Sprintf("ActiveState=active\nMainPID=%d\nInvocationID=%s\n", receipt.PID, receipt.Invocation)))
+	put(t, properties, []byte(fmt.Sprintf("ActiveState=active\nMainPID=%d\nInvocationID=%s\nControlGroup=\nSubState=running\n", receipt.PID, receipt.Invocation)))
 	bin := filepath.Join(state, "bin")
 	if err := os.Mkdir(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
 	// The failure path can publish a generation but cannot start an engine.
-	script := "#!/bin/sh\ncase \"$1\" in\nshow) case \"$*\" in *--value*) echo 0;; *) cat \"$SBM_TEST_PROPERTIES\";; esac;;\nstop) : > \"$SBM_TEST_PROPERTIES.stopped\";;\nstart) exit 1;;\n*) exit 1;;\nesac\n"
+	script := "#!/bin/sh\ncase \"$1\" in\nshow) cat \"$SBM_TEST_PROPERTIES\";;\nstop) test \"$SBM_TEST_STOP_FAIL\" != 1 || exit 1; printf 'ActiveState=inactive\\nMainPID=0\\nInvocationID=\\nControlGroup=\\n' > \"$SBM_TEST_PROPERTIES\"; : > \"$SBM_TEST_PROPERTIES.stopped\";;\nstart) : > \"$SBM_TEST_PROPERTIES.started\"; exit 1;;\nreset-failed) exit 0;;\n*) exit 1;;\nesac\n"
 	path := filepath.Join(bin, "systemctl")
 	put(t, path, []byte(script))
 	if err := os.Chmod(path, 0700); err != nil {
@@ -161,7 +184,7 @@ func TestBusyLifecycleDoesNotStopEngineOrPublish(t *testing.T) {
 	defer cancel()
 	candidate := f.bundle
 	candidate.Generation++
-	if err := apply(ctx, f.state, f.engine, "sbm-g0-proxy.service", candidate); err == nil || err.Error() != "lifecycle lock wait expired" {
+	if err := apply(ctx, f.state, f.engine, "sbm-g0-proxy.service", candidate, fixtureStore(t, f)); err == nil || err.Error() != "lifecycle lock wait expired" {
 		t.Fatalf("busy apply: %v", err)
 	}
 	if _, err := os.Stat(f.properties + ".stopped"); !errors.Is(err, os.ErrNotExist) {
@@ -175,6 +198,7 @@ func TestBusyLifecycleDoesNotStopEngineOrPublish(t *testing.T) {
 
 func TestFailedStartupKeepsPublishedPolicyAndRejectsOlderGeneration(t *testing.T) {
 	f := newLifecycleFixture(t)
+	inactive(t, f)
 	engine := filepath.Join(f.state, "engine")
 	put(t, engine, []byte("#!/bin/sh\nexit 0\n"))
 	if err := os.Chmod(engine, 0700); err != nil {

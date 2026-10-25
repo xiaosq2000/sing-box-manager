@@ -11,6 +11,7 @@ class Node(models.Model):
     generation = models.PositiveBigIntegerField(default=1)
     applied_generation = models.PositiveBigIntegerField(default=0)
     invocation = models.CharField(max_length=64, default="")
+    coverage_gaps = models.PositiveBigIntegerField(default=0)
 
 
 class Usage(models.Model):

@@ -67,6 +67,8 @@ def main():
                     "nodes": [
                         {
                             "node_id": str(n.pk),
+                            "source_id": str(n.source_id),
+                            "coverage_gaps": n.coverage_gaps,
                             "generation": n.generation,
                             "applied_generation": n.applied_generation,
                             "invocation": n.invocation,
@@ -75,6 +77,7 @@ def main():
                     ],
                     "usage": [
                         {
+                            "source_id": str(u.node.source_id),
                             "credential_id": str(u.credential_id),
                             "usage_date": str(u.usage_date),
                             "version": u.version,

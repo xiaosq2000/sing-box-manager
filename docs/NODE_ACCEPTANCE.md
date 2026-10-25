@@ -2,16 +2,16 @@
 
 Checked on 2026-10-24.
 
-This page records isolated G0 evidence, not a release or deployment approval.
+This page records isolated G0/G1 evidence, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
-| Gate                         | Status               | Evidence boundary                                                                               |
-| ---------------------------- | -------------------- | ----------------------------------------------------------------------------------------------- |
-| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                               |
-| G1: single-node reliability  | In progress          | Startup subset verified. Counter faults, crash/reboot, final sampling and forward repair remain |
-| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                                           |
-| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                           |
-| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization                       |
+| Gate                         | Status               | Evidence boundary                                                                     |
+| ---------------------------- | -------------------- | ------------------------------------------------------------------------------------- |
+| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                     |
+| G1: single-node reliability  | Accepted with limits | Local VM: final sampling, process crashes, offline reboot, outages and forward repair |
+| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                                 |
+| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                 |
+| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization             |
 
 G0 through G3 do not require per-gate approval. Report blockers rather than treating missing evidence as success.
 Android device acceptance does not block the first release. Mark it unverified until tested.
@@ -49,86 +49,85 @@ The G0 executable is not a production agent and must not enter production releas
 
 ## Accepted limits and required follow-up
 
-G0 is accepted with the four unresolved items below. None blocks recording this limited result.
-All four items remain open. Broader reliability and accounting claims remain unsupported.
+The accepted G0/G1 scope remains one synthetic account, Trojan and UTC-only buckets.
+The following limits do not block that isolated result. They block broader accounting or production claims.
 
-| Item                        | Established facts                                                                                                                               | Unknowns                                                                                     | Required follow-up                                                                                                               |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Counter sampling            | Counter RPC waits at most five seconds. Sampling checks the config receipt, invocation, PID and actual executable before and after the query    | Native delayed/unavailable API behavior and complete transition coverage remain unverified   | G1: native counter faults, crash/reboot and forward repair                                                                       |
-| Shutdown and final sampling | A connection-API error occurred during intentional shutdown. Replacement completed, but the agent takes no final old-invocation sample          | Internal close cause, complete cleanup and any unpolled loss remain unverified               | G1: final collection before ordinary replacement and explicit failure handling. G2: transition coverage and accounting parity    |
-| Optional HTTPS diagnostic   | No supplemental HTTPS diagnostic outcome is retained. The actual G0 flow checks verified HTTPS                                                  | Supplemental probe status and stderr are unavailable                                         | Do not count absent output as success. Any future supplemental probe needs appropriate privilege and a retained outcome          |
-| Retained evidence           | Runtime assertions compare selected database values. The startup subset retains config, invocation, PID and command-line observations privately | Individual responses, both keyed query outputs and accounting completeness remain unverified | G1 evidence: retain response status, body length/hash and both keyed database results privately. G2: independent accuracy checks |
+| Item             | Established facts                                                                                                                 | Remaining boundary                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Counter sampling | A five-second RPC cap, identity checks and real guest delayed/unavailable API checks pass                                         | Four-protocol parity and stream attribution belong to G2                      |
+| Final sampling   | Ordinary replacement commits a final sample before stop. Failure leaves the live engine and pointer unchanged                     | Abrupt termination and the sample-to-stop interval can leave unobserved bytes |
+| Coverage         | Unexpected invocation changes retain a durable gap warning without inventing a lost-byte count                                    | Warnings are not a complete accuracy measurement                              |
+| Evidence         | Private payload status/length/hash and both keyed database snapshots include source, credential, date, version, values and digest | Equal databases can share an upstream undercount                              |
 
-Source boundaries: `node-agent/cmd/sbm-node-g0/main.go` controls the agent cycle.
-`lifecycle.go` in that directory controls locks, config publication, startup and process identity.
-`node-agent/internal/counter/client.go` reduces RPC failures to fixed errors.
-`tests/node_g0/run.py` and `reliability.py` perform runtime assertions and retain evidence privately.
-The Ansible playbook installs the controller CA under root-only permissions.
-
-Successful applied-status reporting follows a successful sample, local commit and traffic upload.
-The fixture waits for that status before each payload transfer.
-This supports recovery from transient startup failures, not a guarantee of complete collection around replacement.
-The connection-API shutdown error and the separate counter-query failures have no established causal link.
-
-The result summary records successful runtime assertions, not an independent re-audit of both databases.
-Equal databases can share an upstream undercount. Application body size does not define the engine's counter boundary.
-HTTP response headers could explain the observed excess download bytes, but their actual contribution is unverified.
-Do not label the difference TLS/network overhead or use it to claim accounting accuracy.
-
-The analysis did not resolve the runtime anomalies. Harness phase diagnostics do not resolve them either.
-G1–G4, complete accounting accuracy, iOS acceptance and two-hour stability remain unverified.
-The hosted KVM run passes the same limited G0 checks. It does not resolve the four runtime and evidence limits.
-Android remains unverified and non-blocking. Failed-start forward repair belongs to G1 without simultaneous credential revocation.
-Keep detailed private review artifacts, run paths, raw logs and identity observations outside public source.
+A supplemental HTTPS diagnostic is not acceptance evidence. The actual config flow verifies HTTPS.
+The connection-API shutdown error has no established causal link to counter-query failures. Its internal cause remains unverified.
+Application body size does not define the engine's counter boundary.
+HTTP response headers could explain excess download bytes, but their contribution is not measured. Do not label it TLS/network overhead.
+G2–G4, complete accounting accuracy, iOS acceptance and two-hour stability remain unverified.
+Android remains unverified and non-blocking. Keep raw logs, identities and run paths outside public source.
 
 ## G1 progress
 
-G1 is in progress, not accepted. The implemented subset covers counter readiness, lifecycle locking and startup identity.
-`counter.Read` uses gRPC `WaitForReady` with a five-second cap. Shorter caller deadlines and cancellation remain effective.
-A terminal service response ends that call without a retry. The agent cycle can collect again later without restarting the engine.
-Fixed deadline, cancellation, unavailable and authorization errors contain no raw RPC text.
+G1 passes locally within the isolated single-node scope. This does not approve production installation or complete M5/M6.
+`counter.Read` waits for transport readiness with a five-second cap. Shorter deadlines and cancellation remain effective.
+Terminal service failures return fixed errors without raw RPC text. A later agent cycle can collect again without restarting a healthy engine.
 
-The disposable agent uses two private file locks:
+The agent uses two private file locks:
 
 - `agent.lock` rejects a second writer before SQLite opens.
-- `lifecycle.lock` serializes config publication, the startup wrapper and sampling. Its wait is limited to ten seconds.
+- `lifecycle.lock` serializes staging, final collection, publication, startup and sampling. Its wait is limited to ten seconds.
 
-The proxy unit starts through `sbm-node-g0 exec`. The wrapper validates the selected config and writes an atomic, private startup receipt.
-`config.json` owns the exact config bytes. Saved bundle metadata omits the embedded config and retains its digest.
-Apply reloads and validates the staged bytes before stopping the old engine. JSON escaping or whitespace changes cannot alter the selected bytes.
-The wrapper executes sing-box with the immutable generation path. The receipt binds generation, config digest, systemd invocation and PID.
-The lifecycle lock closes at exec. Apply releases it before waiting for service startup, so the wrapper can acquire it.
-Sampling checks that receipt against disk, systemd and `/proc/PID/exe` before and after each counter query.
-A changed or unconfirmed identity prevents counter commit and upload. Status upload requires another identity check.
-These checks establish an observed process identity, not permanent health or protection against a compromised root account.
-Published policy remains authoritative after a failed start. A fixture checks that the in-memory cache does not revert to an older generation.
+`config.json` owns the exact bytes. Staged bundle metadata retains their digest without re-encoding the config.
+The startup wrapper validates those bytes and executes the immutable generation path.
+Its atomic receipt binds generation, digest, systemd invocation and PID. Sampling also checks the real `/proc/PID/exe` inode.
+The lock closes at exec. Apply releases it before requesting startup. Unknown live identity prevents automatic mutation.
+These are point-in-time process observations, not permanent health or root-compromise attestation.
 
-Go fixtures cover bounded locks, receipt mismatches, config/path rejection, executable identity, exec-time lock release and failed-start publication.
-Config fixtures preserve literal `&<>` and insignificant whitespace through persistence and exec without changing the selected digest.
-Loopback RPC fixtures cover delayed listeners, persistent unavailability, deadlines, cancellation and sanitized service rejections.
-The counter and lifecycle suites pass ten repeated fixture runs.
+Ordinary replacement commits the old invocation's final sample before stopping it.
+Both MainPID termination and an empty service cgroup are required before publication.
+An accounting completion marker records confirmed termination, not a multi-phase apply journal.
+Unexpected termination retains a durable coverage warning. Committed checkpoints, source identity and usage survive agent restart and OS reboot.
+SQLite, WAL and shared-memory files remain private under an open caller umask.
 
-A local KVM run passes the full G0 flow and the optional `--startup-checks` subset:
+The proxy is enabled at boot and uses only locally committed policy. The agent attempts local recovery before contacting the controller.
+A failed start does not select an older policy. A newer validated generation can repair startup and reset the old systemd failure limit.
+Ordinary recovery respects that limit. A failed start cannot produce successful applied-status evidence.
+Applied status follows a successful sample, accounting commit and traffic upload, and includes the retained gap count.
 
-1. A wrong receipt digest or invocation causes an exact, nonzero agent rejection without replacing the engine.
-2. A real service restart preserves the config digest and reports a new invocation after successful traffic and sampling.
-   The listener check uses a five-second polling budget. Each SSH probe has a fifteen-second timeout and can complete after that budget.
-   Executable identity alone does not establish listener readiness. The payload assertion remains strict.
-3. A held lifecycle lock prevents engine stop and pointer publication. Releasing it permits generation 3 without a startup deadlock.
-4. A second agent fails while the original writer and engine continue.
-5. Real traffic continues, and the selected SQLite/PostgreSQL accounting values agree.
+Go fixtures cover final sample/commit failures, failed stops, identity guards, local-first recovery, coverage replay and private file modes.
+Config fixtures preserve literal `&<>` and insignificant whitespace. Loopback RPC fixtures cover readiness, deadlines, cancellation and safe errors.
+The counter, lifecycle and accounting suites pass ten repeated runs.
 
-Private evidence retains startup observations and exact expected-failure logs. An SSH failure cannot satisfy a negative control.
-This is service-restart evidence, not OS-reboot acceptance. Native counter faults, crash/reboot recovery, final sampling and forward repair remain pending.
-The proxy unit is not enabled for boot. Ordinary replacement still takes no final old-invocation sample.
-G1 adds no production route, account migration, release or deployment.
+The local KVM `--g1-checks` run includes G0 and the startup subset, then verifies:
 
-[PR #50](https://github.com/xiaosq2000/sing-box-manager/pull/50) contains this subset.
-Independent `openai-codex/gpt-6-astra:high` review confirms the config-byte and listener-readiness fixes at `520424e`.
-All five applicable hosted checks pass for that code: [general CI](https://github.com/xiaosq2000/sing-box-manager/actions/runs/40078936399)
-and the [native node check](https://github.com/xiaosq2000/sing-box-manager/actions/runs/40078936548).
-Fixtures distinguish the listener polling budget from a strict wall-clock deadline, including a late successful SSH probe.
-These results do not establish the remaining G1 requirements.
+| Fault or transition                             | Required observation                                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Wrong receipt, lock contention, duplicate agent | Exact rejection without replacing the working process or pointer                                     |
+| Delayed/unavailable counter API                 | Recovery within the RPC bound, or rejection without committing a sample                              |
+| Failed final sample                             | No stop or publication. After API recovery, the old final counters commit before replacement         |
+| Invalid config                                  | The current working process and pointer remain unchanged                                             |
+| MainPID exits but a cgroup child survives       | Publication is refused until the service is empty                                                    |
+| Config passes check but fails at runtime        | The failed generation remains selected. A higher generation restores service without false success   |
+| HTTPS, PostgreSQL or authentication outage      | Proxy traffic and local collection continue. Upload converges after recovery                         |
+| Agent SIGKILL                                   | Automatic restart does not restart the proxy or duplicate committed usage                            |
+| Engine SIGKILL                                  | Service recovers and accounting reports the uncertain old tail                                       |
+| Agent SIGKILL before pointer publication        | Offline recovery uses the old durable pointer                                                        |
+| Agent SIGKILL after publication                 | Recovery uses the new pointer without replaying old policy                                           |
+| Guest OS reboot with controller offline         | Boot ID and engine invocation change. Generation, source and committed checkpoints remain consistent |
+
+Private JSON retains the two keyed database results, process observations and boot IDs. Payload records retain response status, length and SHA-256.
+Expected failures require exit code 1 and an exact fixed agent error. SSH failure cannot satisfy a negative control.
+Runtime-start faults allow only named fixed startup/sampling errors and require systemd evidence that the engine actually failed.
+Listener checks use a five-second polling budget. Each SSH probe has a fifteen-second timeout and can complete after that budget.
+The payload assertion remains strict.
+
+Crash-boundary tests inject agent process loss through guest-only systemd hooks. The reboot test performs a real guest OS reboot.
+They do not establish abrupt VM/host power-loss durability, storage-device fault recovery or lossless accounting.
+The single-entry roster, UTC calendar and absent connection-stream collector remain fixture limits. G2 supplies accounting and migration parity.
+Stop/suspend policy, complete adoption and the production node contract remain target M5/M6 behavior, not G1 fixture features.
+
+The workflow runs `--g1-checks`. Hosted evidence in [PR #50](https://github.com/xiaosq2000/sing-box-manager/pull/50) covers the merged startup subset only.
+The local G1 changes need their own exact-head hosted checks before a future merge. No push, release, deployment or migration is part of this local result.
 
 ## Reproduce
 
@@ -158,9 +157,10 @@ SBM_NODE_G0=1 pixi run -e node-g0 python scripts/dev/node-g0/run.py \
   --engine .cache/sing-box-manager/server/sing-box
 ```
 
-Add `--startup-checks` to run the implemented G1 subset after G0. The dedicated workflow uses this option.
-The result records `startup_subset` separately and does not mark G1 accepted.
-The native restart changes only the disposable proxy service, not the guest OS or host services.
+Add `--startup-checks` for the startup subset, or `--g1-checks` for the complete isolated G1 checks.
+The latter includes the startup subset and a real guest OS reboot. The workflow uses `--g1-checks`.
+`result.json` records gate `G1` only after every required G1 scenario passes.
+The guest requires cgroup v2 and iptables. Counter faults affect only its loopback listener. No host firewall or service changes occur.
 
 The runner requires QEMU, OpenSSH server/client, OpenBSD netcat and OpenSSL on the host.
 The basic QMP probe checks KVM startup with the fixture CPU, memory and vCPU settings, otherwise it selects TCG.

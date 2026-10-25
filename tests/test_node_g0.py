@@ -119,6 +119,14 @@ bad['HTTP_AUTHORIZATION'] = bad['HTTP_AUTHORIZATION'][:-1] + ('0' if bad['HTTP_A
 assert client.get('/node-g0/v1/config', **bad).status_code == 401
 body = json.loads(response.content)
 assert hashlib.sha256(canonical(body['config'])).hexdigest() == body['config_sha256']
+from django.conf import settings
+fault = settings.RUN_DIR / 'deny-auth'
+fault.write_text('synthetic authorization outage')
+try:
+    assert client.get('/node-g0/v1/config', **headers).status_code == 401
+finally:
+    fault.rename(settings.RUN_DIR / 'deny-auth.aside')
+assert client.get('/node-g0/v1/config', **headers).status_code == 200
 """,
     )
 
@@ -160,6 +168,11 @@ body = {'generation': node.generation, 'config_sha256': node.bundle['config_sha2
 def post(value):
     return client.post('/node-g0/v1/status', data=canonical(value), content_type='application/json', **headers)
 assert post(body).status_code == 200
+assert post(dict(body, coverage_gaps=2)).status_code == 200
+node.refresh_from_db()
+assert node.coverage_gaps == 2
+for invalid in (-1, True, 2**63):
+    assert post(dict(body, coverage_gaps=invalid)).status_code == 422
 assert post(dict(body, generation=2)).status_code == 409
 assert post(dict(body, extra='invalid')).status_code == 422
 assert client.post('/node-g0/v1/status', data='{"generation":1,"generation":2}', content_type='application/json', **headers).status_code == 400

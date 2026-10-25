@@ -17,13 +17,12 @@ def python(guest, source):
 
 def reject_once(guest, log, message):
     """Require the agent's exact failure, not an SSH or harness failure."""
+    messages = (message,) if isinstance(message, str) else message
+    expected = {f"G0 failed: {item}\n".encode() for item in messages}
     try:
         guest(ONCE, log=log)
     except RuntimeError as error:
-        if (
-            getattr(error, "returncode", None) == 1
-            and log.read_bytes() == f"G0 failed: {message}\n".encode()
-        ):
+        if getattr(error, "returncode", None) == 1 and log.read_bytes() in expected:
             return
         raise RuntimeError("startup negative control failed unexpectedly") from None
     raise RuntimeError("startup negative control accepted invalid state")

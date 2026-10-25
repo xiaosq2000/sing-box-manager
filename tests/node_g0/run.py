@@ -28,6 +28,7 @@ from pathlib import Path
 
 import yaml
 
+from tests.node_g0.g1 import reliability_checks
 from tests.node_g0.reliability import startup_checks
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -91,6 +92,7 @@ PHASES = {
     "next-generation",
     "second-traffic",
     "startup-checks",
+    "reliability-checks",
     "accounting",
     "result",
 }
@@ -345,11 +347,18 @@ def main():
         "--startup-checks", action="store_true", help="also run the G1 startup subset"
     )
     parser.add_argument(
+        "--g1-checks",
+        action="store_true",
+        help="also run single-node failure and recovery checks",
+    )
+    parser.add_argument(
         "--image",
         type=Path,
         default=Path.home() / ".cache/sbc-tun-e2e/noble-server-cloudimg-amd64.img",
     )
     args = parser.parse_args()
+    if args.g1_checks:
+        args.startup_checks = True
     if os.environ.get("SBM_NODE_G0") != "1" or os.geteuid() == 0:
         parser.error("set SBM_NODE_G0=1 and run as an unprivileged account")
     for tool in (
@@ -402,7 +411,7 @@ def main():
     def start(argv, name, *, process_env=env):
         if name not in PROCESS_NAMES:
             raise ValueError("invalid fixture process name")
-        file = (root / f"{name}.log").open("wb")
+        file = (root / f"{name}.log").open("ab")
         streams.append(file)
         process = subprocess.Popen(
             argv, cwd=ROOT, env=process_env, stdout=file, stderr=subprocess.STDOUT
@@ -416,6 +425,35 @@ def main():
             env=env,
             stdin=stdin,
         )
+
+    def controller(up):
+        process = processes["https"]
+        if not up:
+            process.terminate()
+            process.wait(timeout=15)
+        elif process.poll() is not None:
+            start([sys.executable, "-m", "tests.node_g0.control", "serve"], "https")
+            wait(lambda: reachable(https_port))
+
+    def database(up):
+        nonlocal pg_started
+        if up:
+            run(
+                [
+                    "pg_ctl",
+                    "-D",
+                    str(root / "pgdata"),
+                    "-l",
+                    str(root / "postgres.log"),
+                    "-w",
+                    "-o",
+                    f"-k {socket_dir} -h '' -p 5432",
+                    "start",
+                ]
+            )
+        else:
+            run(["pg_ctl", "-D", str(root / "pgdata"), "-m", "immediate", "-w", "stop"])
+        pg_started = up
 
     try:
         diagnostics.phase("build")
@@ -608,15 +646,13 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                     "permissions": "0600",
                     "content": target_script,
                 },
+                {
+                    "path": "/etc/systemd/system/sbm-g0-target.service",
+                    "permissions": "0644",
+                    "content": "[Unit]\nDescription=Disposable HTTP fixture target\nConditionPathExists=/etc/sbm-node-g0-disposable\n[Service]\nExecStart=/usr/bin/python3 /opt/g0-target.py\nRestart=on-failure\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n",
+                },
             ],
-            "runcmd": [
-                [
-                    "systemd-run",
-                    "--unit=sbm-g0-target",
-                    "/usr/bin/python3",
-                    "/opt/g0-target.py",
-                ]
-            ],
+            "runcmd": [["systemctl", "enable", "--now", "sbm-g0-target.service"]],
         }
         seed_data = {
             "/user-data": b"#cloud-config\n" + canonical(cloud),
@@ -677,8 +713,9 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             f"file:{root}/serial.log",
             "-monitor",
             "none",
-            "-no-reboot",
         ]
+        if not args.g1_checks:
+            machine_options.append("-no-reboot")
         accel = (
             run(
                 [sys.executable, str(ROOT / "scripts/dev/tun-vm/select-accel.py")],
@@ -821,6 +858,17 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                 connection.request("GET", "http://127.0.0.1:18080/g0")
                 response = connection.getresponse()
                 body = response.read()
+                with (root / "payloads.jsonl").open("ab") as evidence:
+                    evidence.write(
+                        canonical(
+                            {
+                                "status": response.status,
+                                "body_length": len(body),
+                                "body_sha256": hashlib.sha256(body).hexdigest(),
+                            }
+                        )
+                        + b"\n"
+                    )
                 if response.status != 200 or body != b"G0-fixture-" * 8192:
                     raise RuntimeError("proxy payload mismatch")
                 return len(body)
@@ -872,6 +920,28 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                     >= first_bytes + second_bytes + extra_bytes
                 )
             )
+        g1_results = []
+        if args.g1_checks:
+            diagnostics.phase("reliability-checks")
+            added, g1_results = reliability_checks(
+                guest=guest,
+                root=root,
+                wait=wait,
+                write=write,
+                control=control,
+                report=report,
+                fetch=fetch,
+                bundle=lambda generation: engine_bundle(password, generation),
+                controller=controller,
+                database=database,
+            )
+            extra_bytes += added
+            wait(
+                lambda: (
+                    report()["usage"][0]["download"]
+                    >= first_bytes + second_bytes + extra_bytes
+                )
+            )
         diagnostics.phase("accounting")
         # Wait for the final observed counters, then compare exact durable buckets.
         time.sleep(3)
@@ -889,7 +959,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             raise RuntimeError("local and central durable accounting differ")
         diagnostics.phase("result")
         result = {
-            "gate": "G0",
+            "gate": "G1" if args.g1_checks else "G0",
             "result": "PASS",
             "commit": run(["git", "rev-parse", "HEAD"]).decode().strip(),
             "dirty_tree": bool(run(["git", "status", "--porcelain"]).strip()),
@@ -905,6 +975,7 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
                 "repeat install without engine restart",
                 "generation 2 application and traffic",
                 *startup_results,
+                *g1_results,
             ],
             "startup_subset": "PASS" if args.startup_checks else "not run",
             "accounting": {
@@ -915,7 +986,9 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "limits": [
                 "controller runs as isolated host subprocesses, node runs in a VM",
                 "one synthetic account and Trojan only",
-                "full G1 crash/reboot, final sampling and forward-repair acceptance is not established",
+                "G1 process loss and guest reboot checks only; host power-loss and storage-device faults are not established"
+                if args.g1_checks
+                else "full G1 crash/reboot, final sampling and forward-repair acceptance is not established",
                 "no production command, account migration, client release or public-network acceptance",
             ],
         }
@@ -924,7 +997,11 @@ HTTPServer(('127.0.0.1',18080),Handler).serve_forever()
             "G0 PASS: SSH/Ansible -> HTTPS -> real Trojan -> SQLite -> PostgreSQL",
             flush=True,
         )
-        if args.startup_checks:
+        if args.g1_checks:
+            print(
+                "G1 PASS: isolated single-node failure and recovery checks", flush=True
+            )
+        elif args.startup_checks:
             print("G1 startup subset PASS; full G1 remains unaccepted", flush=True)
     except Exception as error:
         diagnostics.failure(error, processes)
