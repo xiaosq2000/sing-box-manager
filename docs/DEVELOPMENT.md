@@ -580,6 +580,22 @@ stats off; the separate runtime job tests the custom counter binary.
 Its local unit test mocks all host commands. Do not run the native script on an operator machine or VPS.
 See [the operator guide](CONTROL_PLANE.md).
 
+The node/source registry migration runs in the same real-PostgreSQL job because
+`tests/test_control_plane*.py` expands to
+`tests/test_control_plane_node_registry.py`. Its six groups cover the 0005-to-0006
+migration, UUID callback replay, reverse preflight, supplied node/source IDs and
+constraints, credential pair and `PROTECT` behavior, and unchanged
+constraints/Admin labels/HMAC behavior. CI sets `SBM_REQUIRE_POSTGRES=1`; the test
+has no skip, ignore, or deselect path. A focused run is:
+
+```sh
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_node_registry.py
+```
+
+The migration creates no Node/TrafficSource/token rows and leaves existing
+credentials unbound. This is dormant schema evidence, not node registration or
+G2 acceptance.
+
 ## Node-agent feasibility checks
 
 The opt-in `node-g0` environment adds pinned Ansible tooling and PostgreSQL for the

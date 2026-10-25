@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import uuid
 from typing import ClassVar
 
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
 from sing_box_manager.settings import (
     SUPPORTED_PROTOCOLS,
@@ -57,6 +60,63 @@ class Account(models.Model):
                 raise ValidationError({"portal_password_hash": str(exc)}) from exc
 
 
+class Node(models.Model):
+    """Node identity metadata supplied by the node installer."""
+
+    # The node installation supplies this ID. Dormant until an explicit
+    # registration operation supplies it, so the database never invents one.
+    id = models.UUIDField(primary_key=True, editable=False)
+    slug = models.SlugField(max_length=64, unique=True)
+    name = models.CharField(max_length=128)
+    token_digest = models.CharField(
+        max_length=64,
+        unique=True,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$", "Must be lowercase hex.")],
+    )
+    token_updated_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.CheckConstraint(
+                condition=~models.Q(slug=""), name="node_slug_not_empty"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(("token_digest__regex", r"^[0-9a-f]{64}$")),
+                name="node_token_digest_lower_hex",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return str(self.slug)
+
+
+class TrafficSource(models.Model):
+    """One registered local accounting source for a node."""
+
+    # The node installation supplies this ID; the central schema never
+    # generates one or creates a placeholder source.
+    id = models.UUIDField(primary_key=True, editable=False)
+    node = models.ForeignKey(
+        Node, on_delete=models.PROTECT, related_name="traffic_sources"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    retired_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["node"],
+                condition=models.Q(retired_at__isnull=True),
+                name="unique_active_traffic_source",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.node} ({self.id})"
+
+
 class Credential(models.Model):
     """Per-protocol proxy credential for an account."""
 
@@ -73,6 +133,20 @@ class Credential(models.Model):
     protocol = models.CharField(max_length=16, choices=PROTOCOL_CHOICES)
     secret = models.CharField(max_length=255)
     enabled = models.BooleanField(default=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    node = models.ForeignKey(
+        Node,
+        on_delete=models.PROTECT,
+        related_name="credentials",
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    # NULL wire_name marks an unbound credential. The pair constraint
+    # requires a non-empty label whenever node is set.
+    wire_name = models.CharField(  # noqa: DJ001
+        max_length=128, null=True, blank=True, editable=False
+    )
     objects = models.Manager()
 
     class Meta:
@@ -85,6 +159,17 @@ class Credential(models.Model):
                 fields=["secret"],
                 condition=models.Q(protocol="snell"),
                 name="unique_snell_userkey",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(node__isnull=True, wire_name__isnull=True)
+                    | (
+                        models.Q(node__isnull=False)
+                        & models.Q(wire_name__isnull=False)
+                        & ~models.Q(wire_name="")
+                    )
+                ),
+                name="credential_node_wire_pair",
             ),
         ]
 

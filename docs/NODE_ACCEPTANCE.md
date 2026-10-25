@@ -156,6 +156,28 @@ pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
 pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
 ```
 
+### Dormant node/source schema
+
+Migration `0006_node_source_registry` adds dormant identity metadata only. Six
+real-PostgreSQL test groups cover the 0005-to-0006 migration, UUID callback
+replay, reverse preflight, supplied node/source IDs and constraints, credential
+pair and `PROTECT` behavior, and unchanged constraints/Admin labels/HMAC
+behavior. The migration creates zero Node/TrafficSource/token records; existing
+credentials keep NULL `node` and `wire_name`. Neither `Node` nor `TrafficSource`
+is Admin-registered; `TrafficSource.node` and `Credential.node` use `PROTECT` to
+block deleting a referenced `Node`, not child-row deletion.
+
+No binding, tombstone, retirement, re-enable, pending-target, auth-registry, API,
+ingestion, exporter, source-quarantine, or production-acceptance behavior exists.
+The reverse test proves Django preflight failure before reverse DDL, not executed
+DDL rollback. Later policy must close direct model writes, create serialized
+policy generations and removal targets, and define tombstone and pending-revocation
+behavior before binding. Consumers must port to node scope before node-scoped
+uniqueness or non-NULL binding replaces the current global constraints. The
+unbound path is temporary and must be removed, not retained as a fallback. G2
+remains in progress; no source timezone or retention changes, and inactive
+metadata does not retire G0, legacy transport, or SQLite.
+
 ### Calendar arithmetic
 
 Go `accounting.Calendar` resolves an explicit instant under a configured time zone

@@ -11,18 +11,18 @@ Existing proxy credentials, subscription tokens, and signed download contracts r
 
 ## Layout
 
-| Component      | Location or behavior                                                                    |
-| -------------- | --------------------------------------------------------------------------------------- |
-| Django         | `sing_box_manager/control_plane/`, served by Gunicorn                                   |
-| Admin          | `http://127.0.0.1:47071/admin/`, through an SSH tunnel (returns 404 off loopback)       |
-| Subscriptions  | `/sub/<token>` (`sbc` & mobile), `/sub/<token>/` (browser page), `/sub/<token>/files/…` |
-| Installers     | `/install.sh`, `/install/linux.sh`, `/install/macos.sh`, `/install.ps1`                 |
-| Readiness      | `/health/`; checks database access, migrations, and admin/portal static assets          |
-| Service        | `sing-box-manager-control-plane.service`, running as `sbm`                              |
-| Database       | OS-managed PostgreSQL 14 or later; database `sbm_control_plane`                         |
-| Database login | Local Unix socket, role `sbm`, peer authentication                                      |
-| Static files   | Root-owned `config/generated/control-plane-static/`                                     |
-| Models         | `User` (operators), `Account` (proxy users), `Credential` (protocol secrets)            |
+| Component      | Location or behavior                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Django         | `sing_box_manager/control_plane/`, served by Gunicorn                                                                          |
+| Admin          | `http://127.0.0.1:47071/admin/`, through an SSH tunnel (returns 404 off loopback)                                              |
+| Subscriptions  | `/sub/<token>` (`sbc` & mobile), `/sub/<token>/` (browser page), `/sub/<token>/files/…`                                        |
+| Installers     | `/install.sh`, `/install/linux.sh`, `/install/macos.sh`, `/install.ps1`                                                        |
+| Readiness      | `/health/`; checks database access, migrations, and admin/portal static assets                                                 |
+| Service        | `sing-box-manager-control-plane.service`, running as `sbm`                                                                     |
+| Database       | OS-managed PostgreSQL 14 or later; database `sbm_control_plane`                                                                |
+| Database login | Local Unix socket, role `sbm`, peer authentication                                                                             |
+| Static files   | Root-owned `config/generated/control-plane-static/`                                                                            |
+| Models         | `User` (operators), `Account` (proxy users), `Credential` (protocol secrets), dormant `Node`/`TrafficSource` identity metadata |
 
 Peer authentication uses the operating-system account (`sbm`) to identify a database
 client. No database password is needed. The database role has no superuser,
@@ -224,6 +224,45 @@ Non-authoritative mode continues to read inventory users. Usage history remains 
 Deployment checks traffic collection after the final node sync.
 
 ## Schema upgrade
+
+Migration `0006_node_source_registry` adds dormant node/source identity metadata.
+It creates empty `Node` and `TrafficSource` tables and adds `Credential.uuid`,
+`Credential.node`, and `Credential.wire_name`. It creates no node, source, token,
+digest, or binding record and generates no installation ID. A later controlled
+operation must supply the node installation UUID, local source UUID, and token
+digest.
+
+The schema records:
+
+- `Node.id` and `TrafficSource.id` are explicit UUID primary keys with no generator.
+- `Node.slug` is unique and non-empty; `Node.token_digest` is a unique lowercase
+  64-hex digest. Neither `Node` nor `TrafficSource` is registered in Admin.
+- `TrafficSource.node` and `Credential.node` use `PROTECT`, blocking deletion of a
+  referenced `Node`; child `TrafficSource` and `Credential` deletion is not
+  protected. At most one non-retired source may exist per node. `retired_at` is
+  metadata only; no retirement workflow exists.
+- `Credential.uuid` is unique, non-null, and generated per row. `Credential.node`
+  and `wire_name` are nullable, hidden, non-editable metadata. Both stay NULL
+  until binding; the pair constraint requires a non-empty wire name whenever a
+  node is assigned.
+- Existing account/protocol and Snell uniqueness, `Credential.account` CASCADE,
+  the Admin credential inline, imports, and subscription behavior are unchanged.
+
+The migration allocates UUIDs only for existing credentials and preserves every
+assigned UUID on callback replay. Reverse migration raises Django's
+`IrreversibleError` during preflight before reverse DDL; this is not a tested
+executed-DDL rollback.
+
+This is dormant schema only. It adds no tombstone, retirement, re-enable,
+pending-target, immutable-operator-write, authentication, ingestion, exporter,
+source-quarantine, API, or production-acceptance behavior. Later policy must
+close direct model writes, create serialized policy generations and removal
+targets, and define tombstone and pending-revocation behavior before binding.
+Consumer lookups must become node-scoped before node-scoped uniqueness or non-NULL
+binding replaces the current global constraints. The unbound path is a temporary
+migration state and must be removed, not retained as a fallback. No source
+timezone, retention, G0, legacy transport, or SQLite behavior changes. G2 remains
+in progress.
 
 Migration `0005_snell` adds the Snell credential choice and a unique userkey
 constraint. It does not populate accounts. Use the explicit

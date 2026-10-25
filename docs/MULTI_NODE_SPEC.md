@@ -1,11 +1,16 @@
 # Node agent and multi-node specification
 
-Checked on 2026-10-23.
+Checked on 2026-10-25.
 
 Status: target contract for M5/M6, not production authorization.
 The [acceptance record](NODE_ACCEPTANCE.md) separates isolated G0/G1 evidence from pending product behavior.
 All commands and interfaces in this document are targets unless identified as existing.
 The [roadmap](REFACTOR_SPEC.md#delivery-order) puts M5 and M6 before device management.
+
+Current implementation note (2026-10-25): migration `0006_node_source_registry`
+adds dormant `Node`, `TrafficSource`, and `Credential` identity metadata only. It
+creates no node, source, token, binding, auth/API, ingestion, exporter, or policy
+records, and it does not implement the target contract below.
 
 ## 1. Design decisions
 
