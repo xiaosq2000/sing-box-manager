@@ -1,6 +1,6 @@
 {
-  "schema": 1,
-  "description": "Shared synthetic counter-ledger cases for the legacy Python TrafficStatsStore and the target Go accounting.Store. Account names, protocol labels and credential IDs are fixtures, not native protocol acceptance. Ledger keys are '<usage_date>|<account>|<protocol>' and values are [upload, download].",
+  "schema": 2,
+  "description": "Shared synthetic counter-ledger cases for the legacy Python TrafficStatsStore and the target Go accounting.Store. Account names, protocol labels and credential IDs are fixtures, not native protocol acceptance. Ledger keys are '<usage_date>|<account>|<protocol>' and values are [upload, download]. Go rejections name exact protocol credential IDs for each rejected sample.",
   "source_id": "source-synthetic-g2-counter-parity",
   "protocols": ["trojan", "hysteria2", "naive", "snell"],
   "accounts": {
@@ -114,8 +114,8 @@
             "2026-05-01|synthetic-bravo|naive": 3,
             "2026-05-01|synthetic-bravo|snell": 3
           },
-          "rejected_samples": [],
-          "gap_count": 0
+          "gap_count": 0,
+          "rejected": []
         }
       }
     },
@@ -215,8 +215,8 @@
             "2026-05-01|synthetic-bravo|naive": 1,
             "2026-05-01|synthetic-bravo|snell": 1
           },
-          "rejected_samples": [],
-          "gap_count": 0
+          "gap_count": 0,
+          "rejected": []
         }
       }
     },
@@ -321,8 +321,8 @@
             "2026-05-02|synthetic-bravo|naive": 1,
             "2026-05-02|synthetic-bravo|snell": 1
           },
-          "rejected_samples": [],
-          "gap_count": 0
+          "gap_count": 0,
+          "rejected": []
         }
       }
     },
@@ -442,8 +442,8 @@
             "2026-05-03|synthetic-bravo|naive": 4,
             "2026-05-03|synthetic-bravo|snell": 4
           },
-          "rejected_samples": [],
-          "gap_count": 0
+          "gap_count": 0,
+          "rejected": []
         }
       }
     },
@@ -545,8 +545,8 @@
             "2026-05-04|synthetic-bravo|naive": 2,
             "2026-05-04|synthetic-bravo|snell": 2
           },
-          "rejected_samples": [],
-          "gap_count": 0
+          "gap_count": 0,
+          "rejected": []
         }
       }
     },
@@ -646,11 +646,455 @@
             "2026-05-05|synthetic-bravo|naive": 2,
             "2026-05-05|synthetic-bravo|snell": 2
           },
-          "rejected_samples": [1],
+          "gap_count": 0,
+          "rejected": [
+            {
+              "sample": 1,
+              "credentials": [
+                "cred-synthetic-a1",
+                "cred-synthetic-a2",
+                "cred-synthetic-a3",
+                "cred-synthetic-a4",
+                "cred-synthetic-b1",
+                "cred-synthetic-b2",
+                "cred-synthetic-b3",
+                "cred-synthetic-b4"
+              ]
+            }
+          ]
+        }
+      },
+      "divergence": "Intentional contract difference in this slice. Legacy Python resets upload and download independently: a decrease in either component records that component's whole observed value while the other component is diffed normally, so its daily ledger includes the regressed sample. The Go target requires explicit invocation identity and rejects the whole credential observation when either component regresses within one invocation, retaining the last checkpoint, so sample index 1 is rejected and does not change usage or version. This case regresses both components for every credential. Separate cases cover upload-only, download-only and partial-credential regressions. Production Python collector behavior is unchanged."
+    },
+    {
+      "name": "utc-midnight-unchanged-counters-diverges",
+      "description": "Identical cumulative counters immediately after UTC midnight. Python writes zero-valued new-day rows; Go writes no new-day rows. No later increment hides either shape.",
+      "samples": [
+        {
+          "at": "2026-05-06T23:55:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [100, 200],
+              "hysteria2": [110, 210],
+              "naive": [120, 220],
+              "snell": [130, 230]
+            },
+            "synthetic-bravo": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1010, 2010],
+              "naive": [1020, 2020],
+              "snell": [1030, 2030]
+            }
+          }
+        },
+        {
+          "at": "2026-05-07T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 700,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [100, 200],
+              "hysteria2": [110, 210],
+              "naive": [120, 220],
+              "snell": [130, 230]
+            },
+            "synthetic-bravo": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1010, 2010],
+              "naive": [1020, 2020],
+              "snell": [1030, 2030]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-06|synthetic-alpha|trojan": [100, 200],
+            "2026-05-06|synthetic-alpha|hysteria2": [110, 210],
+            "2026-05-06|synthetic-alpha|naive": [120, 220],
+            "2026-05-06|synthetic-alpha|snell": [130, 230],
+            "2026-05-06|synthetic-bravo|trojan": [1000, 2000],
+            "2026-05-06|synthetic-bravo|hysteria2": [1010, 2010],
+            "2026-05-06|synthetic-bravo|naive": [1020, 2020],
+            "2026-05-06|synthetic-bravo|snell": [1030, 2030],
+            "2026-05-07|synthetic-alpha|trojan": [0, 0],
+            "2026-05-07|synthetic-alpha|hysteria2": [0, 0],
+            "2026-05-07|synthetic-alpha|naive": [0, 0],
+            "2026-05-07|synthetic-alpha|snell": [0, 0],
+            "2026-05-07|synthetic-bravo|trojan": [0, 0],
+            "2026-05-07|synthetic-bravo|hysteria2": [0, 0],
+            "2026-05-07|synthetic-bravo|naive": [0, 0],
+            "2026-05-07|synthetic-bravo|snell": [0, 0]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-06|synthetic-alpha|trojan": [100, 200],
+            "2026-05-06|synthetic-alpha|hysteria2": [110, 210],
+            "2026-05-06|synthetic-alpha|naive": [120, 220],
+            "2026-05-06|synthetic-alpha|snell": [130, 230],
+            "2026-05-06|synthetic-bravo|trojan": [1000, 2000],
+            "2026-05-06|synthetic-bravo|hysteria2": [1010, 2010],
+            "2026-05-06|synthetic-bravo|naive": [1020, 2020],
+            "2026-05-06|synthetic-bravo|snell": [1030, 2030]
+          },
+          "versions": {
+            "2026-05-06|synthetic-alpha|trojan": 1,
+            "2026-05-06|synthetic-alpha|hysteria2": 1,
+            "2026-05-06|synthetic-alpha|naive": 1,
+            "2026-05-06|synthetic-alpha|snell": 1,
+            "2026-05-06|synthetic-bravo|trojan": 1,
+            "2026-05-06|synthetic-bravo|hysteria2": 1,
+            "2026-05-06|synthetic-bravo|naive": 1,
+            "2026-05-06|synthetic-bravo|snell": 1
+          },
+          "rejected": [],
           "gap_count": 0
         }
       },
-      "divergence": "Intentional contract difference in this slice. Legacy Python resets upload and download independently: a decrease in either component records that component's whole observed value while the other component is diffed normally, so its daily ledger includes the regressed sample. The Go target requires explicit invocation identity and rejects the whole credential observation when either component regresses within one invocation, retaining the last checkpoint, so sample index 1 is rejected and does not change usage or version. This case regresses both components for every credential; one-component and partial-credential regressions are follow-up fixture gaps. Production Python collector behavior is unchanged."
+      "divergence": "Intentional row-shape difference in this slice. Legacy Python inserts a zero-valued daily row for every credential on the new UTC day even when both components are unchanged. The Go target writes no new-day row when the delta is zero. The fixture asserts the zero rows and the absent rows as observed; neither adapter normalizes a missing row to zero. Sample index 1 is not a rejection and changes no Go version. Production Python collector behavior is unchanged."
+    },
+    {
+      "name": "upload-only-regression-diverges",
+      "description": "Only upload regresses within one invocation; download stays unchanged. Python resets upload and leaves download alone. Go rejects every credential observation.",
+      "samples": [
+        {
+          "at": "2026-05-08T00:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1100, 2100],
+              "naive": [1200, 2200],
+              "snell": [1300, 2300]
+            },
+            "synthetic-bravo": {
+              "trojan": [4000, 5000],
+              "hysteria2": [4100, 5100],
+              "naive": [4200, 5200],
+              "snell": [4300, 5300]
+            }
+          }
+        },
+        {
+          "at": "2026-05-08T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 200,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [950, 2000],
+              "hysteria2": [1050, 2100],
+              "naive": [1150, 2200],
+              "snell": [1250, 2300]
+            },
+            "synthetic-bravo": {
+              "trojan": [3900, 5000],
+              "hysteria2": [4000, 5100],
+              "naive": [4100, 5200],
+              "snell": [4200, 5300]
+            }
+          }
+        },
+        {
+          "at": "2026-05-08T00:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 300,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1150, 2150],
+              "hysteria2": [1250, 2250],
+              "naive": [1350, 2350],
+              "snell": [1450, 2450]
+            },
+            "synthetic-bravo": {
+              "trojan": [4100, 5200],
+              "hysteria2": [4200, 5300],
+              "naive": [4300, 5400],
+              "snell": [4400, 5500]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-08|synthetic-alpha|trojan": [2150, 2150],
+            "2026-05-08|synthetic-alpha|hysteria2": [2350, 2250],
+            "2026-05-08|synthetic-alpha|naive": [2550, 2350],
+            "2026-05-08|synthetic-alpha|snell": [2750, 2450],
+            "2026-05-08|synthetic-bravo|trojan": [8100, 5200],
+            "2026-05-08|synthetic-bravo|hysteria2": [8300, 5300],
+            "2026-05-08|synthetic-bravo|naive": [8500, 5400],
+            "2026-05-08|synthetic-bravo|snell": [8700, 5500]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-08|synthetic-alpha|trojan": [1150, 2150],
+            "2026-05-08|synthetic-alpha|hysteria2": [1250, 2250],
+            "2026-05-08|synthetic-alpha|naive": [1350, 2350],
+            "2026-05-08|synthetic-alpha|snell": [1450, 2450],
+            "2026-05-08|synthetic-bravo|trojan": [4100, 5200],
+            "2026-05-08|synthetic-bravo|hysteria2": [4200, 5300],
+            "2026-05-08|synthetic-bravo|naive": [4300, 5400],
+            "2026-05-08|synthetic-bravo|snell": [4400, 5500]
+          },
+          "versions": {
+            "2026-05-08|synthetic-alpha|trojan": 2,
+            "2026-05-08|synthetic-alpha|hysteria2": 2,
+            "2026-05-08|synthetic-alpha|naive": 2,
+            "2026-05-08|synthetic-alpha|snell": 2,
+            "2026-05-08|synthetic-bravo|trojan": 2,
+            "2026-05-08|synthetic-bravo|hysteria2": 2,
+            "2026-05-08|synthetic-bravo|naive": 2,
+            "2026-05-08|synthetic-bravo|snell": 2
+          },
+          "rejected": [
+            {
+              "sample": 1,
+              "credentials": [
+                "cred-synthetic-a1",
+                "cred-synthetic-a2",
+                "cred-synthetic-a3",
+                "cred-synthetic-a4",
+                "cred-synthetic-b1",
+                "cred-synthetic-b2",
+                "cred-synthetic-b3",
+                "cred-synthetic-b4"
+              ]
+            }
+          ],
+          "gap_count": 0
+        }
+      },
+      "divergence": "Intentional contract difference in this slice. Legacy Python resets only the regressed upload component: it records that component's whole observed value while download is diffed normally. The Go target rejects the whole credential observation when upload regresses within one invocation, so sample index 1 is rejected for every credential and the last checkpoint is retained. Sample index 2 advances from that retained checkpoint. Production Python collector behavior is unchanged."
+    },
+    {
+      "name": "download-only-regression-diverges",
+      "description": "Only download regresses within one invocation; upload increases. Python resets download and diffs upload. Go rejects every credential observation.",
+      "samples": [
+        {
+          "at": "2026-05-09T00:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [2000, 1000],
+              "hysteria2": [2100, 1100],
+              "naive": [2200, 1200],
+              "snell": [2300, 1300]
+            },
+            "synthetic-bravo": {
+              "trojan": [5000, 4000],
+              "hysteria2": [5100, 4100],
+              "naive": [5200, 4200],
+              "snell": [5300, 4300]
+            }
+          }
+        },
+        {
+          "at": "2026-05-09T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 200,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [2100, 950],
+              "hysteria2": [2200, 1050],
+              "naive": [2300, 1150],
+              "snell": [2400, 1250]
+            },
+            "synthetic-bravo": {
+              "trojan": [5100, 3900],
+              "hysteria2": [5200, 4000],
+              "naive": [5300, 4100],
+              "snell": [5400, 4200]
+            }
+          }
+        },
+        {
+          "at": "2026-05-09T00:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 300,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [2300, 1100],
+              "hysteria2": [2400, 1200],
+              "naive": [2500, 1300],
+              "snell": [2600, 1400]
+            },
+            "synthetic-bravo": {
+              "trojan": [5300, 4050],
+              "hysteria2": [5400, 4150],
+              "naive": [5500, 4250],
+              "snell": [5600, 4350]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-09|synthetic-alpha|trojan": [2300, 2100],
+            "2026-05-09|synthetic-alpha|hysteria2": [2400, 2300],
+            "2026-05-09|synthetic-alpha|naive": [2500, 2500],
+            "2026-05-09|synthetic-alpha|snell": [2600, 2700],
+            "2026-05-09|synthetic-bravo|trojan": [5300, 8050],
+            "2026-05-09|synthetic-bravo|hysteria2": [5400, 8250],
+            "2026-05-09|synthetic-bravo|naive": [5500, 8450],
+            "2026-05-09|synthetic-bravo|snell": [5600, 8650]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-09|synthetic-alpha|trojan": [2300, 1100],
+            "2026-05-09|synthetic-alpha|hysteria2": [2400, 1200],
+            "2026-05-09|synthetic-alpha|naive": [2500, 1300],
+            "2026-05-09|synthetic-alpha|snell": [2600, 1400],
+            "2026-05-09|synthetic-bravo|trojan": [5300, 4050],
+            "2026-05-09|synthetic-bravo|hysteria2": [5400, 4150],
+            "2026-05-09|synthetic-bravo|naive": [5500, 4250],
+            "2026-05-09|synthetic-bravo|snell": [5600, 4350]
+          },
+          "versions": {
+            "2026-05-09|synthetic-alpha|trojan": 2,
+            "2026-05-09|synthetic-alpha|hysteria2": 2,
+            "2026-05-09|synthetic-alpha|naive": 2,
+            "2026-05-09|synthetic-alpha|snell": 2,
+            "2026-05-09|synthetic-bravo|trojan": 2,
+            "2026-05-09|synthetic-bravo|hysteria2": 2,
+            "2026-05-09|synthetic-bravo|naive": 2,
+            "2026-05-09|synthetic-bravo|snell": 2
+          },
+          "rejected": [
+            {
+              "sample": 1,
+              "credentials": [
+                "cred-synthetic-a1",
+                "cred-synthetic-a2",
+                "cred-synthetic-a3",
+                "cred-synthetic-a4",
+                "cred-synthetic-b1",
+                "cred-synthetic-b2",
+                "cred-synthetic-b3",
+                "cred-synthetic-b4"
+              ]
+            }
+          ],
+          "gap_count": 0
+        }
+      },
+      "divergence": "Intentional contract difference in this slice. Legacy Python resets only the regressed download component: it records that component's whole observed value while upload is diffed normally. The Go target rejects the whole credential observation when download regresses within one invocation, so sample index 1 is rejected for every credential and the last checkpoint is retained. Sample index 2 advances from that retained checkpoint. Production Python collector behavior is unchanged."
+    },
+    {
+      "name": "partial-credential-regression-diverges",
+      "description": "Two credentials regress in one component while six healthy credentials advance. Go rejects exactly the two affected credential observations.",
+      "samples": [
+        {
+          "at": "2026-05-10T00:00:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 100,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1000, 2000],
+              "hysteria2": [1100, 2100],
+              "naive": [1200, 2200],
+              "snell": [1300, 2300]
+            },
+            "synthetic-bravo": {
+              "trojan": [4000, 5000],
+              "hysteria2": [4100, 5100],
+              "naive": [4200, 5200],
+              "snell": [4300, 5300]
+            }
+          }
+        },
+        {
+          "at": "2026-05-10T00:05:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 200,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1100, 2200],
+              "hysteria2": [1000, 2250],
+              "naive": [1320, 2420],
+              "snell": [1430, 2530]
+            },
+            "synthetic-bravo": {
+              "trojan": [4400, 5500],
+              "hysteria2": [4510, 5610],
+              "naive": [4620, 5720],
+              "snell": [4450, 5200]
+            }
+          }
+        },
+        {
+          "at": "2026-05-10T00:10:00Z",
+          "invocation": "invocation-synthetic-1",
+          "uptime_seconds": 300,
+          "counters": {
+            "synthetic-alpha": {
+              "trojan": [1200, 2400],
+              "hysteria2": [1150, 2400],
+              "naive": [1440, 2640],
+              "snell": [1560, 2760]
+            },
+            "synthetic-bravo": {
+              "trojan": [4800, 6000],
+              "hysteria2": [4920, 6120],
+              "naive": [5040, 6240],
+              "snell": [4600, 5400]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "python": {
+          "ledger": {
+            "2026-05-10|synthetic-alpha|trojan": [1200, 2400],
+            "2026-05-10|synthetic-alpha|hysteria2": [2250, 2400],
+            "2026-05-10|synthetic-alpha|naive": [1440, 2640],
+            "2026-05-10|synthetic-alpha|snell": [1560, 2760],
+            "2026-05-10|synthetic-bravo|trojan": [4800, 6000],
+            "2026-05-10|synthetic-bravo|hysteria2": [4920, 6120],
+            "2026-05-10|synthetic-bravo|naive": [5040, 6240],
+            "2026-05-10|synthetic-bravo|snell": [4600, 10700]
+          }
+        },
+        "go": {
+          "ledger": {
+            "2026-05-10|synthetic-alpha|trojan": [1200, 2400],
+            "2026-05-10|synthetic-alpha|hysteria2": [1150, 2400],
+            "2026-05-10|synthetic-alpha|naive": [1440, 2640],
+            "2026-05-10|synthetic-alpha|snell": [1560, 2760],
+            "2026-05-10|synthetic-bravo|trojan": [4800, 6000],
+            "2026-05-10|synthetic-bravo|hysteria2": [4920, 6120],
+            "2026-05-10|synthetic-bravo|naive": [5040, 6240],
+            "2026-05-10|synthetic-bravo|snell": [4600, 5400]
+          },
+          "versions": {
+            "2026-05-10|synthetic-alpha|trojan": 3,
+            "2026-05-10|synthetic-alpha|hysteria2": 2,
+            "2026-05-10|synthetic-alpha|naive": 3,
+            "2026-05-10|synthetic-alpha|snell": 3,
+            "2026-05-10|synthetic-bravo|trojan": 3,
+            "2026-05-10|synthetic-bravo|hysteria2": 3,
+            "2026-05-10|synthetic-bravo|naive": 3,
+            "2026-05-10|synthetic-bravo|snell": 2
+          },
+          "rejected": [
+            {
+              "sample": 1,
+              "credentials": ["cred-synthetic-a2", "cred-synthetic-b4"]
+            }
+          ],
+          "gap_count": 0
+        }
+      },
+      "divergence": "Intentional contract difference in this slice. Legacy Python resets the regressed component independently for the two affected credentials and records the other component normally. The Go target rejects only those two credential observations at sample index 1 and retains their last checkpoints; the six healthy credentials advance at the same sample. Sample index 2 advances every credential, including the rejected identities, from the retained checkpoints. The exact rejected identities are cred-synthetic-a2 (upload) and cred-synthetic-b4 (download). Production Python collector behavior is unchanged."
     }
   ]
 }

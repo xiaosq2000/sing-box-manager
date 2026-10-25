@@ -629,14 +629,25 @@ same synthetic samples through the actual Python `TrafficStatsStore` and the Go
 `accounting.Store`. It compares keyed authoritative daily rows for four protocol
 labels, two synthetic accounts, increments, identical samples, a UTC midnight
 split, invocation restart and database reopen; Go performs the true close/reopen,
-while Python reconstructs its stateless store over the same SQLite state. In this
-slice the same-invocation counter regression is an asserted legacy-Python/Go-target
-divergence, not a shared result: Python resets upload and download independently,
-while Go rejects the whole credential observation if either regresses. Unchanged
-counters after UTC midnight (a zero-valued Python row but no Go row), one-component
-regressions and partial-credential rejection remain follow-up fixture gaps. Python
-daily rows expose no version or payload digest; those checks are Go-side. This
-starts G2; it is not native four-protocol or gate acceptance.
+while Python reconstructs its stateless store over the same SQLite state.
+
+Five cases assert legacy-Python/Go-target divergences instead of a shared result:
+
+- unchanged counters immediately after UTC midnight create zero-valued Python
+  rows but no Go rows. The fixture keeps both shapes and does not normalize
+  missing rows to zero.
+- upload-only and download-only regressions reset the affected Python component.
+  Go rejects the whole credential observation for that invocation.
+- a partial-credential regression rejects exactly two Go credential identities
+  while six healthy credentials advance. The rejected checkpoints and ledger
+  rows stay unchanged, and the next sample advances from the retained
+  checkpoints.
+
+The same-invocation case that regresses both components for every credential
+remains an explicit divergence. Go rejection fixtures name exact credential
+identities, not only an error count. Python daily rows expose no version or
+payload digest; those checks are Go-side. This starts G2; it is not native
+four-protocol or gate acceptance.
 
 ```sh
 pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
