@@ -3,14 +3,19 @@
 package tui
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/sys/unix"
 )
 
@@ -103,6 +108,107 @@ func TestProgramRestoresRawModeAfterStartupFailure(t *testing.T) {
 	}
 	// Sending after failed startup must return, not wait for a missing event loop.
 	program.Send(LiveTableDoneMsg{})
+}
+
+type recordingTerminalWriter struct {
+	*os.File
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	reject string
+}
+
+func (w *recordingTerminalWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf.Write(p)
+	if string(p) == w.reject {
+		return 0, io.ErrClosedPipe
+	}
+	return w.File.Write(p)
+}
+
+func (w *recordingTerminalWriter) text() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+func TestProgramClearsInlineViewBeforeFinalReport(t *testing.T) {
+	for _, size := range []unix.Winsize{{Col: 80, Row: 24}, {Col: 40, Row: 3}, {Col: 1, Row: 1}} {
+		for _, interrupted := range []bool{false, true} {
+			for _, failClear := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%dx%d/interrupted=%t/fail-clear=%t", size.Col, size.Row, interrupted, failClear), func(t *testing.T) {
+					_, slave, original := testTerminal(t)
+					if err := unix.IoctlSetWinsize(int(slave.Fd()), unix.TIOCSWINSZ, &size); err != nil {
+						t.Fatal(err)
+					}
+					out := NewOutput(slave, slave, func(key string) string {
+						if key == "TERM" {
+							return "xterm"
+						}
+						return ""
+					})
+					defer out.Close()
+					writer := &recordingTerminalWriter{File: slave}
+					out.out = writer
+					model := NewLiveTableModel(out.Theme, "scope: sbc", []string{"Target", "Result"}, [][]string{{"pending-target", "testing"}}, nil, "testing", nil)
+					model.Width, model.Height = int(size.Col), int(size.Row)
+					rows := strings.Count(model.RenderFrame(), "\n") + 1
+					want := "\r"
+					if rows > 1 {
+						want += ansi.CursorUp(rows - 1)
+					}
+					want += ansi.EraseScreenBelow
+					if failClear {
+						writer.reject = want
+					}
+					marker := "scope: sbc"
+					if size.Col == 1 {
+						marker = "<"
+					}
+					program, err := out.Program(model)
+					if err != nil {
+						t.Fatal(err)
+					}
+					done := make(chan error, 1)
+					go func() { _, err := program.Run(); done <- err }()
+					t.Cleanup(func() { program.Quit() })
+					deadline := time.Now().Add(3 * time.Second)
+					for !strings.Contains(writer.text(), marker) && time.Now().Before(deadline) {
+						time.Sleep(10 * time.Millisecond)
+					}
+					before := writer.text()
+					if !strings.Contains(before, marker) {
+						t.Fatal("live view did not render")
+					}
+					if interrupted {
+						program.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+					} else {
+						program.Send(LiveTableDoneMsg{})
+					}
+					select {
+					case err := <-done:
+						if failClear && !errors.Is(err, io.ErrClosedPipe) || !failClear && err != nil {
+							t.Fatalf("clear failure=%t: %v", failClear, err)
+						}
+					case <-time.After(3 * time.Second):
+						t.Fatal("live view did not stop")
+					}
+					cleanup := writer.text()[len(before):]
+					if !strings.HasSuffix(cleanup, want) {
+						t.Fatalf("inline view did not clear from its first row: got %q, want suffix %q", cleanup, want)
+					}
+					if strings.Contains(cleanup, ansi.EraseEntireScreen) || strings.Contains(cleanup, ansi.CursorHomePosition) {
+						t.Fatal("cleanup erased earlier terminal history")
+					}
+					after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+					if err != nil || !reflect.DeepEqual(original, after) {
+						t.Fatal("terminal modes were not restored")
+					}
+				})
+			}
+		}
+	}
 }
 
 type failedTerminalWriter struct{ *os.File }

@@ -81,9 +81,8 @@ func (m LiveTableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m LiveTableModel) View() tea.View {
-	if m.Done {
-		return tea.NewView("")
-	}
+	// Keep the final frame's dimensions until Program clears it after the
+	// renderer stops. Shrinking the view here loses its inline origin.
 	return tea.NewView(m.RenderFrame())
 }
 

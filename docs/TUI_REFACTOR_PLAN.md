@@ -1,6 +1,6 @@
 # sbc terminal UI design and acceptance
 
-Checked on 2026-10-23.
+Checked on 2026-10-25.
 
 The implementation follows this bounded design. Local fixture checks pass.
 Native font and platform acceptance remain open. Follow the
@@ -33,7 +33,7 @@ Mouse control, images, hyperlinks and clipboard integration remain outside scope
 | `tui.NewTheme(profile)`          | Build pure ANSI semantic styles without renderer state or background detection                                     |
 | Panel, table and line formatters | Accept explicit themes and widths. Do not detect terminal capabilities                                             |
 | Selector and live-table models   | Own only view data, dimensions, navigation and interaction state                                                   |
-| `tui.Program`                    | Run Bubble Tea, report write failures and restore saved terminal modes, including startup-error paths              |
+| `tui.Program`                    | Run Bubble Tea, clear the final inline frame, report write failures and restore saved terminal modes               |
 
 Lipgloss v2 styles do not contain renderers. Default styles use only basic ANSI
 slots, so static output needs no RGB conversion or global writer configuration.
@@ -68,6 +68,10 @@ required. Do not infer glyph coverage from a PTY or truecolor support.
 
 - Keep inline views. Do not enter the alternate screen or change terminal colors.
 - Use up/down to change the focused item. Use Page Up/Down to read oversized items.
+- Wrap descriptions separately from option labels. Align continuation lines with
+  the description and show the focus marker only on the first line. Preserve word
+  boundaries where possible. Stack descriptions below labels in narrow windows.
+  Narrow static choice lists use this layout without a focus marker.
 - Submit only with Enter. Space does not submit. Esc or `q` cancels a selector.
 - Keep Ctrl-C/SIGINT exit 130 and POSIX SIGTERM exit 143, with partial diagnostic results.
 - Preserve model data through resize. Below four columns, display the `<>` resize
@@ -86,24 +90,35 @@ Do not call `Kill` on that early failure path. Restore the saved input/output
 modes directly instead. Cleanup after renderer startup still uses Bubble Tea.
 A damaged stream can prevent cleanup. Report restoration and write errors.
 
+Transient models retain their final frame when they stop. Shrinking an inline
+view to zero or one row can lose its origin in the pinned renderer. After Bubble
+Tea stops, `Program` returns from the final frame's bottom row to its first row
+and clears that frame. It does not clear earlier terminal history. The caller
+then prints the complete final report once.
+
+Selectors retain their allocated inline height when wider layouts use fewer
+rows. This prevents old wrapped lines from remaining above the view. The current
+terminal height bounds this allocation.
+
 ## Checks and remaining acceptance
 
 Local checks use Go 1.25.8 with cgo disabled. No live installation, deployment,
 proxy operation or host setting change is part of these checks.
 
-| Check                                                                                 | Result                                           |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Full Go suite with `-count=1`                                                         | Pass                                             |
-| Linux `go vet` and Windows cross-platform `go vet`                                    | Pass                                             |
-| Builds for Linux amd64/arm64, macOS amd64/arm64 and Windows amd64                     | Pass                                             |
-| Exact ANSI roles under explicit truecolor/256/16/no-color profiles                    | Pass                                             |
-| Foreground PTY startup bytes for help, JSON, shell integration and completion         | Pass, without background/cursor-position queries |
-| Forced-color fallbacks, injected environment, no-color keyboard interaction           | Pass                                             |
-| Long-item paging, narrow/resize/CJK layouts and ASCII control glyphs                  | Pass                                             |
-| Startup failure after raw mode, output failure, cancellation and terminal restoration | Pass in Linux fixtures                           |
-| Ubuntu 18.04 default GNOME Terminal and default monospace font, without Nerd Fonts    | Pending native acceptance                        |
-| Real custom ANSI palettes, light/dark themes and actual glyph rendering               | Pending native acceptance                        |
-| Native macOS Terminal and Windows Terminal/traditional console, PowerShell 5.1/7      | Pending native acceptance                        |
+| Check                                                                                         | Result                                           |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Full Go suite with `-count=1`                                                                 | Pass                                             |
+| Linux `go vet` and Windows cross-platform `go vet`                                            | Pass                                             |
+| Builds for Linux amd64/arm64, macOS amd64/arm64 and Windows amd64                             | Pass                                             |
+| Exact ANSI roles under explicit truecolor/256/16/no-color profiles                            | Pass                                             |
+| Foreground PTY startup bytes for help, JSON, shell integration and completion                 | Pass, without background/cursor-position queries |
+| Forced-color fallbacks, injected environment, no-color keyboard interaction                   | Pass                                             |
+| Long-item paging, narrow/resize/CJK layouts and ASCII control glyphs                          | Pass                                             |
+| Startup failure after raw mode, output failure, cancellation and terminal restoration         | Pass in Linux fixtures                           |
+| Inline-frame cleanup, normal completion, cancellation, tiny windows and cleanup write failure | Pass in Linux fixtures                           |
+| Ubuntu 18.04 default GNOME Terminal and default monospace font, without Nerd Fonts            | Pending native acceptance                        |
+| Real custom ANSI palettes, light/dark themes and actual glyph rendering                       | Pending native acceptance                        |
+| Native macOS Terminal and Windows Terminal/traditional console, PowerShell 5.1/7              | Pending native acceptance                        |
 
 PTY success does not prove font coverage. Cross-compilation does not prove native
 terminal behavior. Use synthetic data and authorized disposable environments for
