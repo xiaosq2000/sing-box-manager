@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-24.
+Checked on 2026-10-25.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -131,6 +131,11 @@ process-initialization bytes and check ANSI slots, injected environment choices,
 and no-color interaction. They change no host settings.
 `internal/tui` tests also check narrow layouts, oversized-item paging, CJK widths,
 ASCII control glyphs, startup failure after raw mode, and failed output writes.
+Inline-frame checks cover completion, cancellation, tiny windows and cleanup write
+failures without clearing earlier history. CLI fixtures cover localized protocol
+descriptions and progress-to-report cleanup for all three diagnostic commands.
+Selector checks cover hanging indentation, single focus markers, word boundaries
+and shared narrow layouts for interactive and static choices.
 Run these fixtures with `pixi run go test ./internal/tui ./internal/cli -count=1`.
 Native Ubuntu 18.04 default-font, macOS and Windows acceptance remains open.
 See the [acceptance record](TUI_REFACTOR_PLAN.md#checks-and-remaining-acceptance).

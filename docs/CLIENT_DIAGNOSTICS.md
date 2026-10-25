@@ -1,6 +1,6 @@
 # Client diagnostics design
 
-Checked on 2026-10-23.
+Checked on 2026-10-24.
 
 Status: implemented, with local fixtures and KVM core acceptance.
 Independent Astra xhigh review and one fix iteration are complete.
@@ -256,7 +256,8 @@ failures and unverified scope. Preserve useful partial results.
 
 Interactive terminals use an inline, scrollable progress view that adapts to
 window size changes. Narrow tables use stacked fields without dropping data.
-The complete final report remains in terminal history. Pipes, files, and
+On completion or cancellation, remove the progress view before printing the
+complete final report once. Preserve earlier terminal history. Pipes, files, and
 `TERM=dumb` use static output. `NO_COLOR` disables styling, not keyboard input.
 Live and final views share semantic ANSI slots and inherit the terminal's default
 foreground and background. The spinner uses ordinary ASCII frames.

@@ -38,6 +38,7 @@ type SelectorModel struct {
 	Width, Height                 int
 	offset                        int
 	itemOffset                    int
+	frameRows                     int
 }
 
 func NewSelectorModel(th Theme, title, currentBadge, helpText string, items []SelectorItem) SelectorModel {
@@ -106,9 +107,7 @@ func (m SelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m SelectorModel) View() tea.View {
-	if m.Done {
-		return tea.NewView("")
-	}
+	// Program clears this frame after the renderer stops.
 	return tea.NewView(m.RenderFrame())
 }
 
@@ -116,33 +115,26 @@ func (m SelectorModel) itemLines() ([]string, []int) {
 	var lines []string
 	starts := make([]int, len(m.Items))
 	maxWidth := 0
-	for _, item := range m.Items {
-		label := SafeText(item.Value)
+	labels := make([]string, len(m.Items))
+	for i, item := range m.Items {
+		labels[i] = SafeText(item.Value)
 		if item.Current {
-			label += " " + SafeText(m.CurrentBadge)
+			labels[i] += " " + SafeText(m.CurrentBadge)
 		}
-		maxWidth = max(maxWidth, DisplayWidth(label))
+		maxWidth = max(maxWidth, DisplayWidth(labels[i]))
 	}
 	for i, item := range m.Items {
 		starts[i] = len(lines)
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
-		}
-		label := SafeText(item.Value)
-		if item.Current {
-			label += " " + SafeText(m.CurrentBadge)
-		}
-		text := PadRight(label, maxWidth)
-		if item.Description != "" {
-			text += "  " + SafeText(item.Description)
-		}
 		width := 0
 		if m.Width > 0 {
 			width = max(2, m.Width-2)
 		}
-		wrapped := strings.Split(FitLines(strings.TrimRight(text, " "), width), "\n")
-		for _, line := range wrapped {
+		wrapped := wrapSelectorItem(labels[i], SafeText(item.Description), maxWidth, width)
+		for j, line := range wrapped {
+			prefix := "  "
+			if i == m.Cursor && j == 0 {
+				prefix = "> "
+			}
 			line = prefix + line
 			if m.Theme.Styled() {
 				if i == m.Cursor {
@@ -155,6 +147,35 @@ func (m SelectorModel) itemLines() ([]string, []int) {
 		}
 	}
 	return lines, starts
+}
+
+// wrapSelectorItem reserves the focus gutter separately from label and text.
+// Continuations align with the description, not the start of the label.
+func wrapSelectorItem(label, description string, labelWidth, width int) []string {
+	if description == "" {
+		return strings.Split(ansi.Wrap(label, width, ""), "\n")
+	}
+	if width <= 0 {
+		return []string{PadRight(label, labelWidth) + "  " + description}
+	}
+	descriptionWidth := width - labelWidth - 2
+	if descriptionWidth >= 20 {
+		lines := strings.Split(ansi.Wrap(description, descriptionWidth, ""), "\n")
+		lines[0] = PadRight(label, labelWidth) + "  " + lines[0]
+		indent := strings.Repeat(" ", labelWidth+2)
+		for i := 1; i < len(lines); i++ {
+			lines[i] = indent + lines[i]
+		}
+		return lines
+	}
+
+	// Stack narrow items, leaving at least two cells for a CJK character.
+	lines := strings.Split(ansi.Wrap(label, width, ""), "\n")
+	indent := min(2, max(0, width-2))
+	for _, line := range strings.Split(ansi.Wrap(description, width-indent, ""), "\n") {
+		lines = append(lines, strings.Repeat(" ", indent)+line)
+	}
+	return lines
 }
 
 func (m SelectorModel) contentHeight() int {
@@ -172,6 +193,12 @@ func (m SelectorModel) contentHeight() int {
 }
 
 func (m *SelectorModel) ensureVisible() {
+	defer func() {
+		m.frameRows = max(m.frameRows, strings.Count(m.renderFrame(), "\n")+1)
+		if m.Height > 0 {
+			m.frameRows = min(m.frameRows, m.Height)
+		}
+	}()
 	lines, starts := m.itemLines()
 	h := m.contentHeight()
 	if h == 0 || len(starts) == 0 {
@@ -199,6 +226,17 @@ func (m *SelectorModel) ensureVisible() {
 
 // RenderFrame keeps the cursor visible, including after a terminal resize.
 func (m SelectorModel) RenderFrame() string {
+	frame := m.renderFrame()
+	rows := m.frameRows
+	if m.Height > 0 {
+		rows = min(rows, m.Height)
+	}
+	// Do not shrink the allocated inline region when wider text needs fewer
+	// rows. The pinned renderer can otherwise leave old rows above the view.
+	return frame + strings.Repeat("\n", max(0, rows-strings.Count(frame, "\n")-1))
+}
+
+func (m SelectorModel) renderFrame() string {
 	if m.Width > 0 && m.Width < 4 {
 		return ansi.Truncate("<>", m.Width, "")
 	}
@@ -237,7 +275,19 @@ func RenderChoices(th Theme, width int, title, currentBadge string, items []Sele
 		}
 		rows[i] = []string{label, item.Description}
 	}
-	return RenderTableTheme(th, width, []string{title, ""}, rows, nil)
+	rendered := RenderTableTheme(th, 0, []string{title, ""}, rows, nil)
+	if width <= 0 || DisplayWidth(rendered) <= width {
+		return rendered
+	}
+	if width < 4 {
+		return RenderTableTheme(th, width, []string{title, ""}, rows, nil)
+	}
+	model := SelectorModel{Theme: th, Width: width, CurrentBadge: currentBadge, Items: items, Cursor: -1}
+	lines, _ := model.itemLines()
+	if title != "" {
+		lines = append([]string{th.Header.Render(ansi.Wrap(SafeText(title), width, ""))}, lines...)
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func RunSelector(output *Output, title, currentBadge, helpText string, items []SelectorItem) (string, bool, error) {
