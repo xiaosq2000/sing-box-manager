@@ -599,7 +599,7 @@ The dedicated GitHub-hosted workflow keeps raw run artifacts private.
 It adds `--g1-checks` to the native runner. This includes the startup subset, final sampling, outages, process crashes, offline OS reboot and forward repair.
 The proxy starts through a locked exec wrapper with a private config-digest/invocation/PID receipt.
 Local recovery uses committed policy before network access. Confirmed termination records accounting finality; unexpected termination records coverage uncertainty.
-The G1 checks pass locally for one synthetic account and Trojan. This does not establish production readiness, power-loss durability or G2 accounting parity.
+The G1 checks pass locally and in the hosted `node-g0` job for one synthetic account and Trojan. This does not establish production readiness, power-loss durability or G2 accounting parity.
 See the [G1 progress record](NODE_ACCEPTANCE.md#g1-progress) for commands, evidence and exact boundaries.
 G0 grants `/dev/kvm` ownership to its disposable runner UID, matching TUN CI rather than relying on a named-user ACL.
 It does not change device ownership on developer hosts.
