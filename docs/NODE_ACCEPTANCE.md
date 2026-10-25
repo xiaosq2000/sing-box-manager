@@ -2,16 +2,17 @@
 
 Checked on 2026-10-25.
 
-This page records isolated G0/G1 evidence and the started G2 counter-ledger slice, not a release or deployment approval.
+This page records isolated G0/G1 evidence and the started G2 accounting, calendar
+and wire-codec slices, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
-| Gate                         | Status               | Evidence boundary                                                                       |
-| ---------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
-| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                       |
-| G1: single-node reliability  | Accepted with limits | Local VM and hosted runner: final sampling, process crashes, reboot, outages and repair |
-| G2: accounting and migration | In progress          | Shared UTC counter cases and divergences pass; stream, history and restore pending      |
-| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                   |
-| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization               |
+| Gate                         | Status               | Evidence boundary                                                                              |
+| ---------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
+| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                              |
+| G1: single-node reliability  | Accepted with limits | Local VM and hosted runner: final sampling, process crashes, reboot, outages and repair        |
+| G2: accounting and migration | In progress          | Shared UTC counter, calendar and wire-codec fixtures pass; stream, history and restore pending |
+| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                          |
+| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization                      |
 
 G0 through G3 do not require per-gate approval. Report blockers rather than treating missing evidence as success.
 Android device acceptance does not block the first release. Mark it unverified until tested.
@@ -132,7 +133,7 @@ No release, deployment or migration is part of this result.
 
 ## G2 progress
 
-G2 is in progress. The counter-ledger slice is shared fixture evidence only; it does not accept the gate.
+G2 is in progress. The counter-ledger, calendar and wire-codec slices are shared fixture evidence only; they do not accept the gate.
 Release, deployment and migration are not part of this G2 result.
 
 `tests/fixtures/node-g2-counter-parity.json` contains deterministic UTC counter cases that run against the actual Python `TrafficStatsStore.record_snapshot` and the actual Go `accounting.Store`. The adapters are fixture-only. Each case compares keyed daily rows (`usage_date|account|protocol`) rather than only a grand total. Go rejections name the exact protocol credential IDs for each rejected sample.
@@ -173,6 +174,36 @@ data artifact. This slice does not accept G2 or establish native protocol parity
 pixi run -e node-g0 test tests/test_node_accounting_calendar.py
 pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
 ```
+
+### Traffic wire codec
+
+The pure `node-traffic-v1` schema 1 codec is implemented independently in
+`sing_box_manager/control_plane/traffic_contract.py` and
+`node-agent/internal/traffic/`. Both consume the frozen shared fixture
+`tests/fixtures/node-traffic-v1.json`, SHA-256
+`12f098d86018b5a82303eac188b418efde35d8c2935960277665a079ded52efb`.
+The fixture holds 12 canonical vectors, 7 equivalence vectors, 2 literal request
+envelopes, 52 request rejections, 2 receipt vectors, 15 receipt rejections and 6
+named-identity boundary recipes.
+
+The Python suite runs 115 tests. The Go package has 38 top-level tests plus
+vector subtests and reports 86.9% statement coverage in its codec-only run. The
+suites independently check canonical payload, snapshot, request and receipt
+bytes; digests; strict request and receipt rejection; raw, snapshot, page and
+named-identity bounds; Unicode preservation; and exact receipt coverage. Neither
+language invokes the other codec.
+
+```sh
+pixi run -e node-g0 test tests/test_node_traffic_contract.py
+pixi run -e node-g0 go -C node-agent test -count=1 ./internal/traffic
+```
+
+This is cross-language codec evidence only. No production `/node/v1/traffic`
+route, authorization registry, ingestion, persistence, exporter, history import
+or G2 acceptance exists. The isolated `/node-g0/v1/` prototype transport remains
+in place and is not retired by this codec. Native VM and public-network reruns
+are not required for these unused pure codecs. See the
+[wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
 
 ## Reproduce
 

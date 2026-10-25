@@ -1,0 +1,849 @@
+{
+  "schema": 1,
+  "contract": "node-traffic-v1",
+  "description": "Frozen shared vectors for the node-traffic-v1 codec.",
+  "usage": "Python tests/test_node_traffic_contract.py and the later Go internal/traffic golden tests read this file. Expected canonical text and digests are frozen; tests must never regenerate them from a codec. canonical_vectors[].snapshot is a complete snapshot including digest; payload_canonical and snapshot_canonical are the exact UTF-8 text. equivalence_vectors[].request_raw is a complete request body whose single snapshot must canonicalize to the named vector. request_vectors[] pairs ordered canonical-vector names with literal request_canonical bytes for encode_request. bounds.named_identities and bounds.aggregate_slots define the combined named-identity ceiling; named_identity_boundaries give deterministic generated-name recipes, expected named counts, byte sizes and results. request_rejections use raw text, or raw_hex when the bytes are not valid UTF-8. receipt_vectors/receipt_rejections pair a request_raw with a response_raw. Raw bodies or canonical envelopes over their bounds use request_too_large; response overflow uses request_too_large too.",
+  "identities": {
+    "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+    "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+    "alternate_credential_id": "8b70d5c4-1e2f-4a39-8d6b-4c0f2e7a9d13",
+    "accounting_date": "2026-10-23",
+    "alternate_accounting_date": "2026-10-24"
+  },
+  "bounds": {
+    "raw_body_bytes": 1048576,
+    "snapshot_bytes": 786432,
+    "page_items": 1024,
+    "counter_v1_payload_bytes": 197,
+    "counter_v1_snapshot_bytes": 273,
+    "counter_max_snapshot_bytes": 303,
+    "named_identities": 10000,
+    "aggregate_slots": {
+      "domains": ["__other__", "__unattributed__", "__ip__"],
+      "destinations": ["__other__", "__unattributed__"]
+    },
+    "response_overflow_code": "request_too_large"
+  },
+  "request_vectors": [
+    {
+      "name": "single_counter_page",
+      "snapshots": ["counter_v1"],
+      "request_canonical": "{\"schema\":1,\"snapshots\":[{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\",\"download\":2048,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":1024,\"version\":1}]}"
+    },
+    {
+      "name": "counter_and_attribution_page",
+      "snapshots": ["counter_v1", "attribution_v1"],
+      "request_canonical": "{\"schema\":1,\"snapshots\":[{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\",\"download\":2048,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":1024,\"version\":1},{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":3,\"download\":206,\"name\":\"198.51.100.7\",\"upload\":105}],\"detail\":\"exact\",\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\",\"domains\":[{\"connections\":0,\"download\":34,\"name\":\"__unattributed__\",\"upload\":12},{\"connections\":2,\"download\":200,\"name\":\"a.example.com\",\"upload\":100},{\"connections\":1,\"download\":6,\"name\":\"b.example.com\",\"upload\":5}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}]}"
+    }
+  ],
+  "named_identity_boundaries": {
+    "generated_name": {
+      "prefix": "n",
+      "width": 5
+    },
+    "cases": [
+      {
+        "name": "domains_at_limit",
+        "generated_domains": 10000,
+        "generated_destinations": 0,
+        "extra_domains": [],
+        "extra_destinations": [],
+        "expected_named_identities": 10000,
+        "expected_snapshot_bytes": 580294,
+        "expected_request_bytes": 580321,
+        "expected_result": "accepted"
+      },
+      {
+        "name": "domains_over_limit",
+        "generated_domains": 10001,
+        "generated_destinations": 0,
+        "extra_domains": [],
+        "extra_destinations": [],
+        "expected_named_identities": 10001,
+        "expected_snapshot_bytes": 580352,
+        "expected_request_bytes": 580379,
+        "expected_result": "invalid_request"
+      },
+      {
+        "name": "split_at_limit",
+        "generated_domains": 5000,
+        "generated_destinations": 5000,
+        "extra_domains": [],
+        "extra_destinations": [],
+        "expected_named_identities": 10000,
+        "expected_snapshot_bytes": 580293,
+        "expected_request_bytes": 580320,
+        "expected_result": "accepted"
+      },
+      {
+        "name": "split_over_limit",
+        "generated_domains": 5001,
+        "generated_destinations": 5000,
+        "extra_domains": [],
+        "extra_destinations": [],
+        "expected_named_identities": 10001,
+        "expected_snapshot_bytes": 580351,
+        "expected_request_bytes": 580378,
+        "expected_result": "invalid_request"
+      },
+      {
+        "name": "aggregate_slots_at_limit",
+        "generated_domains": 5000,
+        "generated_destinations": 5000,
+        "extra_domains": ["__ip__", "__other__", "__unattributed__"],
+        "extra_destinations": ["__other__", "__unattributed__"],
+        "expected_named_identities": 10000,
+        "expected_snapshot_bytes": 580609,
+        "expected_request_bytes": 580636,
+        "expected_result": "accepted"
+      },
+      {
+        "name": "destination_ip_is_named",
+        "generated_domains": 10000,
+        "generated_destinations": 0,
+        "extra_domains": [],
+        "extra_destinations": ["__ip__"],
+        "expected_named_identities": 10001,
+        "expected_snapshot_bytes": 580351,
+        "expected_request_bytes": 580378,
+        "expected_result": "invalid_request"
+      }
+    ]
+  },
+  "canonical_vectors": [
+    {
+      "name": "counter_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "counter",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "upload": 1024,
+        "download": 2048,
+        "digest": "f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"download\":2048,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":1024,\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\",\"download\":2048,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":1024,\"version\":1}"
+    },
+    {
+      "name": "counter_zero_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "counter",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "upload": 0,
+        "download": 0,
+        "digest": "f7109f87b42d9417a2a8a487a897e4bb80b556f87e94ef6f940fabc79abc952c"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"download\":0,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":0,\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"f7109f87b42d9417a2a8a487a897e4bb80b556f87e94ef6f940fabc79abc952c\",\"download\":0,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":0,\"version\":1}"
+    },
+    {
+      "name": "counter_max_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "counter",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "upload": 9223372036854775807,
+        "download": 9223372036854775807,
+        "digest": "20c760aed3b78db5bb06b9c14af33d1ccaba05fc1ffc191b95c1b90965c1cc08"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"download\":9223372036854775807,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":9223372036854775807,\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"20c760aed3b78db5bb06b9c14af33d1ccaba05fc1ffc191b95c1b90965c1cc08\",\"download\":9223372036854775807,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":9223372036854775807,\"version\":1}"
+    },
+    {
+      "name": "counter_max_version_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "counter",
+        "accounting_date": "2026-10-23",
+        "version": 9223372036854775807,
+        "upload": 7,
+        "download": 9,
+        "digest": "001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"download\":9,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":7,\"version\":9223372036854775807}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\",\"download\":9,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":7,\"version\":9223372036854775807}"
+    },
+    {
+      "name": "counter_alt_credential_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "8b70d5c4-1e2f-4a39-8d6b-4c0f2e7a9d13",
+        "kind": "counter",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "upload": 7,
+        "download": 9,
+        "digest": "15f144be1414d3e4744b2429cecd98c7dcbba3c45bae5ccc184c9e27ae8f7268"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"8b70d5c4-1e2f-4a39-8d6b-4c0f2e7a9d13\",\"download\":9,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":7,\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"8b70d5c4-1e2f-4a39-8d6b-4c0f2e7a9d13\",\"digest\":\"15f144be1414d3e4744b2429cecd98c7dcbba3c45bae5ccc184c9e27ae8f7268\",\"download\":9,\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"upload\":7,\"version\":1}"
+    },
+    {
+      "name": "attribution_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "detail": "exact",
+        "domains": [
+          {
+            "name": "__unattributed__",
+            "upload": 12,
+            "download": 34,
+            "connections": 0
+          },
+          {
+            "name": "a.example.com",
+            "upload": 100,
+            "download": 200,
+            "connections": 2
+          },
+          {
+            "name": "b.example.com",
+            "upload": 5,
+            "download": 6,
+            "connections": 1
+          }
+        ],
+        "destinations": [
+          {
+            "name": "198.51.100.7",
+            "upload": 105,
+            "download": 206,
+            "connections": 3
+          }
+        ],
+        "digest": "d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":3,\"download\":206,\"name\":\"198.51.100.7\",\"upload\":105}],\"detail\":\"exact\",\"domains\":[{\"connections\":0,\"download\":34,\"name\":\"__unattributed__\",\"upload\":12},{\"connections\":2,\"download\":200,\"name\":\"a.example.com\",\"upload\":100},{\"connections\":1,\"download\":6,\"name\":\"b.example.com\",\"upload\":5}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":3,\"download\":206,\"name\":\"198.51.100.7\",\"upload\":105}],\"detail\":\"exact\",\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\",\"domains\":[{\"connections\":0,\"download\":34,\"name\":\"__unattributed__\",\"upload\":12},{\"connections\":2,\"download\":200,\"name\":\"a.example.com\",\"upload\":100},{\"connections\":1,\"download\":6,\"name\":\"b.example.com\",\"upload\":5}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}"
+    },
+    {
+      "name": "attribution_v2_removed",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 2,
+        "detail": "exact",
+        "domains": [
+          {
+            "name": "__unattributed__",
+            "upload": 12,
+            "download": 34,
+            "connections": 0
+          },
+          {
+            "name": "a.example.com",
+            "upload": 100,
+            "download": 200,
+            "connections": 2
+          }
+        ],
+        "destinations": [
+          {
+            "name": "198.51.100.7",
+            "upload": 105,
+            "download": 206,
+            "connections": 3
+          }
+        ],
+        "digest": "22e60f247fca1e9de122a9348d38a19461cf72046e091174de11afec4d8d851b"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":3,\"download\":206,\"name\":\"198.51.100.7\",\"upload\":105}],\"detail\":\"exact\",\"domains\":[{\"connections\":0,\"download\":34,\"name\":\"__unattributed__\",\"upload\":12},{\"connections\":2,\"download\":200,\"name\":\"a.example.com\",\"upload\":100}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":2}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":3,\"download\":206,\"name\":\"198.51.100.7\",\"upload\":105}],\"detail\":\"exact\",\"digest\":\"22e60f247fca1e9de122a9348d38a19461cf72046e091174de11afec4d8d851b\",\"domains\":[{\"connections\":0,\"download\":34,\"name\":\"__unattributed__\",\"upload\":12},{\"connections\":2,\"download\":200,\"name\":\"a.example.com\",\"upload\":100}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":2}"
+    },
+    {
+      "name": "attribution_empty_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "detail": "exact",
+        "domains": [],
+        "destinations": [],
+        "digest": "95f3a5bee7b74009282ac2d427a6ed71b8cb7bc64d783f3e19855a7a1616fb52"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[],\"detail\":\"exact\",\"domains\":[],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[],\"detail\":\"exact\",\"digest\":\"95f3a5bee7b74009282ac2d427a6ed71b8cb7bc64d783f3e19855a7a1616fb52\",\"domains\":[],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}"
+    },
+    {
+      "name": "attribution_unicode_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "detail": "exact",
+        "domains": [
+          {
+            "name": "Case.example",
+            "upload": 11,
+            "download": 12,
+            "connections": 1
+          },
+          {
+            "name": "a&b<c>d.example",
+            "upload": 21,
+            "download": 22,
+            "connections": 2
+          },
+          {
+            "name": "café.example",
+            "upload": 31,
+            "download": 32,
+            "connections": 3
+          },
+          {
+            "name": "café.example",
+            "upload": 41,
+            "download": 42,
+            "connections": 4
+          },
+          {
+            "name": "case.example",
+            "upload": 51,
+            "download": 52,
+            "connections": 5
+          },
+          {
+            "name": "control\u0001\b\f\n\r\t",
+            "upload": 61,
+            "download": 62,
+            "connections": 6
+          },
+          {
+            "name": "he said \"hi\"\\ok",
+            "upload": 71,
+            "download": 72,
+            "connections": 7
+          },
+          {
+            "name": "line sep end",
+            "upload": 81,
+            "download": 82,
+            "connections": 8
+          },
+          {
+            "name": "nul\u0000name",
+            "upload": 15,
+            "download": 16,
+            "connections": 0
+          },
+          {
+            "name": "пример.测试😀",
+            "upload": 91,
+            "download": 92,
+            "connections": 9
+          }
+        ],
+        "destinations": [
+          {
+            "name": "2001:db8::1",
+            "upload": 101,
+            "download": 202,
+            "connections": 10
+          }
+        ],
+        "digest": "87c34f358993347375e96d35ad07522faf15d8d1f2fb1f86da0fc769c5fd1368"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":10,\"download\":202,\"name\":\"2001:db8::1\",\"upload\":101}],\"detail\":\"exact\",\"domains\":[{\"connections\":1,\"download\":12,\"name\":\"Case.example\",\"upload\":11},{\"connections\":2,\"download\":22,\"name\":\"a&b<c>d.example\",\"upload\":21},{\"connections\":3,\"download\":32,\"name\":\"café.example\",\"upload\":31},{\"connections\":4,\"download\":42,\"name\":\"café.example\",\"upload\":41},{\"connections\":5,\"download\":52,\"name\":\"case.example\",\"upload\":51},{\"connections\":6,\"download\":62,\"name\":\"control\\u0001\\b\\f\\n\\r\\t\",\"upload\":61},{\"connections\":7,\"download\":72,\"name\":\"he said \\\"hi\\\"\\\\ok\",\"upload\":71},{\"connections\":8,\"download\":82,\"name\":\"line\\u2028sep\\u2029end\",\"upload\":81},{\"connections\":0,\"download\":16,\"name\":\"nul\\u0000name\",\"upload\":15},{\"connections\":9,\"download\":92,\"name\":\"пример.测试😀\",\"upload\":91}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":10,\"download\":202,\"name\":\"2001:db8::1\",\"upload\":101}],\"detail\":\"exact\",\"digest\":\"87c34f358993347375e96d35ad07522faf15d8d1f2fb1f86da0fc769c5fd1368\",\"domains\":[{\"connections\":1,\"download\":12,\"name\":\"Case.example\",\"upload\":11},{\"connections\":2,\"download\":22,\"name\":\"a&b<c>d.example\",\"upload\":21},{\"connections\":3,\"download\":32,\"name\":\"café.example\",\"upload\":31},{\"connections\":4,\"download\":42,\"name\":\"café.example\",\"upload\":41},{\"connections\":5,\"download\":52,\"name\":\"case.example\",\"upload\":51},{\"connections\":6,\"download\":62,\"name\":\"control\\u0001\\b\\f\\n\\r\\t\",\"upload\":61},{\"connections\":7,\"download\":72,\"name\":\"he said \\\"hi\\\"\\\\ok\",\"upload\":71},{\"connections\":8,\"download\":82,\"name\":\"line\\u2028sep\\u2029end\",\"upload\":81},{\"connections\":0,\"download\":16,\"name\":\"nul\\u0000name\",\"upload\":15},{\"connections\":9,\"download\":92,\"name\":\"пример.测试😀\",\"upload\":91}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}"
+    },
+    {
+      "name": "attribution_exact_with_aggregate_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "detail": "exact",
+        "domains": [
+          {
+            "name": "__other__",
+            "upload": 7000,
+            "download": 9000,
+            "connections": 40
+          }
+        ],
+        "destinations": [],
+        "digest": "4ff8bb65d6ee2dc08613b896761d109d676d9be058004420e5724ee2c0b3fed2"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[],\"detail\":\"exact\",\"domains\":[{\"connections\":40,\"download\":9000,\"name\":\"__other__\",\"upload\":7000}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[],\"detail\":\"exact\",\"digest\":\"4ff8bb65d6ee2dc08613b896761d109d676d9be058004420e5724ee2c0b3fed2\",\"domains\":[{\"connections\":40,\"download\":9000,\"name\":\"__other__\",\"upload\":7000}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}"
+    },
+    {
+      "name": "attribution_compacted_without_aggregate_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "detail": "compacted",
+        "domains": [
+          {
+            "name": "only.example",
+            "upload": 1,
+            "download": 2,
+            "connections": 3
+          }
+        ],
+        "destinations": [],
+        "digest": "7fee20d4ea608085ca6835b49c468117569f06bf40aef13cc09bdf333cfe315c"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[],\"detail\":\"compacted\",\"domains\":[{\"connections\":3,\"download\":2,\"name\":\"only.example\",\"upload\":1}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[],\"detail\":\"compacted\",\"digest\":\"7fee20d4ea608085ca6835b49c468117569f06bf40aef13cc09bdf333cfe315c\",\"domains\":[{\"connections\":3,\"download\":2,\"name\":\"only.example\",\"upload\":1}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}"
+    },
+    {
+      "name": "attribution_degraded_v1",
+      "snapshot": {
+        "source_id": "6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41",
+        "credential_id": "1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58",
+        "kind": "attribution",
+        "accounting_date": "2026-10-23",
+        "version": 1,
+        "detail": "degraded",
+        "domains": [
+          {
+            "name": "__ip__",
+            "upload": 4,
+            "download": 5,
+            "connections": 6
+          }
+        ],
+        "destinations": [
+          {
+            "name": "__other__",
+            "upload": 7,
+            "download": 8,
+            "connections": 9
+          }
+        ],
+        "digest": "e85be6091b1f1b4b6541b7a05a5887ad8a9f67daae9d6d50103c9ae856164685"
+      },
+      "payload_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":9,\"download\":8,\"name\":\"__other__\",\"upload\":7}],\"detail\":\"degraded\",\"domains\":[{\"connections\":6,\"download\":5,\"name\":\"__ip__\",\"upload\":4}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}",
+      "snapshot_canonical": "{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"destinations\":[{\"connections\":9,\"download\":8,\"name\":\"__other__\",\"upload\":7}],\"detail\":\"degraded\",\"digest\":\"e85be6091b1f1b4b6541b7a05a5887ad8a9f67daae9d6d50103c9ae856164685\",\"domains\":[{\"connections\":6,\"download\":5,\"name\":\"__ip__\",\"upload\":4}],\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}"
+    }
+  ],
+  "equivalence_vectors": [
+    {
+      "name": "counter_reordered_escaped",
+      "vector": "counter_v1",
+      "request_raw": "{\n  \"schema\": 1,\n  \"snapshots\": [\n    {\n      \"digest\": \"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\",\n      \"download\": 2048,\n      \"upload\": 1024,\n      \"version\": 1,\n      \"accounting_date\": \"2026-10-23\",\n      \"kind\": \"counter\",\n      \"credential_id\": \"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\n      \"source_id\": \"6\\u00661d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\"\n    }\n  ]\n}\n"
+    },
+    {
+      "name": "counter_negative_zero",
+      "vector": "counter_zero_v1",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":-0,\"download\":0,\"digest\":\"f7109f87b42d9417a2a8a487a897e4bb80b556f87e94ef6f940fabc79abc952c\"}]}"
+    },
+    {
+      "name": "attribution_reordered",
+      "vector": "attribution_v1",
+      "request_raw": "{\n    \"schema\": 1,\n    \"snapshots\": [\n        {\n            \"digest\": \"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\",\n            \"destinations\": [\n                {\n                    \"name\": \"198.51.100.7\",\n                    \"upload\": 105,\n                    \"download\": 206,\n                    \"connections\": 3\n                }\n            ],\n            \"domains\": [\n                {\n                    \"name\": \"__unattributed__\",\n                    \"upload\": 12,\n                    \"download\": 34,\n                    \"connections\": 0\n                },\n                {\n                    \"name\": \"a.example.com\",\n                    \"upload\": 100,\n                    \"download\": 200,\n                    \"connections\": 2\n                },\n                {\n                    \"name\": \"b.example.com\",\n                    \"upload\": 5,\n                    \"download\": 6,\n                    \"connections\": 1\n                }\n            ],\n            \"detail\": \"exact\",\n            \"version\": 1,\n            \"accounting_date\": \"2026-10-23\",\n            \"kind\": \"attribution\",\n            \"credential_id\": \"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\n            \"source_id\": \"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\"\n        }\n    ]\n}\n"
+    },
+    {
+      "name": "attribution_array_reordered",
+      "vector": "attribution_v1",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}"
+    },
+    {
+      "name": "attribution_escaped_name",
+      "vector": "attribution_v1",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a\\u002eexample\\u002ecom\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}"
+    },
+    {
+      "name": "attribution_surrogate_pair",
+      "vector": "attribution_unicode_v1",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"Case.example\",\"upload\":11,\"download\":12,\"connections\":1},{\"name\":\"a&b<c>d.example\",\"upload\":21,\"download\":22,\"connections\":2},{\"name\":\"café.example\",\"upload\":31,\"download\":32,\"connections\":3},{\"name\":\"café.example\",\"upload\":41,\"download\":42,\"connections\":4},{\"name\":\"case.example\",\"upload\":51,\"download\":52,\"connections\":5},{\"name\":\"control\\u0001\\b\\f\\n\\r\\t\",\"upload\":61,\"download\":62,\"connections\":6},{\"name\":\"he said \\\"hi\\\"\\\\ok\",\"upload\":71,\"download\":72,\"connections\":7},{\"name\":\"line sep end\",\"upload\":81,\"download\":82,\"connections\":8},{\"name\":\"nul\\u0000name\",\"upload\":15,\"download\":16,\"connections\":0},{\"name\":\"пример.测试\\ud83d\\ude00\",\"upload\":91,\"download\":92,\"connections\":9}],\"destinations\":[{\"name\":\"2001:db8::1\",\"upload\":101,\"download\":202,\"connections\":10}],\"digest\":\"87c34f358993347375e96d35ad07522faf15d8d1f2fb1f86da0fc769c5fd1368\"}]}"
+    },
+    {
+      "name": "attribution_nfd_escaped",
+      "vector": "attribution_unicode_v1",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"Case.example\",\"upload\":11,\"download\":12,\"connections\":1},{\"name\":\"a&b<c>d.example\",\"upload\":21,\"download\":22,\"connections\":2},{\"name\":\"cafe\\u0301.example\",\"upload\":31,\"download\":32,\"connections\":3},{\"name\":\"café.example\",\"upload\":41,\"download\":42,\"connections\":4},{\"name\":\"case.example\",\"upload\":51,\"download\":52,\"connections\":5},{\"name\":\"control\\u0001\\b\\f\\n\\r\\t\",\"upload\":61,\"download\":62,\"connections\":6},{\"name\":\"he said \\\"hi\\\"\\\\ok\",\"upload\":71,\"download\":72,\"connections\":7},{\"name\":\"line sep end\",\"upload\":81,\"download\":82,\"connections\":8},{\"name\":\"nul\\u0000name\",\"upload\":15,\"download\":16,\"connections\":0},{\"name\":\"пример.测试😀\",\"upload\":91,\"download\":92,\"connections\":9}],\"destinations\":[{\"name\":\"2001:db8::1\",\"upload\":101,\"download\":202,\"connections\":10}],\"digest\":\"87c34f358993347375e96d35ad07522faf15d8d1f2fb1f86da0fc769c5fd1368\"}]}"
+    }
+  ],
+  "request_rejections": [
+    {
+      "name": "schema_true",
+      "raw": "{\"schema\":true,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "schema_float",
+      "raw": "{\"schema\":1.0,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "schema_string",
+      "raw": "{\"schema\":\"1\",\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "schema_zero",
+      "raw": "{\"schema\":0,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "unsupported_schema"
+    },
+    {
+      "name": "schema_two",
+      "raw": "{\"schema\":2,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "unsupported_schema"
+    },
+    {
+      "name": "schema_missing",
+      "raw": "{\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "root_unknown_field",
+      "raw": "{\"schema\":1,\"note\":{},\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "snapshot_unknown_field",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\",\"note\":\"x\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "entry_unknown_field",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"a.example.com\",\"upload\":1,\"download\":2,\"connections\":3,\"note\":\"x\"}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "snapshot_missing_kind",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "snapshot_unknown_kind",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"live\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "snapshot_is_scalar",
+      "raw": "{\"schema\":1,\"snapshots\":[1]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "snapshots_empty",
+      "raw": "{\"schema\":1,\"snapshots\":[]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_upload_bool",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":true,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_version_bool",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":true,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "entry_connections_bool",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"a.example.com\",\"upload\":1,\"download\":2,\"connections\":true}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_upload_float",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1.0,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_upload_exponent",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1e3,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_upload_overflow",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":9223372036854775808,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_upload_negative",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":-1,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_version_zero",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":0,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_version_overflow",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":9223372036854775808,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "counter_has_domains",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\",\"domains\":[]}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "attribution_has_upload",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\",\"upload\":1}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "attribution_missing_domains",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "attribution_detail_unknown",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"folded\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "name_empty",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"\",\"upload\":1,\"download\":2,\"connections\":3}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "name_lone_surrogate",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"\\ud800\",\"upload\":1,\"download\":2,\"connections\":3}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "invalid_utf8",
+      "raw_hex": "7b22736368656d61223a312c22736e617073686f7473223a5b7b22736f757263655f6964223a223666ff64306530612d326634622d346135652d396331642d306237653261396333643431222c2263726564656e7469616c5f6964223a2231633962326637652d386133642d346536662d623563322d376430653961316233633538222c226b696e64223a22636f756e746572222c226163636f756e74696e675f64617465223a22323032362d31302d3233222c2276657273696f6e223a312c2275706c6f6164223a313032342c22646f776e6c6f6164223a323034382c22646967657374223a2266383661323965626637643831666636323133353937383062343931373536366434396632643630366464343934303934326437356632326563303264323862227d5d7d",
+      "code": "invalid_request"
+    },
+    {
+      "name": "trailing_document",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}{}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "malformed_json",
+      "raw": "{\"schema\":1,\"snapshots\":[",
+      "code": "invalid_request"
+    },
+    {
+      "name": "nan_upload",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":NaN,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "infinity_upload",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1e999,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "uppercase_uuid",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6F1D0E0A-2F4B-4A5E-9C1D-0B7E2A9C3D41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "uppercase_digest",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"F86A29EBF7D81FF621359780B4917566D49F2D606DD4940942D75F22EC02D28B\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "digest_short",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "date_datetime",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23T00:00:00Z\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "date_invalid",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-02-30\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "date_zero_year",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"0000-01-01\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "date_unpadded",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-1-1\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "duplicate_json_key_root",
+      "raw": "{\"schema\":1,\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "duplicate_json_key_snapshot",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "duplicate_json_key_entry",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "duplicate_names_domains",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"a.example.com\",\"upload\":1,\"download\":2,\"connections\":3},{\"name\":\"a.example.com\",\"upload\":4,\"download\":5,\"connections\":6}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "duplicate_name"
+    },
+    {
+      "name": "duplicate_snapshot_keys",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "duplicate_snapshot_key"
+    },
+    {
+      "name": "escaped_duplicate_names",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"a.example.com\",\"upload\":1,\"download\":2,\"connections\":3},{\"name\":\"a\\u002eexample.com\",\"upload\":4,\"download\":5,\"connections\":6}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "duplicate_name"
+    },
+    {
+      "name": "escaped_duplicate_source_snapshot_key",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6\\u00661d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "duplicate_snapshot_key"
+    },
+    {
+      "name": "escaped_duplicate_credential_snapshot_key",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"\\u0031c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "duplicate_snapshot_key"
+    },
+    {
+      "name": "escaped_duplicate_json_key",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"\\u0075pload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "digest_mismatch",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"0000000000000000000000000000000000000000000000000000000000000000\"}]}",
+      "code": "snapshot_digest_mismatch"
+    },
+    {
+      "name": "missing_digest",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "null_upload",
+      "raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":null,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"}]}",
+      "code": "invalid_request"
+    }
+  ],
+  "receipt_vectors": [
+    {
+      "name": "receipt_exact",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_canonical": "{\"receipts\":[{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\",\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":2},{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\",\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1}],\"schema\":1}"
+    },
+    {
+      "name": "receipt_reordered",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"}]}",
+      "response_canonical": "{\"receipts\":[{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\",\"kind\":\"attribution\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":1},{\"accounting_date\":\"2026-10-23\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\",\"kind\":\"counter\",\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"version\":2}],\"schema\":1}"
+    }
+  ],
+  "receipt_rejections": [
+    {
+      "name": "receipt_missing_key",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"}]}",
+      "code": "receipt_key_mismatch"
+    },
+    {
+      "name": "receipt_extra_key",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-24\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "receipt_key_mismatch"
+    },
+    {
+      "name": "receipt_duplicate_key",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "receipt_key_mismatch"
+    },
+    {
+      "name": "receipt_duplicate_json_key",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\",\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_escaped_duplicate_json_key",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\",\"\\u0064igest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_root_duplicate_key",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_unknown_field",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\",\"accepted\":true},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_root_unknown_field",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"note\":{},\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_schema_two",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":2,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "unsupported_schema"
+    },
+    {
+      "name": "receipt_schema_bool",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":true,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_version_bool",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":true,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_uppercase_digest",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001DC3861EAD3159AD62B2A42FF762F16C17553CEC22F471B1E7FB588CFADA76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_invalid_date",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-02-30\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_missing_kind",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "code": "invalid_request"
+    },
+    {
+      "name": "receipt_trailing_document",
+      "request_raw": "{\"schema\":1,\"snapshots\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"upload\":1024,\"download\":2048,\"digest\":\"f86a29ebf7d81ff621359780b4917566d49f2d606dd4940942d75f22ec02d28b\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"detail\":\"exact\",\"domains\":[{\"name\":\"__unattributed__\",\"upload\":12,\"download\":34,\"connections\":0},{\"name\":\"a.example.com\",\"upload\":100,\"download\":200,\"connections\":2},{\"name\":\"b.example.com\",\"upload\":5,\"download\":6,\"connections\":1}],\"destinations\":[{\"name\":\"198.51.100.7\",\"upload\":105,\"download\":206,\"connections\":3}],\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}",
+      "response_raw": "{\"schema\":1,\"receipts\":[{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"counter\",\"accounting_date\":\"2026-10-23\",\"version\":2,\"digest\":\"001dc3861ead3159ad62b2a42ff762f16c17553cec22f471b1e7fb588cfada76\"},{\"source_id\":\"6f1d0e0a-2f4b-4a5e-9c1d-0b7e2a9c3d41\",\"credential_id\":\"1c9b2f7e-8a3d-4e6f-b5c2-7d0e9a1b3c58\",\"kind\":\"attribution\",\"accounting_date\":\"2026-10-23\",\"version\":1,\"digest\":\"d9c36bb6a15c3b29077ed5248d3d132d16fbed897055ca048a98c68446809db1\"}]}{}",
+      "code": "invalid_request"
+    }
+  ]
+}

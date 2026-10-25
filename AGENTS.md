@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Checked on 2026-10-23.
+Checked on 2026-10-25.
 
 This repo builds `sing-box` releases, serves authenticated downloads, and deploys
 the code and an already-built release directory to a VPS. Use Pixi and Python 3.12.
@@ -53,6 +53,7 @@ surrounding context.
 | Checks, docstale, agent instructions and skills    | [DEVELOPMENT.md](docs/DEVELOPMENT.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md)                                                                                                                                                                                                 |
 | Django control plane and PostgreSQL                | [CONTROL_PLANE.md](docs/CONTROL_PLANE.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                                                                                                                                                                      |
 | Node agent, multi-node support and node operations | [MULTI_NODE_SPEC.md](docs/MULTI_NODE_SPEC.md), [NODE_ACCEPTANCE.md](docs/NODE_ACCEPTANCE.md), [CONTROL_PLANE.md](docs/CONTROL_PLANE.md), [SECRET_HANDLING.md](docs/SECRET_HANDLING.md), [DEVELOPMENT.md](docs/DEVELOPMENT.md)                                                                         |
+| Node traffic wire protocol and codecs              | [NODE_TRAFFIC_PROTOCOL.md](docs/NODE_TRAFFIC_PROTOCOL.md), [NODE_ACCEPTANCE.md](docs/NODE_ACCEPTANCE.md#traffic-wire-codec), [DEVELOPMENT.md](docs/DEVELOPMENT.md#traffic-accounting-checks), [MULTI_NODE_SPEC.md](docs/MULTI_NODE_SPEC.md#7-traffic-accounting-and-synchronization)                  |
 | Refactoring milestones, target architecture        | [REFACTOR_SPEC.md](docs/REFACTOR_SPEC.md)                                                                                                                                                                                                                                                             |
 | Go client (`sbc`) and its hosted installer         | [README_SBC.md](docs/README_SBC.md), [REFACTOR_SPEC.md](docs/REFACTOR_SPEC.md#m1-client-cli-for-linux-and-macos), its [M2](docs/REFACTOR_SPEC.md#m2-client-cli-for-windows) for Windows, [RELEASE_AND_PORTAL.md](docs/RELEASE_AND_PORTAL.md#one-liner-install), [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 

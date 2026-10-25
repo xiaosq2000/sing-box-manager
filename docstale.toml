@@ -30,6 +30,13 @@ harness = [
   "tests/test_tun_vm.py",
   "tests/test_tun_lifecycle.py",
 ]
+node-traffic = [
+  "sing_box_manager/control_plane/traffic_contract.py",
+  "node-agent/internal/traffic/",
+  "tests/test_node_traffic_contract.py",
+  "tests/fixtures/node-traffic-v1.json",
+  ".github/workflows/node-agent.yml",
+]
 sbc = [
   "go.mod",
   "go.sum",
@@ -121,7 +128,7 @@ control-plane = [
   "sing_box_manager/release/",
 ]
 
-"AGENTS.md" = ["@cli", "@harness", "@sbc", "@control-plane"]
+"AGENTS.md" = ["@cli", "@harness", "@sbc", "@control-plane", "@node-traffic"]
 
 "CONTRIBUTING.md" = ["@cli", "@harness", "@sbc", ".pre-commit-config.yaml"]
 
@@ -129,6 +136,7 @@ control-plane = [
 
 "docs/DEVELOPMENT.md" = [
   "node-agent/",
+  "@node-traffic",
   "tests/node_g0/",
   "tests/test_node_g0*.py",
   "tests/test_node_g2_counter_parity.py",
@@ -277,6 +285,7 @@ control-plane = [
 
 "docs/NODE_ACCEPTANCE.md" = [
   "node-agent/",
+  "@node-traffic",
   "scripts/dev/node-g0/",
   "scripts/dev/tun-vm/select-accel.py",
   "tests/node_g0/",
@@ -290,8 +299,11 @@ control-plane = [
   "pixi.lock",
 ]
 
+"docs/NODE_TRAFFIC_PROTOCOL.md" = ["@node-traffic"]
+
 "docs/MULTI_NODE_SPEC.md" = [
   "node-agent/",
+  "@node-traffic",
   "scripts/dev/node-g0/",
   "tests/node_g0/",
   "tests/test_node_g0*.py",
