@@ -56,6 +56,8 @@ func TestTerminalHelper(t *testing.T) {
 			return os.Getenv(key)
 		}
 	}
+	i18n.SetChinese(i18n.Chinese(os.Getenv))
+	defer i18n.SetChinese(false)
 	kind := os.Getenv("SBC_TTY_KIND")
 	args := []string{"route"}
 	switch kind {
@@ -65,6 +67,32 @@ func TestTerminalHelper(t *testing.T) {
 		args = []string{"init", "bash"}
 	case "completion":
 		args = []string{"completion", "bash"}
+	}
+	if kind == "protocol" {
+		h.api.protocol = "snell"
+		h.api.protocols = []string{"snell", "trojan", "hysteria2", "naive"}
+		args = []string{"protocol"}
+	}
+	if kind == "check" || kind == "download" {
+		site, roots := diagnosticSite(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-time.After(700 * time.Millisecond):
+				if kind == "download" {
+					fmt.Fprint(w, strings.Repeat("x", 1_000_000))
+				} else {
+					fmt.Fprint(w, "fixture response")
+				}
+			case <-r.Context().Done():
+			}
+		}))
+		h.env.DiagnosticRoots = roots
+		tunnelProxy(t, h, site)
+		page, _ := url.Parse(site.URL)
+		args = []string{"check", "https://fixture.test:" + page.Port() + "/favicon.ico"}
+		if kind == "download" {
+			h.env.Sites.Download = site.URL + "/download"
+			args = []string{"speed", "download", "--size", "1MB"}
+		}
 	}
 	if kind == "hostile" {
 		h.api.protocols = []string{"trojan", "naive\x1b]52;c;ZmFrZQ==\a\u202e\nRoute: direct\r\t"}
@@ -341,6 +369,68 @@ func TestTerminalSelectorConfirmationAndSignals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestTerminalProtocolDescriptions(t *testing.T) {
+	for _, language := range []string{"en", "zh"} {
+		for _, output := range []string{"pty", "pipe"} {
+			t.Run(language+"-"+output, func(t *testing.T) {
+				s := startTerminal(t, "protocol", "pty", output, "xterm-256color", "1", 100, 12,
+					terminalSettings{env: map[string]string{"SBC_LANG": language}})
+				marker := "recognizable traffic patterns"
+				fragments := []string{"extra traffic", "does not recommend", "blocks UDP", "throttles UDP", "real browser", "cost of some speed"}
+				if language == "zh" {
+					marker = "流量规律"
+					fragments = []string{"额外消耗", "本项目不推荐使用", "屏蔽或限速 UDP", "无法连接或速度受限", "真实浏览器", "可能需要牺牲部分速度"}
+				}
+				if output == "pty" {
+					s.waitText(t, marker)
+					s.master.Write([]byte("q"))
+				}
+				if r := s.finish(t); r.Code != 0 || r.Protocol != "snell" {
+					t.Fatalf("result %+v", r)
+				}
+				text := s.output.text()
+				normalized := strings.Join(strings.Fields(ansi.Strip(text)), "")
+				for _, fragment := range append(fragments, marker) {
+					if !strings.Contains(normalized, strings.Join(strings.Fields(fragment), "")) {
+						t.Fatalf("missing protocol guidance %q: %q", fragment, text)
+					}
+				}
+				if output == "pty" && !regexp.MustCompile(`\r\x1b\[[0-9]*A\x1b\[J(╭|Select protocol\r?\n|选择代理协议\r?\n)`).MatchString(text) {
+					t.Fatalf("selector did not clear before the static list: %q", text)
+				}
+			})
+		}
+	}
+}
+
+func TestTerminalDiagnosticsClearProgressBeforeFinalReport(t *testing.T) {
+	for _, kind := range []string{"check", "download", "ip"} {
+		for _, cancel := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/cancel=%t", kind, cancel), func(t *testing.T) {
+				s := startTerminal(t, kind, "pty", "pty", "xterm-256color", "1", 160, 24)
+				s.waitText(t, "testing...")
+				if cancel {
+					s.master.Write([]byte("\x03"))
+				}
+				wantCode := 0
+				if cancel {
+					wantCode = 130
+				}
+				if r := s.finish(t); r.Code != wantCode {
+					t.Fatalf("result %+v: %q", r, s.output.text())
+				}
+				text := s.output.text()
+				if !regexp.MustCompile("\\r\\x1b\\[[0-9]*A\\x1b\\[Jscope: sbc").MatchString(text) {
+					t.Fatalf("final report did not replace the live view: %q", text)
+				}
+				if strings.Contains(text, "\x1b[2J") || strings.Contains(text, "\x1b[?1049h") {
+					t.Fatal("diagnostics cleared history or entered the alternate screen")
+				}
+			})
+		}
 	}
 }
 

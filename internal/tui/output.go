@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 )
 
@@ -153,7 +155,7 @@ func (w programWriter) Write(p []byte) (int, error) {
 // The command owns terminal state, not the lifetime of inherited stdio files.
 func (w programWriter) Close() error { return nil }
 
-// Program adds startup cleanup and write-error reporting to Bubble Tea.
+// Program clears transient inline views and reports startup and write errors.
 type Program struct {
 	*tea.Program
 	output      *Output
@@ -191,6 +193,24 @@ func (p *Program) Run() (model tea.Model, err error) {
 	model, err = p.Program.Run()
 	if wrapped, ok := model.(startupModel); ok {
 		model = wrapped.Model
+	}
+	if err == nil && model != nil {
+		view := model.View()
+		if !view.AltScreen && view.Content != "" {
+			// The renderer exits at column zero of the final frame's last row.
+			// Clear only that frame, without erasing earlier terminal history.
+			_, height := p.output.Size()
+			rows := strings.Count(view.Content, "\n") + 1
+			if height > 0 {
+				rows = min(rows, height)
+			}
+			clear := "\r"
+			if rows > 1 {
+				clear += ansi.CursorUp(rows - 1)
+			}
+			_, clearErr := fmt.Fprint(p.output, clear+ansi.EraseScreenBelow)
+			err = errors.Join(err, clearErr)
+		}
 	}
 	return model, err
 }

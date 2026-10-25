@@ -1,6 +1,6 @@
 # sbc client CLI
 
-Checked on 2026-10-23.
+Checked on 2026-10-25.
 
 `sbc` is the Go client for Linux, macOS, and Windows. It manages sing-box,
 fetches subscription configs, and controls shell and desktop proxy settings.
@@ -270,18 +270,31 @@ and completion scripts, does not initialize these views or query terminal colors
 
 Interactive `check`, `ip`, and `speed download` show an inline progress view.
 Use arrow keys or Page Up/Down to scroll. The view adapts to window size changes.
-The complete final report remains in terminal history. Ctrl-C returns 130 with
-partial diagnostic results. POSIX SIGTERM returns 143.
+When the command ends, sbc removes the progress view and prints the complete
+final report once. Earlier terminal history remains unchanged. Ctrl-C returns
+130 with partial diagnostic results. POSIX SIGTERM returns 143.
 
 Route and protocol selectors keep the current item visible in short windows.
 Use Page Up/Down to read a selected item that is taller than the window.
+Descriptions wrap at word boundaries where possible. Continuation lines align
+with the description and do not repeat the focus marker. Narrow selectors place
+descriptions below option names. Narrow static choice lists use the same layout.
 Below four columns, interactive views show a `<>` resize hint (`<` in one column).
 They retain their data and redraw when the window is wider.
 Only Enter confirms a switch. Space does not submit. Esc or `q` cancels without
 changing settings. Ctrl-C and SIGINT return 130. POSIX SIGTERM returns 143.
 Selection errors return a failure instead of a successful query.
 Non-interactive calls show the same choices in a static table, with a current-item
-marker. If the API list omits the current choice, the query stays read-only and
+marker. Protocol choices include one-line descriptions for Snell, Trojan,
+Hysteria2 and Naive in the selected CLI language. These descriptions explain
+user-visible tradeoffs, not implementation details or measured performance rankings.
+The Trojan notice states this project's recommendation, not a claim that its
+encryption is broken. Hysteria2's notice explains that networks which block or
+throttle UDP can prevent connections or limit speed. No description promises
+undetectable traffic or battery savings.
+Custom protocol tags remain visible without an inferred description. Descriptions
+do not override route policy or Linux TUN restrictions.
+If the API list omits the current choice, the query stays read-only and
 shows the current value separately. Display labels omit terminal control sequences
 and embedded line breaks. API requests keep the original option values.
 

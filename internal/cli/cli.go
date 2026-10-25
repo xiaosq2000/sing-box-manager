@@ -466,7 +466,7 @@ func runSwitch(env Env, args []string, what string) int {
 		currentListed := false
 		for _, opt := range options {
 			currentListed = currentListed || opt == current
-			desc := ""
+			desc := protocolDescription(opt)
 			if what == "route" {
 				desc = routes.Description(opt)
 			}
