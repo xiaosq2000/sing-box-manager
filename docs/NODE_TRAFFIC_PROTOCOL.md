@@ -7,11 +7,12 @@ Python and Go codecs. It is node traffic schema 1, not the desktop subscription
 envelope. The codec has no HTTP, Django, database, persistence or export side
 effects.
 
-The `node-traffic-v1` codec is not wired into production: no
-`/node/v1/traffic` route, authorization registry, ingestion, persistence,
-exporter or history import uses this schema yet, and G2 remains unaccepted. The
-retained `/node-g0/v1/` fixture transport and legacy traffic stores keep their
-existing local SQLite writers; this codec does not replace or retire them. See
+An unexposed PostgreSQL ingestion service stores validated pages through
+`ingest_page(node_id, raw_body)`. It has no HTTP route or bearer resolver yet.
+The retained `/node-g0/v1/` fixture transport and legacy traffic stores keep
+their existing local SQLite writers; this codec does not replace or retire them.
+No production route, authorization registry, exporter, local ledger wiring,
+history import or full G2/G3 acceptance exists. See
 [MULTI_NODE_SPEC.md](MULTI_NODE_SPEC.md#7-traffic-accounting-and-synchronization)
 for the target accounting contract and
 [NODE_ACCEPTANCE.md](NODE_ACCEPTANCE.md#g2-progress) for the current evidence
@@ -74,7 +75,8 @@ through 2^63-1.
 ```
 
 Counter totals are authoritative. The codec validates each absolute snapshot;
-later ingestion owns replacement, conflict and monotonic-counter rules.
+the unexposed PostgreSQL ingestion service applies replacement, conflict and
+monotonic-counter rules. HTTP authentication and transport remain separate.
 
 Attribution is a derived, complete replacement bucket, not a second billing
 total. Producers own compaction and removals; the codec does not merge values.
@@ -199,20 +201,88 @@ budgets and collector policy are later responsibilities.
 | `receipt_key_mismatch`     | Missing, extra or duplicate receipt key                                 |
 
 Invalid schema types produce `invalid_request`; only a valid integer other
-than 1 produces `unsupported_schema`. HTTP status mapping, ingestion conflicts
-and authorization errors are not part of this codec.
+than 1 produces `unsupported_schema`. HTTP status mapping and authorization
+errors are not part of this codec.
+
+The PostgreSQL ingestion service adds fixed `ownership_mismatch`,
+`version_conflict` and `counter_regression` errors. Codec errors propagate
+unchanged, and unexpected database failures remain failures rather than
+successful receipts.
+
+## Unexposed PostgreSQL ingestion
+
+`sing_box_manager/control_plane/traffic_ingest.py` provides
+`ingest_page(node_id: UUID, raw_body: bytes) -> bytes`. The caller supplies an
+already-authenticated node UUID. The service calls the actual codec
+`parse_request`, opens its own top-level `transaction.atomic(durable=True)`,
+locks distinct `TrafficSource` rows and then distinct `Credential` rows in sorted
+UUID order scoped to that node, requires every identity to exist and match the
+node, loads current snapshots with deferred payloads, applies the page, encodes
+the complete receipt response, exits the durable transaction, and only then
+returns the bytes. A nested or non-autocommit caller transaction is rejected.
+A commit failure cannot return a receipt.
+
+Credential locks select only `id`, `uuid` and `node_id`; no protocol secret is
+fetched. Missing sources, missing credentials, cross-node identities and
+unbound credentials return `ownership_mismatch`. Source and credential parent
+locks serialize absent-key inserts; the unique constraint is the final guard.
+
+Migration `0007_traffic_snapshot` adds `TrafficSnapshot`. Its unique key is
+`(source, credential, kind, accounting_date)`. The `source` and
+`credential.uuid` foreign keys use `PROTECT`. The model stores:
+
+- the exact canonical payload without its digest in PostgreSQL `bytea`;
+- counter `upload` and `download` scalar projections;
+- attribution `detail` with NULL counter/attribution shape checks;
+- a positive int64 version, a lowercase SHA-256 digest and opaque timestamps.
+
+The database also bounds the payload to 1 through 768 KiB and validates the two
+kind shapes. Normal Django managers are used. A missing snapshot table raises a
+database error; it is not converted into an empty result or hidden by schema
+introspection.
+
+Version rules are applied to the whole page:
+
+| Existing state                  | Result                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| Missing key                     | Insert the complete validated snapshot                                    |
+| Request version lower           | Return the stored version and digest; no write                            |
+| Equal version and digest        | Return the stored receipt; no write or timestamp change                   |
+| Equal version, different digest | `version_conflict`; roll the page back                                    |
+| Higher counter version          | Reject `counter_regression` if either component decreases                 |
+| Higher attribution version      | Replace the complete bucket, including shrink or removal after compaction |
+
+Any ownership, conflict, regression or encoding error rolls back the whole
+page. Receipt keys must exactly cover the request and use stored state for every
+key. No partial receipt is acknowledged, and older/equal no-op paths do not
+change `updated_at`.
+
+Payloads preserve names containing NUL, other C0 controls, quotes, backslashes,
+NFC/NFD distinctions and U+2028/U+2029. JSONB is not used because it cannot
+represent U+0000. These payloads contain sensitive traffic data: canonical
+encoding and digests are not anonymization or encryption. Keep them under the
+protected PostgreSQL and backup boundary, and do not log raw pages or names.
+
+Source and credential retrieval/deletion behavior is unchanged when no history
+row references it. A referenced `TrafficSource` or `Credential` cannot be
+deleted because of the snapshot foreign keys. This is referential integrity
+only: retirement, tombstones, re-enable and pending-revocation policy are not
+implemented. Existing unbound or no-snapshot legacy state remains unchanged;
+controlled write closure, binding and consumer gates remain prerequisites before
+activation.
 
 ## Current limits
 
-- This codec slice has no production `/node/v1/traffic` endpoint, authentication
-  or authorization registry.
-- It adds no PostgreSQL ingestion, version-conflict handling, ownership check or
-  receipt persistence.
-- It adds no local SQLite writer, export scheduler, anti-entropy sweep, retention
-  job or history import. The retained G0 transport and legacy traffic stores keep
-  their existing local writers.
+- The unexposed service has no HTTP route, bearer resolution, node/source
+  creation or registration, identity binding, exporter or acknowledgement
+  scheduler, local ledger wiring, policy generation, calendar inference,
+  retention, monthly history import or full G2/G3 acceptance.
+- It writes PostgreSQL snapshots only. It adds no local SQLite writer; the
+  retained G0 transport and legacy traffic stores keep their existing local
+  writers.
 - The codec does not resolve per-credential accounting calendars, provider
   resets or time zones. It validates the supplied `accounting_date`.
 - The isolated `/node-g0/v1/` transport remains a prototype fixture and is not
   replaced or retired by this schema.
-- G2 remains in progress; shared codec vectors are not gate acceptance.
+- G2 remains in progress; codec, ingestion and registry evidence are not gate
+  acceptance.

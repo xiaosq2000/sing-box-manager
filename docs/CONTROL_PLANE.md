@@ -212,9 +212,10 @@ It does not authorize an operator or a traffic view. Historical traffic remains 
 
 ## Traffic collection
 
-The pure [node traffic wire codec](NODE_TRAFFIC_PROTOCOL.md) is not wired into
-this service yet. No current route, collector, model or exporter calls
-`traffic_contract.py`; the collection behavior below is unchanged.
+The pure [node traffic wire codec](NODE_TRAFFIC_PROTOCOL.md) and its unexposed
+PostgreSQL ingestion service are not called by the current collector or an HTTP
+route. No bearer resolver, exporter or local ledger calls them; the collection
+behavior below is unchanged.
 
 In authoritative mode, the traffic collector reads accounts and enabled credentials from
 PostgreSQL. It includes accounts created only in Django Admin. Account and protocol
@@ -222,6 +223,45 @@ switches determine collection targets; `portal_enabled` does not.
 A database error fails collection instead of using the obsolete inventory roster.
 Non-authoritative mode continues to read inventory users. Usage history remains in SQLite.
 Deployment checks traffic collection after the final node sync.
+
+## Traffic ingestion service
+
+`sing_box_manager/control_plane/traffic_ingest.py` provides
+`ingest_page(node_id, raw_body)` for a future authenticated endpoint. The caller
+supplies a trusted node UUID. The service calls the actual `node-traffic-v1`
+codec, locks sorted source and credential rows scoped to that node, requires
+every identity to exist and match the node, applies page-level version rules,
+and returns canonical receipt bytes only after its own durable PostgreSQL
+transaction commits. Missing, cross-node and unbound identities fail with
+`ownership_mismatch`. A nested or non-autocommit caller transaction is rejected;
+commit failure cannot produce a receipt.
+
+Migration `0007_traffic_snapshot` adds `TrafficSnapshot`. Its unique key is
+`(source, credential, kind, accounting_date)`. It stores the exact canonical
+payload without digest in `bytea`, counter `upload`/`download` scalar
+projections, attribution `detail`, a positive int64 version and a lowercase
+SHA-256 digest. Database checks enforce the counter/attribution NULL shapes and
+the 1 to 768 KiB payload bound. Normal Django managers are used; a missing
+snapshot table raises a database error rather than returning empty data.
+Payloads are sensitive traffic data; canonical encoding and digests are not
+anonymization or encryption. See
+[secret handling](SECRET_HANDLING.md#where-the-real-secrets-live).
+
+A missing key inserts. A lower version returns the stored receipt. Equal
+version and digest is a no-op; equal version with another digest is a
+`version_conflict`. A higher counter version cannot decrease either component,
+otherwise `counter_regression`. A higher attribution version replaces the
+complete bucket, including shrink or removal after compaction. Every failure
+rolls back the whole page; receipts use stored state and are returned only after
+commit.
+
+This service has no HTTP route or bearer resolver, node/source creation,
+registration or binding, exporter/acknowledgement scheduler, local ledger
+wiring, policy generation, calendar inference, retention, monthly history import
+or production acceptance. Source/credential retirement, tombstones, re-enable
+and pending-revocation policy remain unimplemented. Existing unbound or
+no-snapshot legacy state is unchanged; controlled write closure, binding and
+consumer gates remain prerequisites before activation.
 
 ## Schema upgrade
 
@@ -238,9 +278,11 @@ The schema records:
 - `Node.slug` is unique and non-empty; `Node.token_digest` is a unique lowercase
   64-hex digest. Neither `Node` nor `TrafficSource` is registered in Admin.
 - `TrafficSource.node` and `Credential.node` use `PROTECT`, blocking deletion of a
-  referenced `Node`; child `TrafficSource` and `Credential` deletion is not
-  protected. At most one non-retired source may exist per node. `retired_at` is
-  metadata only; no retirement workflow exists.
+  referenced `Node`. `TrafficSnapshot.source` and `TrafficSnapshot.credential`
+  also use `PROTECT`; a source or credential referenced by any stored snapshot
+  cannot be deleted. Without a referencing snapshot, child deletion retains its
+  prior behavior. This is referential integrity only, not retirement, tombstone,
+  re-enable or pending-revocation policy.
 - `Credential.uuid` is unique, non-null, and generated per row. `Credential.node`
   and `wire_name` are nullable, hidden, non-editable metadata. Both stay NULL
   until binding; the pair constraint requires a non-empty wire name whenever a
@@ -248,16 +290,23 @@ The schema records:
 - Existing account/protocol and Snell uniqueness, `Credential.account` CASCADE,
   the Admin credential inline, imports, and subscription behavior are unchanged.
 
-The migration allocates UUIDs only for existing credentials and preserves every
+Migration `0007_traffic_snapshot` adds the unexposed snapshot table described
+above. It depends on `0006_node_source_registry` and adds no HTTP route, bearer
+resolver, node/source/token creation, registration, binding, exporter or local
+ledger behavior.
+
+The `0006` migration allocates UUIDs only for existing credentials and preserves every
 assigned UUID on callback replay. Reverse migration raises Django's
 `IrreversibleError` during preflight before reverse DDL; this is not a tested
 executed-DDL rollback.
 
-This is dormant schema only. It adds no tombstone, retirement, re-enable,
-pending-target, immutable-operator-write, authentication, ingestion, exporter,
-source-quarantine, API, or production-acceptance behavior. Later policy must
-close direct model writes, create serialized policy generations and removal
-targets, and define tombstone and pending-revocation behavior before binding.
+This registry migration is dormant schema only. It adds no tombstone,
+retirement, re-enable, pending-target, immutable-operator-write, authentication,
+exporter, source-quarantine, API, or production-acceptance behavior. The
+separate `0007_traffic_snapshot` service adds durable PostgreSQL snapshots but no
+HTTP/auth/binding/exporter/ledger behavior. Later policy must close direct model
+writes, create serialized policy generations and removal targets, and define
+tombstone and pending-revocation behavior before binding.
 Consumer lookups must become node-scoped before node-scoped uniqueness or non-NULL
 binding replaces the current global constraints. The unbound path is a temporary
 migration state and must be removed, not retained as a fallback. No source

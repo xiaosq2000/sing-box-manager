@@ -41,7 +41,7 @@ def registry_runtime(postgres, tmp_path):
     return path, env
 
 
-def migrate_runtime(env, target):
+def migrate_runtime(env, target=None):
     python(
         env,
         f"""
@@ -49,7 +49,14 @@ import django
 django.setup()
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-MigrationExecutor(connection).migrate({target!r})
+executor = MigrationExecutor(connection)
+target = {target!r}
+if target is None:
+    target = [
+        node for node in executor.loader.graph.leaf_nodes()
+        if node[0] == "control_plane"
+    ]
+executor.migrate(target)
 """,
     )
 
@@ -172,6 +179,44 @@ leaf_target = [("control_plane", "0006_node_source_registry")]
 executor = MigrationExecutor(connection)
 executor.migrate(leaf_target)
 assert MigrationExecutor(connection).migration_plan(leaf_target) == []
+apps_0006 = executor.loader.project_state(leaf_target).apps
+Node0006 = apps_0006.get_model("control_plane", "Node")
+Source0006 = apps_0006.get_model("control_plane", "TrafficSource")
+Account0006 = apps_0006.get_model("control_plane", "Account")
+Credential0006 = apps_0006.get_model("control_plane", "Credential")
+
+assert Node0006.objects.count() == 0
+assert Source0006.objects.count() == 0
+assert list(
+    Account0006.objects.order_by("id").values_list(*account_fields)
+) == accounts_before
+assert list(
+    Credential0006.objects.order_by("id").values_list(*credential_fields)
+) == credentials_before
+credentials_0006 = list(Credential0006.objects.order_by("id"))
+assert len({credential.uuid for credential in credentials_0006}) == 8
+assert all(isinstance(credential.uuid, uuid.UUID) for credential in credentials_0006)
+assert all(credential.node_id is None for credential in credentials_0006)
+assert all(credential.wire_name is None for credential in credentials_0006)
+
+uuid_before_repeat = dict(
+    Credential0006.objects.values_list("id", "uuid")
+)
+executor = MigrationExecutor(connection)
+assert executor.migration_plan(leaf_target) == []
+executor.migrate(leaf_target)
+assert dict(Credential0006.objects.values_list("id", "uuid")) == uuid_before_repeat
+
+# Current runtime/label/HMAC checks use the actual graph leaf. The explicit
+# 0005->0006 assertions above remain at the historical boundary.
+current_target = [
+    node
+    for node in executor.loader.graph.leaf_nodes()
+    if node[0] == "control_plane"
+]
+executor = MigrationExecutor(connection)
+executor.migrate(current_target)
+assert MigrationExecutor(connection).migration_plan(current_target) == []
 
 from django.test import Client
 
@@ -231,11 +276,6 @@ assert client.get(f"/sub/{expected_tokens['alice']}/").status_code == 200
 assert client.get(f"/sub/{expected_tokens['bob']}").status_code == 404
 assert client.get(f"/sub/{expected_tokens['carol']}").status_code == 404
 
-uuid_before_repeat = dict(CurrentCredential.objects.values_list("id", "uuid"))
-executor = MigrationExecutor(connection)
-assert executor.migration_plan(leaf_target) == []
-executor.migrate(leaf_target)
-assert dict(CurrentCredential.objects.values_list("id", "uuid")) == uuid_before_repeat
 """,
     )
 
@@ -385,7 +425,7 @@ def test_node_and_source_require_supplied_identities_and_valid_metadata(
     registry_runtime,
 ):
     _, env = registry_runtime
-    migrate_runtime(env, [("control_plane", "0006_node_source_registry")])
+    migrate_runtime(env)
     python(
         env,
         """
@@ -514,7 +554,7 @@ assert TrafficSource.objects.filter(
 
 def test_credential_uuid_pair_constraint_and_protect_direction(registry_runtime):
     _, env = registry_runtime
-    migrate_runtime(env, [("control_plane", "0006_node_source_registry")])
+    migrate_runtime(env)
     python(
         env,
         """
@@ -657,7 +697,7 @@ assert Node.objects.filter(pk=node.pk).exists()
 
 def test_existing_constraints_and_dormant_admin_boundary(registry_runtime):
     _, env = registry_runtime
-    migrate_runtime(env, [("control_plane", "0006_node_source_registry")])
+    migrate_runtime(env)
     python(
         env,
         """

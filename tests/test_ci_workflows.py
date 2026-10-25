@@ -274,7 +274,7 @@ def test_node_agent_workflow_guard_rejects_workflow_env_suppression() -> None:
         assert_node_agent_shared_check_contract(config, {"node-agent/**"})
 
 
-def test_control_plane_job_runs_node_registry_schema_with_postgres() -> None:
+def test_control_plane_job_runs_registry_and_ingestion_schema_with_postgres() -> None:
     config = workflow("ci.yml")
     job = config["jobs"]["control-plane"]
     step = next(
@@ -289,6 +289,7 @@ def test_control_plane_job_runs_node_registry_schema_with_postgres() -> None:
     )
     assert step["env"] == {"SBM_REQUIRE_POSTGRES": "1"}
     assert (ROOT / "tests" / "test_control_plane_node_registry.py").is_file()
+    assert (ROOT / "tests" / "test_control_plane_traffic_ingest.py").is_file()
     assert "tests/test_control_plane*.py" in step["run"]
     assert "--ignore" not in step["run"]
     assert "--deselect" not in step["run"]

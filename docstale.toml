@@ -61,6 +61,13 @@ sbc = [
   "internal/tui/",
 ]
 traffic = ["sing_box_manager/traffic_*.py", "sing_box_manager/connection_*.py"]
+traffic-ingest = [
+  "sing_box_manager/control_plane/models.py",
+  "sing_box_manager/control_plane/migrations/0007_traffic_snapshot.py",
+  "sing_box_manager/control_plane/traffic_ingest.py",
+  "tests/test_control_plane_node_registry.py",
+  "tests/test_control_plane_traffic_ingest.py",
+]
 unix-installer = [
   "sing_box_manager/web/client/install.sh",
   "tests/test_install_sh.py",
@@ -112,6 +119,7 @@ control-plane = [
 
 "docs/CONTROL_PLANE.md" = [
   "@control-plane",
+  "@traffic-ingest",
   ".github/workflows/ci.yml",
   "scripts/server-install.sh",
   "tests/test_server_install.py",
@@ -128,7 +136,14 @@ control-plane = [
   "sing_box_manager/release/",
 ]
 
-"AGENTS.md" = ["@cli", "@harness", "@sbc", "@control-plane", "@node-traffic"]
+"AGENTS.md" = [
+  "@cli",
+  "@harness",
+  "@sbc",
+  "@control-plane",
+  "@node-traffic",
+  "@traffic-ingest",
+]
 
 "CONTRIBUTING.md" = ["@cli", "@harness", "@sbc", ".pre-commit-config.yaml"]
 
@@ -137,6 +152,7 @@ control-plane = [
 "docs/DEVELOPMENT.md" = [
   "node-agent/",
   "@node-traffic",
+  "@traffic-ingest",
   "tests/node_g0/",
   "tests/test_node_g0*.py",
   "tests/test_node_g2_counter_parity.py",
@@ -171,6 +187,7 @@ control-plane = [
 
 "docs/SECRET_HANDLING.md" = [
   "@control-plane",
+  "@traffic-ingest",
   "internal/shell/",
   "internal/cli/proxy_environment*.go",
   "internal/cli/shellcmds.go",
@@ -286,6 +303,7 @@ control-plane = [
 "docs/NODE_ACCEPTANCE.md" = [
   "node-agent/",
   "@node-traffic",
+  "@traffic-ingest",
   "scripts/dev/node-g0/",
   "scripts/dev/tun-vm/select-accel.py",
   "tests/node_g0/",
@@ -298,15 +316,17 @@ control-plane = [
   "sing_box_manager/control_plane/models.py",
   "tests/test_control_plane_node_registry.py",
   ".github/workflows/node-agent.yml",
+  ".github/workflows/ci.yml",
   "pixi.toml",
   "pixi.lock",
 ]
 
-"docs/NODE_TRAFFIC_PROTOCOL.md" = ["@node-traffic"]
+"docs/NODE_TRAFFIC_PROTOCOL.md" = ["@node-traffic", "@traffic-ingest"]
 
 "docs/MULTI_NODE_SPEC.md" = [
   "node-agent/",
   "@node-traffic",
+  "@traffic-ingest",
   "scripts/dev/node-g0/",
   "tests/node_g0/",
   "tests/test_node_g0*.py",

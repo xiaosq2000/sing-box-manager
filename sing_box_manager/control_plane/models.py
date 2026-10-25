@@ -7,6 +7,8 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
+from django.db.models.functions import Length
+from django.db.models.lookups import GreaterThan, LessThanOrEqual
 from django.utils import timezone
 
 from sing_box_manager.settings import (
@@ -195,3 +197,102 @@ class Credential(models.Model):
                     "secret": "Secret must be a non-empty string without leading/trailing whitespace or control characters."
                 }
             )
+
+
+class TrafficSnapshot(models.Model):
+    """One versioned absolute traffic bucket stored in PostgreSQL."""
+
+    KIND_CHOICES: ClassVar[list[tuple[str, str]]] = [
+        ("counter", "Counter"),
+        ("attribution", "Attribution"),
+    ]
+    DETAIL_CHOICES: ClassVar[list[tuple[str, str]]] = [
+        ("exact", "Exact"),
+        ("compacted", "Compacted"),
+        ("degraded", "Degraded"),
+    ]
+
+    source = models.ForeignKey(
+        TrafficSource,
+        on_delete=models.PROTECT,
+        related_name="traffic_snapshots",
+    )
+    # The wire credential identity is the immutable UUID, not the local PK.
+    credential = models.ForeignKey(
+        Credential,
+        to_field="uuid",
+        on_delete=models.PROTECT,
+        related_name="traffic_snapshots",
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    accounting_date = models.DateField()
+    version = models.PositiveBigIntegerField()
+    digest = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$", "Must be lowercase hex.")],
+    )
+    # Exact canonical payload without the digest. BinaryField keeps names that
+    # JSONB cannot represent, including U+0000 and other C0 controls.
+    payload = models.BinaryField(editable=False)
+    upload = models.PositiveBigIntegerField(null=True, blank=True)
+    download = models.PositiveBigIntegerField(null=True, blank=True)
+    detail = models.CharField(  # noqa: DJ001 - NULL is part of the counter shape.
+        max_length=16, choices=DETAIL_CHOICES, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    objects = models.Manager()
+
+    class Meta:
+        ordering: ClassVar[list[str]] = [
+            "source_id",
+            "credential_id",
+            "kind",
+            "accounting_date",
+        ]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["source", "credential", "kind", "accounting_date"],
+                name="unique_traffic_snapshot_key",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gt=0),
+                name="traffic_snapshot_version_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(digest__regex=r"^[0-9a-f]{64}$"),
+                name="traffic_snapshot_digest_lower_hex",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    GreaterThan(Length(models.F("payload")), 0)
+                    & LessThanOrEqual(Length(models.F("payload")), 768 * 1024)
+                ),
+                name="traffic_snapshot_payload_bounds",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=["counter", "attribution"]),
+                name="traffic_snapshot_kind_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        kind="counter",
+                        upload__isnull=False,
+                        download__isnull=False,
+                        detail__isnull=True,
+                    )
+                    | models.Q(
+                        kind="attribution",
+                        upload__isnull=True,
+                        download__isnull=True,
+                        detail__isnull=False,
+                        detail__in=["exact", "compacted", "degraded"],
+                    )
+                ),
+                name="traffic_snapshot_kind_shape",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return str(self.pk)

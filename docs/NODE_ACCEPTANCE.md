@@ -2,17 +2,17 @@
 
 Checked on 2026-10-25.
 
-This page records isolated G0/G1 evidence and the started G2 accounting, calendar
-and wire-codec slices, not a release or deployment approval.
+This page records isolated G0/G1 evidence and the started G2 accounting, calendar,
+wire-codec and unexposed ingestion slices, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
-| Gate                         | Status               | Evidence boundary                                                                              |
-| ---------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
-| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                              |
-| G1: single-node reliability  | Accepted with limits | Local VM and hosted runner: final sampling, process crashes, reboot, outages and repair        |
-| G2: accounting and migration | In progress          | Shared UTC counter, calendar and wire-codec fixtures pass; stream, history and restore pending |
-| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                          |
-| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization                      |
+| Gate                         | Status               | Evidence boundary                                                                                                      |
+| ---------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                                                      |
+| G1: single-node reliability  | Accepted with limits | Local VM and hosted runner: final sampling, process crashes, reboot, outages and repair                                |
+| G2: accounting and migration | In progress          | Shared UTC counter, calendar, wire-codec and unexposed PG ingestion fixtures pass; stream, history and restore pending |
+| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                                                  |
+| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization                                              |
 
 G0 through G3 do not require per-gate approval. Report blockers rather than treating missing evidence as success.
 Android device acceptance does not block the first release. Mark it unverified until tested.
@@ -133,7 +133,7 @@ No release, deployment or migration is part of this result.
 
 ## G2 progress
 
-G2 is in progress. The counter-ledger, calendar and wire-codec slices are shared fixture evidence only; they do not accept the gate.
+G2 is in progress. The counter-ledger, calendar and wire-codec slices are shared fixture evidence only; the unexposed PostgreSQL ingestion slice is real-PostgreSQL source evidence only. None accepts the gate.
 Release, deployment and migration are not part of this G2 result.
 
 `tests/fixtures/node-g2-counter-parity.json` contains deterministic UTC counter cases that run against the actual Python `TrafficStatsStore.record_snapshot` and the actual Go `accounting.Store`. The adapters are fixture-only. Each case compares keyed daily rows (`usage_date|account|protocol`) rather than only a grand total. Go rejections name the exact protocol credential IDs for each rejected sample.
@@ -149,7 +149,7 @@ Coverage:
 
 The five recorded divergences are intentional in the target contract. Python daily rows expose no version or payload digest, so those checks apply only to the Go contract.
 
-No production collector, lifecycle or sampling behavior changed. Native four-protocol traffic, stream attribution/reconciliation, production calendar-aware accounting (time zones and billing-day/DST boundaries), central version/digest ingestion conflicts, history import, source restore and disk-pressure coverage remain later G2 slices. This slice does not accept G2.
+No production collector, lifecycle or sampling behavior changed. Native four-protocol traffic, stream attribution/reconciliation, production calendar-aware accounting (time zones and billing-day/DST boundaries), production ingestion transport and authentication, history import, source restore and disk-pressure coverage remain later G2 slices. This slice does not accept G2.
 
 ```sh
 pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
@@ -165,10 +165,16 @@ pair and `PROTECT` behavior, and unchanged constraints/Admin labels/HMAC
 behavior. The migration creates zero Node/TrafficSource/token records; existing
 credentials keep NULL `node` and `wire_name`. Neither `Node` nor `TrafficSource`
 is Admin-registered; `TrafficSource.node` and `Credential.node` use `PROTECT` to
-block deleting a referenced `Node`, not child-row deletion.
+block deleting a referenced `Node`. `TrafficSnapshot.source` and
+`TrafficSnapshot.credential` also use `PROTECT`, so a source or credential
+referenced by stored history cannot be deleted. Without a referencing snapshot,
+child-row deletion retains its prior behavior. This is referential integrity only,
+not retirement, tombstone, re-enable or pending-revocation policy.
 
 No binding, tombstone, retirement, re-enable, pending-target, auth-registry, API,
-ingestion, exporter, source-quarantine, or production-acceptance behavior exists.
+exporter, source-quarantine, local-ledger or production-acceptance behavior
+exists. The separate unexposed ingestion service below writes snapshots but has no
+HTTP route or bearer resolver.
 The reverse test proves Django preflight failure before reverse DDL, not executed
 DDL rollback. Later policy must close direct model writes, create serialized
 policy generations and removal targets, and define tombstone and pending-revocation
@@ -221,11 +227,48 @@ pixi run -e node-g0 go -C node-agent test -count=1 ./internal/traffic
 ```
 
 This is cross-language codec evidence only. No production `/node/v1/traffic`
-route, authorization registry, ingestion, persistence, exporter, history import
-or G2 acceptance exists. The isolated `/node-g0/v1/` prototype transport remains
-in place and is not retired by this codec. Native VM and public-network reruns
-are not required for these unused pure codecs. See the
+route, bearer resolver, authorization registry, exporter, history import or G2
+acceptance exists. The isolated `/node-g0/v1/` prototype transport remains in
+place and is not retired by this codec. Native VM and public-network reruns are
+not required for these unused pure codecs. See the
 [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
+
+### Unexposed PostgreSQL ingestion
+
+Migration `0007_traffic_snapshot` and
+`sing_box_manager/control_plane/traffic_ingest.py` add an unexposed
+`TrafficSnapshot` record and `ingest_page(node_id, raw_body)` service. The table
+keys snapshots by source, credential UUID, kind and accounting date; stores the
+exact canonical payload without digest in `bytea`; and projects counter
+upload/download or attribution detail with NULL-safe shape checks. Source and
+credential foreign keys use `PROTECT` when history rows reference them.
+
+The focused real-PostgreSQL suite covers migration, constraints, the no-route
+boundary, `bytea` preservation of NUL/C0/Unicode, insert/lower/equal/higher
+versions, both counter-regression components, attribution shrink after
+compaction, whole-page rollback and exact receipt coverage,
+cross-node/missing/unbound ownership, disabled and retired history acceptance,
+deferred payload comparison, nested/autocommit and commit failure, and real
+concurrency. Registry tests keep historical project-state assertions and migrate
+current-model checks to the current graph leaf. The missing-table fixture
+migrates to that leaf and drops only the snapshot table. Concurrency assertions
+decode every successful receipt with the codec and compare exact version/digest
+pairs. A missing snapshot table raises a database error through normal managers;
+there is no empty-result fallback.
+
+```sh
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_traffic_ingest.py
+SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_plane_node_registry.py
+```
+
+The `control-plane` CI job's existing `tests/test_control_plane*.py` command
+includes both files under `SBM_REQUIRE_POSTGRES=1`; no workflow change is needed.
+This remains unexposed source evidence. It has no HTTP route, bearer resolution,
+node/source creation or registration, identity binding, exporter or
+acknowledgement scheduler, local ledger wiring, policy generation, calendar
+inference, retention, monthly import or full G2/G3 acceptance. The retained G0
+transport and legacy SQLite writers are unchanged. Controlled write closure,
+binding and consumer gates remain prerequisites before activation.
 
 ## Reproduce
 
