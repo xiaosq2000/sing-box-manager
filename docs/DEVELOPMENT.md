@@ -654,6 +654,24 @@ pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
 pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
 ```
 
+The shared calendar fixture `tests/fixtures/node-accounting-calendar.json` compares
+Go `accounting.Calendar` with the actual Python `local_date` and `_cycle_bounds`
+functions. Its 27 cases cover local midnight, DST transitions with
+post-transition local-midnight checks, skipped local midnight, short months, leap
+years and billing days 1/3/28/29/30/31. Both adapters check that cycles tile
+the fixture's multi-year range without gaps or overlap.
+The node-agent workflow runs both shared Python oracles and the separate Go
+module checks; both fixture and adapter paths trigger push and PR checks.
+
+This is calendar arithmetic only. The ledger still buckets in UTC. Calendar
+migration, bundle/API wiring and provider-reset integration remain pending.
+Python and Go do not share a pinned time-zone data artifact.
+
+```sh
+pixi run -e node-g0 test tests/test_node_accounting_calendar.py tests/test_traffic_stats_billing_day.py
+pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
+```
+
 `tests/test_routes.py` uses Django's test client in isolated PostgreSQL processes.
 It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer
 migration, token revocation, traffic-viewer permissions, personal-domain privacy,
