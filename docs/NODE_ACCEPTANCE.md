@@ -1,17 +1,17 @@
 # Node acceptance
 
-Checked on 2026-10-24.
+Checked on 2026-10-25.
 
 This page records isolated G0/G1 evidence, not a release or deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
-| Gate                         | Status               | Evidence boundary                                                                     |
-| ---------------------------- | -------------------- | ------------------------------------------------------------------------------------- |
-| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                     |
-| G1: single-node reliability  | Accepted with limits | Local VM: final sampling, process crashes, offline reboot, outages and forward repair |
-| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                                 |
-| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                 |
-| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization             |
+| Gate                         | Status               | Evidence boundary                                                                       |
+| ---------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| G0: minimum working system   | Accepted with limits | One Ubuntu VM, one synthetic account, Trojan only                                       |
+| G1: single-node reliability  | Accepted with limits | Local VM and hosted runner: final sampling, process crashes, reboot, outages and repair |
+| G2: accounting and migration | Pending              | Four protocols, collector parity, history and restore                                   |
+| G3: two nodes and clients    | Pending              | Routing/DNS, native clients and required iOS evidence                                   |
+| G4: pre-release review       | Pending              | Two-hour stability run, reports and explicit public-network authorization               |
 
 G0 through G3 do not require per-gate approval. Report blockers rather than treating missing evidence as success.
 Android device acceptance does not block the first release. Mark it unverified until tested.
@@ -68,7 +68,7 @@ Android remains unverified and non-blocking. Keep raw logs, identities and run p
 
 ## G1 progress
 
-G1 passes locally within the isolated single-node scope. This does not approve production installation or complete M5/M6.
+G1 passes locally and in the hosted `node-g0` job within the isolated single-node scope. This does not approve production installation or complete M5/M6.
 `counter.Read` waits for transport readiness with a five-second cap. Shorter deadlines and cancellation remain effective.
 Terminal service failures return fixed errors without raw RPC text. A later agent cycle can collect again without restarting a healthy engine.
 
@@ -126,8 +126,9 @@ They do not establish abrupt VM/host power-loss durability, storage-device fault
 The single-entry roster, UTC calendar and absent connection-stream collector remain fixture limits. G2 supplies accounting and migration parity.
 Stop/suspend policy, complete adoption and the production node contract remain target M5/M6 behavior, not G1 fixture features.
 
-The workflow runs `--g1-checks`. Hosted evidence in [PR #50](https://github.com/xiaosq2000/sing-box-manager/pull/50) covers the merged startup subset only.
-The local G1 changes need their own exact-head hosted checks before a future merge. No push, release, deployment or migration is part of this local result.
+The workflow runs `--g1-checks`. [PR #50](https://github.com/xiaosq2000/sing-box-manager/pull/50) covers the earlier startup subset.
+[PR #52](https://github.com/xiaosq2000/sing-box-manager/pull/52) merged the complete isolated G1 result after all five applicable hosted jobs passed at head `08c310c`.
+No release, deployment or migration is part of this result.
 
 ## Reproduce
 
