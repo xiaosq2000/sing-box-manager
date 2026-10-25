@@ -148,10 +148,29 @@ Coverage:
 
 The five recorded divergences are intentional in the target contract. Python daily rows expose no version or payload digest, so those checks apply only to the Go contract.
 
-No production collector, lifecycle or sampling behavior changed. Native four-protocol traffic, stream attribution/reconciliation, time zones and billing-day/DST boundaries, central version/digest ingestion conflicts, history import, source restore and disk-pressure coverage remain later G2 slices. This slice does not accept G2.
+No production collector, lifecycle or sampling behavior changed. Native four-protocol traffic, stream attribution/reconciliation, production calendar-aware accounting (time zones and billing-day/DST boundaries), central version/digest ingestion conflicts, history import, source restore and disk-pressure coverage remain later G2 slices. This slice does not accept G2.
 
 ```sh
 pixi run -e node-g0 test tests/test_node_g2_counter_parity.py
+pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
+```
+
+### Calendar arithmetic
+
+Go `accounting.Calendar` resolves an explicit instant under a configured time zone
+and billing day. The shared fixture `tests/fixtures/node-accounting-calendar.json`
+compares 27 cases with the actual Python `local_date` and `_cycle_bounds`
+functions. It covers local midnight, DST with post-transition local-midnight
+checks, skipped local midnight, short months, leap years and year changes. Both
+adapters also check multi-year cycle tiling.
+
+This proves arithmetic only. The ledger remains UTC, and the bundle, API,
+collector and account-calendar migration are not wired to this helper. Provider
+reset schedules remain independent. Python and Go do not share a pinned time-zone
+data artifact. This slice does not accept G2 or establish native protocol parity.
+
+```sh
+pixi run -e node-g0 test tests/test_node_accounting_calendar.py
 pixi run -e node-g0 go -C node-agent test -count=1 ./internal/accounting
 ```
 

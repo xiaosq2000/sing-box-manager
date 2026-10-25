@@ -11,6 +11,8 @@ on:
       - "tests/test_node_g0.py"
       - "tests/fixtures/node-g2-counter-parity.json"
       - "tests/test_node_g2_counter_parity.py"
+      - "tests/fixtures/node-accounting-calendar.json"
+      - "tests/test_node_accounting_calendar.py"
       - "sing_box_manager/release/**"
       - "sing_box_manager/traffic_stats.py"
       - "sing_box_manager/settings.py"
@@ -28,6 +30,8 @@ on:
       - "tests/test_node_g0.py"
       - "tests/fixtures/node-g2-counter-parity.json"
       - "tests/test_node_g2_counter_parity.py"
+      - "tests/fixtures/node-accounting-calendar.json"
+      - "tests/test_node_accounting_calendar.py"
       - "sing_box_manager/release/**"
       - "sing_box_manager/traffic_stats.py"
       - "sing_box_manager/settings.py"
@@ -62,6 +66,8 @@ jobs:
         env:
           SBM_REQUIRE_POSTGRES: "1"
           SBM_REQUIRE_NODE_G0: "1"
+      - name: Check shared accounting oracles
+        run: pixi run -e node-g0 test tests/test_node_g2_counter_parity.py tests/test_node_accounting_calendar.py
       - name: Check the separate cgo-free agent module
         run: |
           go -C node-agent test -count=1 ./...
