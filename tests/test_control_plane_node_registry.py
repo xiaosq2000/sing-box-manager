@@ -220,7 +220,7 @@ assert MigrationExecutor(connection).migration_plan(current_target) == []
 
 from django.test import Client
 
-from sing_box_manager.control_plane import services
+from sing_box_manager.control_plane import projections
 from sing_box_manager.control_plane.models import (
     Account as CurrentAccount,
     Credential as CurrentCredential,
@@ -243,7 +243,7 @@ assert all(isinstance(credential.uuid, uuid.UUID) for credential in credentials)
 assert all(credential.node_id is None for credential in credentials)
 assert all(credential.wire_name is None for credential in credentials)
 
-inventory = services.build_inventory_from_db(runtime)
+inventory = projections.build_inventory_from_db(runtime)
 rendered = build_server_config(inventory)
 actual_roster = {}
 for inbound in rendered["inbounds"]:

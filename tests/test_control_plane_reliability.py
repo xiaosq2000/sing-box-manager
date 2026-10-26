@@ -38,7 +38,7 @@ import json
 from unittest.mock import Mock, patch
 import django
 django.setup()
-from sing_box_manager.control_plane import django_settings, services
+from sing_box_manager.control_plane import django_settings, node_sync
 runtime = django_settings.runtime
 """
 
@@ -89,17 +89,22 @@ django.setup()
 from django.contrib import admin
 from django.db import transaction, connection
 from django.test import Client, RequestFactory
-from sing_box_manager.control_plane import django_settings, services
+from sing_box_manager.control_plane import (
+    account_services,
+    django_settings,
+    node_sync,
+    projections,
+)
 from sing_box_manager.control_plane.admin import AccountAdmin
 from sing_box_manager.control_plane.models import Account, Credential
 from sing_box_manager.release.profiles import build_server_config
 from sing_box_manager.subscription import subscription_token
 runtime = django_settings.runtime
-services.import_inventory(runtime)
+account_services.import_inventory(runtime)
 account = Account.objects.get(username=runtime.web_portal.users[0].username)
 client = Client(HTTP_HOST='127.0.0.1')
 def roster():
-    return {i['type']: i['users'] for i in build_server_config(services.build_inventory_from_db(runtime))['inbounds']}
+    return {i['type']: i['users'] for i in build_server_config(projections.build_inventory_from_db(runtime))['inbounds']}
 """
 
 
@@ -119,7 +124,7 @@ assert not any(roster().values()), 'disabled account still has proxy access'
 assert client.get(f'/sub/{token}').status_code == 404
 assert client.get(f'/sub/{token}/').status_code == 404
 assert client.get(f'/sub/{token}/files/manifest.json').status_code == 404
-assert services.build_account_mobile_profile(account, runtime) is None
+assert projections.build_account_mobile_profile(account, runtime) is None
 Credential.objects.filter(account=account, protocol='trojan').update(enabled=False)
 account.enabled = True
 account.save()
@@ -147,10 +152,10 @@ Credential.objects.filter(account=account).update(secret='fixture-admin-edited-s
 Account.objects.create(username='db_only', portal_password_hash=account.portal_password_hash)
 before = list(Account.objects.values()), list(Credential.objects.values())
 runtime.control_plane.authoritative = True
-with patch.object(services, 'read_legacy_reset_counters', side_effect=AssertionError('must not read SQLite')):
+with patch.object(account_services, 'read_legacy_reset_counters', side_effect=AssertionError('must not read SQLite')):
     try:
-        services.import_inventory(runtime)
-    except services.ControlPlaneError as error:
+        account_services.import_inventory(runtime)
+    except account_services.ControlPlaneError as error:
         assert 'authoritative' in str(error)
     else:
         raise AssertionError('authoritative import was accepted')
@@ -278,8 +283,8 @@ def test_node_sync_failure_preserves_config_and_recovers_service(unit_runtime, f
         + f"\nfailure = {failure!r}\n"
         + """
 import subprocess
-patch.object(services, '_build_inventory_as_db_user', return_value=runtime).start()
-patch.object(services, 'build_server_config', return_value={'inbounds': [{'tag': 'trojan'}]}).start()
+patch.object(node_sync, '_build_inventory_as_db_user', return_value=runtime).start()
+patch.object(node_sync, 'build_server_config', return_value={'inbounds': [{'tag': 'trojan'}]}).start()
 node = runtime.config_root / 'node' / 'config.json'
 node.parent.mkdir(parents=True)
 previous = b'{"fixture": "previous-good-config"}\\n'
@@ -304,9 +309,9 @@ def run(command, **kwargs):
         assert command[1] == 'is-active'
         code = int(failure == 'health' and len(restarts) == 1)
     return subprocess.CompletedProcess(command, code, '', 'fixture-secret-output')
-with patch.object(services.subprocess, 'run', side_effect=run), patch.object(services.time, 'sleep'):
+with patch.object(node_sync.subprocess, 'run', side_effect=run), patch.object(node_sync.time, 'sleep'):
     try:
-        services.sync_node_config(runtime, config_path=node, binary_path=binary)
+        node_sync.sync_node_config(runtime, config_path=node, binary_path=binary)
     except RuntimeError as error:
         assert 'fixture-secret-output' not in str(error)
         if failure == 'recovery':
@@ -345,18 +350,18 @@ from unittest.mock import patch
 import fcntl
 import django
 django.setup()
-from sing_box_manager.control_plane import django_settings, services
+from sing_box_manager.control_plane import django_settings, node_sync
 node, ready, queried = map(Path, sys.argv[1:])
 real_lock = fcntl.flock
-real_read = services._build_inventory_as_db_user
+real_read = node_sync._build_inventory_as_db_user
 def lock(fd, flags):
     ready.touch()
     real_lock(fd, flags)
 def read(runtime):
     queried.touch()
     return real_read(runtime)
-with patch.object(fcntl, 'flock', side_effect=lock), patch.object(services, '_build_inventory_as_db_user', side_effect=read):
-    services.sync_node_config(django_settings.runtime, config_path=node, binary_path=node.parent / 'missing', restart_service=False)
+with patch.object(fcntl, 'flock', side_effect=lock), patch.object(node_sync, '_build_inventory_as_db_user', side_effect=read):
+    node_sync.sync_node_config(django_settings.runtime, config_path=node, binary_path=node.parent / 'missing', restart_service=False)
 """
 with (node.parent / '.sync.lock').open('w') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
@@ -392,15 +397,15 @@ import pwd
 from types import SimpleNamespace
 from django.db import connections
 calls = []
-with patch.object(services.os, 'geteuid', return_value=0), \\
-     patch.object(services.os, 'getegid', return_value=123), \\
+with patch.object(node_sync.os, 'geteuid', return_value=0), \\
+     patch.object(node_sync.os, 'getegid', return_value=123), \\
      patch.object(pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=456, pw_gid=789)), \\
-     patch.object(services.os, 'seteuid', side_effect=lambda uid: calls.append(('uid', uid))), \\
-     patch.object(services.os, 'setegid', side_effect=lambda gid: calls.append(('gid', gid))), \\
+     patch.object(node_sync.os, 'seteuid', side_effect=lambda uid: calls.append(('uid', uid))), \\
+     patch.object(node_sync.os, 'setegid', side_effect=lambda gid: calls.append(('gid', gid))), \\
      patch.object(connections, 'close_all'), \\
-     patch.object(services, 'build_inventory_from_db', side_effect=RuntimeError('fixture database failure')):
+     patch.object(node_sync, 'build_inventory_from_db', side_effect=RuntimeError('fixture database failure')):
     try:
-        services._build_inventory_as_db_user(runtime)
+        node_sync._build_inventory_as_db_user(runtime)
     except RuntimeError:
         pass
     else:
@@ -435,10 +440,10 @@ def run(command, **kwargs):
     calls.append(command[1])
     code = int(command[1] == 'is-active' and not active and 'restart' not in calls)
     return subprocess.CompletedProcess(command, code, '', '')
-with patch.object(services, '_build_inventory_as_db_user', return_value=runtime), \
-     patch.object(services, 'build_server_config', return_value=expected), \
-     patch.object(services.subprocess, 'run', side_effect=run), patch.object(services.time, 'sleep'):
-    services.sync_node_config(runtime, config_path=node, binary_path=binary)
+with patch.object(node_sync, '_build_inventory_as_db_user', return_value=runtime), \
+     patch.object(node_sync, 'build_server_config', return_value=expected), \
+     patch.object(node_sync.subprocess, 'run', side_effect=run), patch.object(node_sync.time, 'sleep'):
+    node_sync.sync_node_config(runtime, config_path=node, binary_path=binary)
 assert calls == (['check', 'is-active'] if active else ['check', 'is-active', 'restart', 'is-active'])
 if active:
     assert node.read_bytes() == previous
@@ -480,7 +485,7 @@ with patch.object(stats, 'load_local_env'), \
     user.save()
     assert stats.collect_traffic_stats(runtime, now=now).successful_services == ()
     # A database failure must not silently use the obsolete YAML roster.
-    with patch.object(services, 'build_inventory_from_db', side_effect=RuntimeError('fixture-backend-secret')):
+    with patch.object(node_sync, 'build_inventory_from_db', side_effect=RuntimeError('fixture-backend-secret')):
         try:
             stats.collect_traffic_stats(runtime, now=now)
         except stats.TrafficStatsError as error:

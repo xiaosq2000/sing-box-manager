@@ -670,9 +670,9 @@ django.setup()
 from django.test import Client
 from sing_box_manager.control_plane.admin import AccountAdmin, AccountAdminForm
 from sing_box_manager.control_plane.models import Account, Credential
-from sing_box_manager.control_plane.services import (
+from sing_box_manager.control_plane.node_sync import sync_node_config
+from sing_box_manager.control_plane.projections import (
     build_inventory_from_db,
-    sync_node_config,
     verify_inventory_parity,
 )
 from sing_box_manager.settings import load_settings
@@ -768,10 +768,10 @@ assert form.is_valid(), form.errors
 saved = form.save()
 assert saved.portal_password_hash != old_hash
 
-from sing_box_manager.control_plane.services import (
+from sing_box_manager.control_plane.account_services import (
     ensure_default_credentials,
-    request_node_sync,
 )
+from sing_box_manager.control_plane.node_sync import request_node_sync
 
 new_form = AccountAdminForm(
     data={
@@ -827,7 +827,7 @@ import os
 from pathlib import Path
 import django
 django.setup()
-from sing_box_manager.control_plane.services import sync_node_config
+from sing_box_manager.control_plane.node_sync import sync_node_config
 from sing_box_manager.settings import load_settings
 runtime = load_settings(os.environ["SBM_CONFIG"])
 result = sync_node_config(runtime, restart_service=False)

@@ -44,30 +44,30 @@ existing = Account.objects.create(username='existing')
 Credential.objects.create(account=existing, protocol='snell', secret='synthetic-retained-key', enabled=False)
 accounts_before = list(Account.objects.values())
 credentials_before = list(Credential.objects.values())
-with patch.object(services, 'request_node_sync') as trigger:
-    preview = services.backfill_snell_credentials(runtime, dry_run=True)
+with patch.object(account_services, 'request_node_sync') as trigger:
+    preview = account_services.backfill_snell_credentials(runtime, dry_run=True)
     assert preview == {'accounts': 5, 'existing': 1, 'missing': 4}, preview
     assert list(Account.objects.values()) == accounts_before
     assert list(Credential.objects.values()) == credentials_before
     trigger.assert_not_called()
-    result = services.backfill_snell_credentials(runtime)
+    result = account_services.backfill_snell_credentials(runtime)
     assert result == {'accounts': 5, 'existing': 1, 'created': 4}, result
     trigger.assert_called_once_with(runtime)
     trigger.reset_mock()
     keys = list(Credential.objects.values())
-    assert services.backfill_snell_credentials(runtime)['created'] == 0
+    assert account_services.backfill_snell_credentials(runtime)['created'] == 0
     assert list(Credential.objects.values()) == keys
     trigger.assert_not_called()
 assert list(Account.objects.values()) == accounts_before
 assert all(Credential.objects.filter(**row).exists() for row in credentials_before)
 assert not Credential.objects.get(account=existing, protocol='snell').enabled
 assert len(set(Credential.objects.filter(protocol='snell').values_list('secret', flat=True))) == 5
-projected = services.build_inventory_from_db(runtime)
+projected = projections.build_inventory_from_db(runtime)
 active = {user.username for user in projected.snell.users if user.enabled}
 assert active == {'alice', 'database_only', 'portal_off'}, active
-assert services.account_protocols(inactive, runtime).snell is None
-assert services.account_protocols(existing, runtime).snell is None
-assert services.account_protocols(portal_off, runtime).snell is not None
+assert projections.account_protocols(inactive, runtime).snell is None
+assert projections.account_protocols(existing, runtime).snell is None
+assert projections.account_protocols(portal_off, runtime).snell is not None
 # Duplicate keys cannot be stored, even through a direct ORM write.
 try:
     with transaction.atomic():
@@ -95,8 +95,8 @@ def test_snell_subscriptions_respect_protocol_account_and_portal_switches(
         SETUP
         + CONFIGURE
         + """
-with patch.object(services, 'request_node_sync'):
-    services.backfill_snell_credentials(runtime)
+with patch.object(account_services, 'request_node_sync'):
+    account_services.backfill_snell_credentials(runtime)
 credential = Credential.objects.get(account=account, protocol='snell')
 original = list(account.credentials.values())
 token = subscription_token(runtime.web.subscription_secret, account.username, 0)
@@ -160,14 +160,14 @@ def test_explicit_default_wins_over_snell_for_every_subscription(
         + CONFIGURE
         + f"runtime.default_protocol = {protocol!r}\n"
         + """
-with patch.object(services, 'request_node_sync'):
-    services.backfill_snell_credentials(runtime)
+with patch.object(account_services, 'request_node_sync'):
+    account_services.backfill_snell_credentials(runtime)
 for os_name in ('linux', 'darwin', 'windows'):
-    body = services.build_account_envelope(account, runtime, os_name=os_name)
+    body = projections.build_account_envelope(account, runtime, os_name=os_name)
     assert body['default_protocol'] == runtime.default_protocol
     for name in ('config', 'config_tun'):
         assert body[name]['outbounds'][0]['default'] == runtime.default_protocol
-assert services.build_account_mobile_profile(account, runtime)['outbounds'][0]['default'] == runtime.default_protocol
+assert projections.build_account_mobile_profile(account, runtime)['outbounds'][0]['default'] == runtime.default_protocol
 """,
     )
 
@@ -180,12 +180,12 @@ def test_snell_credentials_stay_dormant_without_infrastructure(account_runtime):
         + """
 from sing_box_manager.control_plane.runner import ControlPlaneError
 new = Account.objects.create(username='new_user')
-assert services.ensure_default_credentials(new) == ['trojan', 'hysteria2', 'naive', 'snell']
-assert services.account_protocols(new, runtime).snell is None
-assert services.build_inventory_from_db(runtime).snell.users == []
+assert account_services.ensure_default_credentials(new) == ['trojan', 'hysteria2', 'naive', 'snell']
+assert projections.account_protocols(new, runtime).snell is None
+assert projections.build_inventory_from_db(runtime).snell.users == []
 assert 'snell' not in roster()
 try:
-    services.backfill_snell_credentials(runtime)
+    account_services.backfill_snell_credentials(runtime)
 except ControlPlaneError:
     pass
 else:
@@ -202,16 +202,16 @@ def test_snell_backfill_sync_failure_keeps_saved_keys_for_retry(account_runtime)
         + CONFIGURE
         + """
 from sing_box_manager.control_plane.runner import ControlPlaneError
-with patch.object(services, 'request_node_sync', side_effect=OSError('synthetic-failure')):
+with patch.object(account_services, 'request_node_sync', side_effect=OSError('synthetic-failure')):
     try:
-        services.backfill_snell_credentials(runtime)
+        account_services.backfill_snell_credentials(runtime)
     except ControlPlaneError as error:
         assert 'saved' in str(error) and 'sudo sbm control-plane sync' in str(error)
     else:
         raise AssertionError('sync request failure was hidden')
 assert Credential.objects.filter(protocol='snell').count() == 1
-with patch.object(services, 'request_node_sync') as trigger:
-    assert services.backfill_snell_credentials(runtime)['created'] == 0
+with patch.object(account_services, 'request_node_sync') as trigger:
+    assert account_services.backfill_snell_credentials(runtime)['created'] == 0
     trigger.assert_not_called()
 """,
     )

@@ -93,11 +93,11 @@ import json
 from pathlib import Path
 import django
 django.setup()
-from sing_box_manager.control_plane import django_settings, services
+from sing_box_manager.control_plane import django_settings, node_sync
 from sing_box_manager.release.profiles import build_server_config
 runtime = django_settings.runtime
 Path('{package}/config.json').write_text(json.dumps(build_server_config(runtime)))
-services.sync_node_config(runtime, restart_service=False)
+node_sync.sync_node_config(runtime, restart_service=False)
 """.encode(),
         check=True,
         cwd=ROOT,
@@ -139,10 +139,10 @@ services.sync_node_config(runtime, restart_service=False)
             input=f"""
 import django
 django.setup()
-from sing_box_manager.control_plane import django_settings, services
+from sing_box_manager.control_plane import django_settings, node_sync
 from sing_box_manager.control_plane.models import Account
 Account.objects.filter(username='native_only').update(enabled={enabled!r})
-services.request_node_sync(django_settings.runtime)
+node_sync.request_node_sync(django_settings.runtime)
 """.encode(),
             check=True,
             cwd=ROOT,

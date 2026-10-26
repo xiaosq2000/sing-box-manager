@@ -6,11 +6,11 @@ from django.contrib.auth.admin import UserAdmin
 from django.db import transaction
 from django.db.models import F
 
-from sing_box_manager.control_plane.models import Account, Credential, User
-from sing_box_manager.control_plane.services import (
+from sing_box_manager.control_plane.account_services import (
     ensure_default_credentials,
-    request_node_sync,
 )
+from sing_box_manager.control_plane.models import Account, Credential, User
+from sing_box_manager.control_plane.node_sync import request_node_sync
 from sing_box_manager.settings import ARGON2ID_VERIFIER
 from sing_box_manager.subscription import subscription_token
 
