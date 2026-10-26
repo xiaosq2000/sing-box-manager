@@ -23,6 +23,11 @@ NODE_AGENT_GO_STEP = {
     "run": "go -C node-agent test -count=1 ./...\ngo -C node-agent vet ./...\n",
     "shell": "pixi run -e node-g0 bash -e {0}",
 }
+NODE_AGENT_COUNTER_EXPORT_STEP = {
+    "name": "Check real-PostgreSQL counter export composition",
+    "run": "pixi run -e node-g0 test tests/test_node_counter_export.py",
+    "env": {"SBM_REQUIRE_POSTGRES": "1", "SBM_REQUIRE_NODE_G0": "1"},
+}
 
 
 def workflow(name: str) -> dict:
@@ -207,6 +212,17 @@ def assert_node_agent_shared_check_contract(
         step for step in job["steps"] if step.get("name") == NODE_AGENT_GO_STEP["name"]
     )
     assert module_step == NODE_AGENT_GO_STEP
+    export_step = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == NODE_AGENT_COUNTER_EXPORT_STEP["name"]
+    )
+    assert export_step == NODE_AGENT_COUNTER_EXPORT_STEP
+    assert "PYTEST_ADDOPTS" not in export_step.get("env", {})
+    assert "--ignore" not in export_step["run"]
+    assert "--deselect" not in export_step["run"]
+    steps = job["steps"]
+    assert steps.index(module_step) < steps.index(export_step)
 
 
 def test_node_agent_parity_paths_trigger_the_separate_go_module_checks() -> None:
@@ -238,6 +254,62 @@ def test_node_traffic_codec_paths_trigger_both_language_checks(path: str) -> Non
         "tests/test_node_accounting_calendar.py",
     }
     assert_node_agent_shared_check_contract(config, required_paths)
+
+
+def test_counter_export_paths_trigger_the_real_postgres_composition() -> None:
+    config = workflow("node-agent.yml")
+    required_paths = {
+        "tests/test_node_counter_export.py",
+        "tests/node_counter_export/**",
+        "tests/test_control_plane_integration.py",
+        "sing_box_manager/control_plane/traffic_ingest.py",
+        "sing_box_manager/control_plane/models.py",
+        "sing_box_manager/control_plane/migrations/**",
+        "sing_box_manager/control_plane/database.py",
+        "sing_box_manager/control_plane/django_settings.py",
+        "sing_box_manager/control_plane/runner.py",
+        "sing_box_manager/cli.py",
+        "sing_box_manager/__main__.py",
+        "node-agent/**",
+    }
+    assert_node_agent_shared_check_contract(config, required_paths)
+
+
+def test_node_agent_workflow_guard_rejects_counter_export_step_skipping() -> None:
+    config = workflow("node-agent.yml")
+    assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+    export_step = next(
+        step
+        for step in config["jobs"]["node-g0"]["steps"]
+        if step.get("name") == NODE_AGENT_COUNTER_EXPORT_STEP["name"]
+    )
+    export_step["env"] = {
+        "SBM_REQUIRE_POSTGRES": "1",
+        "SBM_REQUIRE_NODE_G0": "1",
+        "PYTEST_ADDOPTS": "--ignore=tests/test_node_counter_export.py",
+    }
+    with pytest.raises(AssertionError):
+        assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+
+
+def test_node_agent_workflow_guard_rejects_counter_export_before_go_module_check() -> None:
+    config = workflow("node-agent.yml")
+    assert_node_agent_shared_check_contract(config, {"node-agent/**"})
+    steps = config["jobs"]["node-g0"]["steps"]
+    export_step = next(
+        step
+        for step in steps
+        if step.get("name") == NODE_AGENT_COUNTER_EXPORT_STEP["name"]
+    )
+    steps.remove(export_step)
+    module_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == NODE_AGENT_GO_STEP["name"]
+    )
+    steps.insert(module_index, export_step)
+    with pytest.raises(AssertionError):
+        assert_node_agent_shared_check_contract(config, {"node-agent/**"})
 
 
 def test_node_agent_workflow_guard_rejects_job_continue_on_error() -> None:

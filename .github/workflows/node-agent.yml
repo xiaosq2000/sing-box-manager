@@ -15,7 +15,18 @@ on:
       - "tests/test_node_accounting_calendar.py"
       - "tests/fixtures/node-traffic-v1.json"
       - "tests/test_node_traffic_contract.py"
+      - "tests/node_counter_export/**"
+      - "tests/test_node_counter_export.py"
+      - "tests/test_control_plane_integration.py"
       - "sing_box_manager/control_plane/traffic_contract.py"
+      - "sing_box_manager/control_plane/traffic_ingest.py"
+      - "sing_box_manager/control_plane/models.py"
+      - "sing_box_manager/control_plane/migrations/**"
+      - "sing_box_manager/control_plane/database.py"
+      - "sing_box_manager/control_plane/django_settings.py"
+      - "sing_box_manager/control_plane/runner.py"
+      - "sing_box_manager/cli.py"
+      - "sing_box_manager/__main__.py"
       - "sing_box_manager/release/**"
       - "sing_box_manager/traffic_stats.py"
       - "sing_box_manager/settings.py"
@@ -37,7 +48,18 @@ on:
       - "tests/test_node_accounting_calendar.py"
       - "tests/fixtures/node-traffic-v1.json"
       - "tests/test_node_traffic_contract.py"
+      - "tests/node_counter_export/**"
+      - "tests/test_node_counter_export.py"
+      - "tests/test_control_plane_integration.py"
       - "sing_box_manager/control_plane/traffic_contract.py"
+      - "sing_box_manager/control_plane/traffic_ingest.py"
+      - "sing_box_manager/control_plane/models.py"
+      - "sing_box_manager/control_plane/migrations/**"
+      - "sing_box_manager/control_plane/database.py"
+      - "sing_box_manager/control_plane/django_settings.py"
+      - "sing_box_manager/control_plane/runner.py"
+      - "sing_box_manager/cli.py"
+      - "sing_box_manager/__main__.py"
       - "sing_box_manager/release/**"
       - "sing_box_manager/traffic_stats.py"
       - "sing_box_manager/settings.py"
@@ -79,6 +101,11 @@ jobs:
           go -C node-agent test -count=1 ./...
           go -C node-agent vet ./...
         shell: pixi run -e node-g0 bash -e {0}
+      - name: Check real-PostgreSQL counter export composition
+        run: pixi run -e node-g0 test tests/test_node_counter_export.py
+        env:
+          SBM_REQUIRE_POSTGRES: "1"
+          SBM_REQUIRE_NODE_G0: "1"
       - name: Install disposable-runner VM tools
         run: |
           sudo apt-get update

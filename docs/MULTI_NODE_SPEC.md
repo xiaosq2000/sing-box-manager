@@ -1,20 +1,23 @@
 # Node agent and multi-node specification
 
-Checked on 2026-10-25.
+Checked on 2026-10-26.
 
 Status: target contract for M5/M6, not production authorization.
 The [acceptance record](NODE_ACCEPTANCE.md) separates isolated G0/G1 evidence from pending product behavior.
 All commands and interfaces in this document are targets unless identified as existing.
 The [roadmap](REFACTOR_SPEC.md#delivery-order) puts M5 and M6 before device management.
 
-Current implementation note (2026-10-25): migration `0006_node_source_registry`
+Current implementation note (2026-10-26): migration `0006_node_source_registry`
 adds dormant `Node`, `TrafficSource`, and `Credential` identity metadata only.
 Migration `0007_traffic_snapshot` adds an unexposed `TrafficSnapshot` table and
 `ingest_page` service that validates codec pages, commits snapshots in
-PostgreSQL, and returns receipts after commit. These migrations implement only that local subset; the target
-contract below remains the target. There is no HTTP route, bearer resolver,
-node/source registration or binding, exporter/ack scheduler, local ledger,
-policy generation, calendar inference, retention or history import.
+PostgreSQL, and returns receipts after commit. A counter-only exporter/state
+library adds bounded pending selection and durable exact acknowledgements, with
+test-only real-PostgreSQL composition. These implementation slices cover only
+that local subset; the target contract below remains the target. There is no
+HTTP route, bearer resolver, node/source registration or binding,
+exporter/ack scheduler or daemon, local ledger wiring, policy generation,
+calendar inference, retention or history import.
 
 ## 1. Design decisions
 
@@ -492,6 +495,13 @@ Return accepted key/version/digest receipts only after commit.
 The node marks a version acknowledged only if its current local version and digest still match that receipt.
 A newer local update remains pending. Batch order and duplicate requests cannot add bytes twice.
 No contiguous transport sequence or unbounded receipt table is required.
+
+The implemented counter-only library follows those acknowledgement rules.
+`PendingCounters` selects actual `usage` rows by current version under the supported `Record` invariant: changing bucket values increments the version, and keys or source identity do not change in place.
+Its SQL can scan retained `usage` rows and sort the pending projection; the page size bounds returned rows, not scan work.
+This is an accepted limitation, not authorization for an index or query redesign and not a performance guarantee.
+No arbitrary SQL tamper or restored stale-source recovery is implemented; a restored old database is not an authorized continuation.
+The library is not wired to the agent loop or a daemon and adds no production route, bearer resolver, registration, binding, policy, calendar, import, retention or restore/quarantine gate.
 
 Authoritative totals cannot decrease within a source bucket.
 Derived attribution can shrink or change names after reconciliation or top-N compaction.

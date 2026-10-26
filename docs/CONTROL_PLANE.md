@@ -1,6 +1,6 @@
 # Control-plane guide
 
-Checked on 2026-10-25.
+Checked on 2026-10-26.
 
 The Django 5.2 service (`sing_box_manager/control_plane/`) manages operator
 accounts, proxy user accounts (`Account`), per-protocol credentials (`Credential`),
@@ -214,8 +214,9 @@ It does not authorize an operator or a traffic view. Historical traffic remains 
 
 The pure [node traffic wire codec](NODE_TRAFFIC_PROTOCOL.md) and its unexposed
 PostgreSQL ingestion service are not called by the current collector or an HTTP
-route. No bearer resolver, exporter or local ledger calls them; the collection
-behavior below is unchanged.
+route. No bearer resolver, exporter daemon/agent wiring or local ledger calls
+them; a counter-only exporter/state library exists but is not connected. The
+collection behavior below is unchanged.
 
 In authoritative mode, the traffic collector reads accounts and enabled credentials from
 PostgreSQL. It includes accounts created only in Django Admin. Account and protocol
@@ -256,9 +257,11 @@ rolls back the whole page; receipts use stored state and are returned only after
 commit.
 
 This service has no HTTP route or bearer resolver, node/source creation,
-registration or binding, exporter/acknowledgement scheduler, local ledger
-wiring, policy generation, calendar inference, retention, monthly history import
-or production acceptance. Source/credential retirement, tombstones, re-enable
+registration or binding, exporter/acknowledgement scheduler or daemon, local
+ledger wiring, policy generation, calendar inference, retention, monthly history
+import or production acceptance. A counter-only exporter/state library adds
+bounded pending selection and durable exact acknowledgements as unactivated
+source evidence; it does not add a production route or resolver. Source/credential retirement, tombstones, re-enable
 and pending-revocation policy remain unimplemented. Existing unbound or
 no-snapshot legacy state is unchanged; controlled write closure, binding and
 consumer gates remain prerequisites before activation.
@@ -292,8 +295,8 @@ The schema records:
 
 Migration `0007_traffic_snapshot` adds the unexposed snapshot table described
 above. It depends on `0006_node_source_registry` and adds no HTTP route, bearer
-resolver, node/source/token creation, registration, binding, exporter or local
-ledger behavior.
+resolver, node/source/token creation, registration, binding, exporter
+daemon/agent wiring or local ledger behavior.
 
 The `0006` migration allocates UUIDs only for existing credentials and preserves every
 assigned UUID on callback replay. Reverse migration raises Django's
@@ -302,9 +305,9 @@ executed-DDL rollback.
 
 This registry migration is dormant schema only. It adds no tombstone,
 retirement, re-enable, pending-target, immutable-operator-write, authentication,
-exporter, source-quarantine, API, or production-acceptance behavior. The
-separate `0007_traffic_snapshot` service adds durable PostgreSQL snapshots but no
-HTTP/auth/binding/exporter/ledger behavior. Later policy must close direct model
+exporter daemon/agent wiring, source-quarantine, API, or production-acceptance
+behavior. The separate `0007_traffic_snapshot` service adds durable PostgreSQL
+snapshots but no HTTP/auth/binding/exporter daemon/agent/ledger behavior. Later policy must close direct model
 writes, create serialized policy generations and removal targets, and define
 tombstone and pending-revocation behavior before binding.
 Consumer lookups must become node-scoped before node-scoped uniqueness or non-NULL

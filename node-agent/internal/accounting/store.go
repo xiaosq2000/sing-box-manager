@@ -41,6 +41,7 @@ func Open(path, source string) (*Store, error) {
 		`CREATE TABLE IF NOT EXISTS identity (source TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS checkpoints (invocation TEXT, credential TEXT, upload INTEGER NOT NULL, download INTEGER NOT NULL, PRIMARY KEY(invocation,credential))`,
 		`CREATE TABLE IF NOT EXISTS usage (credential TEXT, day TEXT, version INTEGER NOT NULL, upload INTEGER NOT NULL, download INTEGER NOT NULL, PRIMARY KEY(credential,day))`,
+		`CREATE TABLE IF NOT EXISTS counter_export_ack (credential TEXT NOT NULL, day TEXT NOT NULL, version INTEGER NOT NULL CHECK(version > 0), digest TEXT NOT NULL CHECK(length(digest)=64 AND digest NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(credential,day))`,
 		`CREATE TABLE IF NOT EXISTS finished (invocation TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS gaps (invocation TEXT PRIMARY KEY, reason TEXT NOT NULL)`,
 	} {
