@@ -22,7 +22,7 @@ from sing_box_manager.control_plane.portal import (
     release_context,
     vps_provider,
 )
-from sing_box_manager.control_plane.services import account_protocols
+from sing_box_manager.control_plane.projections import account_protocols
 from sing_box_manager.control_plane.views import _runtime, public_origin
 from sing_box_manager.settings import ARGON2ID_VERIFIER, USERNAME_PATTERN
 from sing_box_manager.subscription import PROTOCOLS, subscription_token

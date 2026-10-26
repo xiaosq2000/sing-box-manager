@@ -17,7 +17,7 @@ from django.views.decorators.http import require_safe
 
 from sing_box_manager.control_plane.mobile import mobile_import
 from sing_box_manager.control_plane.models import Account
-from sing_box_manager.control_plane.services import (
+from sing_box_manager.control_plane.projections import (
     account_protocols,
     build_account_envelope,
     build_account_mobile_profile,

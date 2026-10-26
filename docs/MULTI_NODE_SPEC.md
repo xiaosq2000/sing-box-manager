@@ -677,16 +677,16 @@ Test restoration in quarantine before publication or policy writes.
 
 ## 10. Cut list and implementation sequence
 
-| Area                                               | Retain                                                                        | Replace or remove after acceptance                                                      |
-| -------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `control_plane/`                                   | Django permissions, account IDs, private Admin, portal/download authorization | Local root DB sync, inventory authority transitions, generic legacy authentication      |
-| `control_plane/services.py`                        | Authorization and rendering requirements                                      | Inventory-shaped projection, token scan, trigger-file sync and privilege-switching code |
-| `deploy.py`, `provision.py`, `ssh.py`              | Security requirements and native fixtures                                     | Remote orchestration with Ansible roles. Keep only a narrow SSH management adapter      |
-| `release/`                                         | Signing, allowlists, hashes, rules and protocol builders                      | Monolithic node artifacts and packaged runtime rosters                                  |
-| `traffic_*.py`, `connection_*.py`                  | Accounting fixtures, calendars, replay and reconciliation semantics           | Live Python collectors and central SQLite after Go/PostgreSQL parity                    |
-| `desktop_config.py`                                | Route/DNS/security policy                                                     | Single-node assumptions and per-protocol selector tree                                  |
-| `internal/install`, `internal/api`, `internal/tun` | Signed upgrades, ownership, locks and recovery                                | v1 assumptions, protocol-only selection and incomplete selector restoration             |
-| Hosted installers                                  | Safe installation, service/TUN guards, POSIX sh and PowerShell 5.1            | Password and machine-token exchange after the explicit client boundary                  |
+| Area                                                                                              | Retain                                                                        | Replace or remove after acceptance                                                      |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `control_plane/`                                                                                  | Django permissions, account IDs, private Admin, portal/download authorization | Local root DB sync, inventory authority transitions, generic legacy authentication      |
+| `control_plane/account_services.py`, `control_plane/projections.py`, `control_plane/node_sync.py` | Authorization and rendering requirements                                      | Inventory-shaped projection, token scan, trigger-file sync and privilege-switching code |
+| `deploy.py`, `provision.py`, `ssh.py`                                                             | Security requirements and native fixtures                                     | Remote orchestration with Ansible roles. Keep only a narrow SSH management adapter      |
+| `release/`                                                                                        | Signing, allowlists, hashes, rules and protocol builders                      | Monolithic node artifacts and packaged runtime rosters                                  |
+| `traffic_*.py`, `connection_*.py`                                                                 | Accounting fixtures, calendars, replay and reconciliation semantics           | Live Python collectors and central SQLite after Go/PostgreSQL parity                    |
+| `desktop_config.py`                                                                               | Route/DNS/security policy                                                     | Single-node assumptions and per-protocol selector tree                                  |
+| `internal/install`, `internal/api`, `internal/tun`                                                | Signed upgrades, ownership, locks and recovery                                | v1 assumptions, protocol-only selection and incomplete selector restoration             |
+| Hosted installers                                                                                 | Safe installation, service/TUN guards, POSIX sh and PowerShell 5.1            | Password and machine-token exchange after the explicit client boundary                  |
 
 No production command is authorized by this sequence.
 Disable replaced deployed services before optional removal. Keep old state and recovery artifacts private.

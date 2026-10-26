@@ -53,7 +53,7 @@ import django
 django.setup()
 from django.test import Client, override_settings
 from django.contrib.auth.models import Permission
-from sing_box_manager.control_plane import django_settings, services, portal, views, compat
+from sing_box_manager.control_plane import django_settings, portal, views, compat
 from sing_box_manager.control_plane.models import Account, Credential, User
 from sing_box_manager.settings import ARGON2ID_VERIFIER
 from sing_box_manager.subscription import subscription_token

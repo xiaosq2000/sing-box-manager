@@ -327,7 +327,7 @@ Fix the current code. Each item gets a regression test.
 | S3   | Do not allow credentialed cross-origin access                                                      | `control_plane/django_settings.py`                       |
 | S4   | Keep the KiwiVM API key out of logs: httpx logs full URLs at INFO, and error text includes the URL | `kiwivm.py`, `web/vps_info.py`                           |
 | S5   | Bootstrap allows the real sshd port before enabling ufw, instead of only 22                        | `provision.py` near line 387                             |
-| S6   | Downloads reject disabled or removed accounts                                                      | `control_plane/services.py`                              |
+| S6   | Downloads reject disabled or removed accounts                                                      | `control_plane/projections.py`                           |
 | S7   | Bound password-authentication attempts and limiter memory                                          | `control_plane/compat.py`, `web/auth.py`, `provision.py` |
 | S8   | Reject legacy machine-token authentication without the configured signing key                      | `control_plane/compat.py`                                |
 

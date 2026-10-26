@@ -168,7 +168,7 @@ def _load_inventory(settings: Settings) -> RuntimeInventory:
                 "sing_box_manager.control_plane.django_settings"
             )
             django.setup()
-            from sing_box_manager.control_plane.services import (
+            from sing_box_manager.control_plane.node_sync import (
                 _build_inventory_as_db_user,
             )
 

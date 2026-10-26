@@ -111,19 +111,21 @@ def _run_django_action(
             raise ValueError("create-admin requires an interactive terminal")
         call_command("createsuperuser", interactive=True)
     elif action == "import-inventory":
-        from sing_box_manager.control_plane.services import import_inventory
+        from sing_box_manager.control_plane.account_services import import_inventory
 
         counts = import_inventory(runtime)
         print(f"Imported inventory: {json.dumps(counts, sort_keys=True)}")
     elif action == "backfill-snell":
-        from sing_box_manager.control_plane.services import backfill_snell_credentials
+        from sing_box_manager.control_plane.account_services import (
+            backfill_snell_credentials,
+        )
 
         counts = backfill_snell_credentials(runtime, dry_run=dry_run)
         print(
             f"Snell credential {'preview' if dry_run else 'backfill'}: {json.dumps(counts, sort_keys=True)}"
         )
     elif action == "sync-node":
-        from sing_box_manager.control_plane.services import sync_node_config
+        from sing_box_manager.control_plane.node_sync import sync_node_config
 
         result = sync_node_config(runtime)
         print(f"Synced node config: {json.dumps(result, sort_keys=True)}")
