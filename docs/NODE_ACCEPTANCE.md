@@ -1,9 +1,10 @@
 # Node acceptance
 
-Checked on 2026-10-25.
+Checked on 2026-10-26.
 
 This page records isolated G0/G1 evidence and the started G2 accounting, calendar,
-wire-codec and unexposed ingestion slices, not a release or deployment approval.
+wire-codec, unexposed ingestion and counter export slices, not a release or
+deployment approval.
 The [M5/M6 specification](MULTI_NODE_SPEC.md#11-acceptance-and-evidence) defines the gates and operator involvement.
 
 | Gate                         | Status               | Evidence boundary                                                                                                      |
@@ -133,7 +134,7 @@ No release, deployment or migration is part of this result.
 
 ## G2 progress
 
-G2 is in progress. The counter-ledger, calendar and wire-codec slices are shared fixture evidence only; the unexposed PostgreSQL ingestion slice is real-PostgreSQL source evidence only. None accepts the gate.
+G2 is in progress. The counter-ledger, calendar and wire-codec slices are shared fixture evidence only; the unexposed PostgreSQL ingestion slice and the counter-only export/ack composition are real-PostgreSQL source evidence only. None accepts the gate.
 Release, deployment and migration are not part of this G2 result.
 
 `tests/fixtures/node-g2-counter-parity.json` contains deterministic UTC counter cases that run against the actual Python `TrafficStatsStore.record_snapshot` and the actual Go `accounting.Store`. The adapters are fixture-only. Each case compares keyed daily rows (`usage_date|account|protocol`) rather than only a grand total. Go rejections name the exact protocol credential IDs for each rejected sample.
@@ -172,9 +173,10 @@ child-row deletion retains its prior behavior. This is referential integrity onl
 not retirement, tombstone, re-enable or pending-revocation policy.
 
 No binding, tombstone, retirement, re-enable, pending-target, auth-registry, API,
-exporter, source-quarantine, local-ledger or production-acceptance behavior
-exists. The separate unexposed ingestion service below writes snapshots but has no
-HTTP route or bearer resolver.
+exporter daemon/agent wiring, source-quarantine, local ledger wiring or
+production-acceptance behavior exists. The separate unexposed ingestion service
+below writes snapshots but has no HTTP route or bearer resolver. A counter-only
+export/ack library exists as unactivated source evidence.
 The reverse test proves Django preflight failure before reverse DDL, not executed
 DDL rollback. Later policy must close direct model writes, create serialized
 policy generations and removal targets, and define tombstone and pending-revocation
@@ -227,8 +229,9 @@ pixi run -e node-g0 go -C node-agent test -count=1 ./internal/traffic
 ```
 
 This is cross-language codec evidence only. No production `/node/v1/traffic`
-route, bearer resolver, authorization registry, exporter, history import or G2
-acceptance exists. The isolated `/node-g0/v1/` prototype transport remains in
+route, bearer resolver, authorization registry, exporter daemon/agent wiring,
+history import or G2 acceptance exists. A counter-only exporter/state library
+exists but is not wired to an agent, daemon or production route. The isolated `/node-g0/v1/` prototype transport remains in
 place and is not retired by this codec. Native VM and public-network reruns are
 not required for these unused pure codecs. See the
 [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
@@ -264,11 +267,51 @@ SBM_REQUIRE_POSTGRES=1 pixi run -e control-plane-test test tests/test_control_pl
 The `control-plane` CI job's existing `tests/test_control_plane*.py` command
 includes both files under `SBM_REQUIRE_POSTGRES=1`; no workflow change is needed.
 This remains unexposed source evidence. It has no HTTP route, bearer resolution,
-node/source creation or registration, identity binding, exporter or
-acknowledgement scheduler, local ledger wiring, policy generation, calendar
-inference, retention, monthly import or full G2/G3 acceptance. The retained G0
-transport and legacy SQLite writers are unchanged. Controlled write closure,
-binding and consumer gates remain prerequisites before activation.
+node/source creation or registration, identity binding, exporter
+daemon/agent wiring or acknowledgement scheduler, local ledger wiring, policy
+generation, calendar inference, retention, monthly import or full G2/G3
+acceptance. The retained G0 transport and legacy SQLite writers are unchanged.
+Controlled write closure, binding and consumer gates remain prerequisites before
+activation.
+
+### Counter export and acknowledgement composition
+
+`node-agent/internal/accounting/export_state.go` adds bounded
+`PendingCounters` and durable `AcknowledgeCounters` over the existing `usage`
+ledger and a new `counter_export_ack` table. `node-agent/internal/exporter/`
+adds a dedicated standard-library HTTPS client. These are counter-only library
+seams: no production route, bearer resolver, registration, binding, policy,
+calendar, import, retention, restore/quarantine gate, daemon or agent-loop
+wiring exists.
+
+`tests/test_node_counter_export.py` drives the actual Go store and client
+through a private loopback TLS handler. The handler checks a fixed synthetic
+bearer as fixture authentication, then calls the actual `ingest_page` service
+against an isolated real PostgreSQL database with synthetic bound node, source
+and credential rows. The check compares exact canonical request bytes, keyed
+versions and digests, `usage` counters, PostgreSQL payload bytes and durable
+SQLite acknowledgement rows. It covers:
+
+1. Counter rows become one canonical HTTPS page, commit a PostgreSQL snapshot,
+   return canonical receipts, and durably acknowledge exact matches.
+2. SQLite close/reopen selects zero rows and performs no HTTP resend.
+3. A later local counter update creates a new pending version and replaces the
+   central absolute values without adding a second total.
+4. A committed request with a lost reply leaves the local row pending; retry
+   returns the stored receipt without duplicate usage or a timestamp change.
+5. A local advance between selection and receipt leaves the newer version
+   pending; a subsequent export clears it.
+6. Malformed, wrong-coverage and error responses cannot acknowledge any partial
+   page; a retry still converges.
+
+```sh
+SBM_REQUIRE_POSTGRES=1 SBM_REQUIRE_NODE_G0=1 pixi run -e node-g0 test tests/test_node_counter_export.py
+```
+
+The `node-agent` workflow runs this as a mandatory PostgreSQL-capable step with
+both required flags. Missing Go or PostgreSQL tooling fails in that profile;
+ordinary fast-suite skips follow the existing opt-in convention. The exporter
+and state library remain unactivated, and this is not G2/G3 acceptance.
 
 ## Reproduce
 

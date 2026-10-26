@@ -1,6 +1,6 @@
 # Development
 
-Checked on 2026-10-25.
+Checked on 2026-10-26.
 
 Run commands from the repository root. `pixi install` provides Python 3.12, Go and
 the development tools on Linux x86-64, the platform declared in `pixi.toml`. Client
@@ -713,13 +713,17 @@ pixi run -e node-g0 go -C node-agent test -count=1 ./internal/traffic
 ```
 
 The node-agent workflow runs the counter-parity, calendar and traffic-codec
-Python oracles, then the separate Go tests and vet. Counter, calendar, codec
-fixture, adapter and production-codec paths trigger both push and PR checks.
+Python oracles, then the separate Go tests and vet, then the real-PostgreSQL
+counter export composition. The composition step follows the Go module check so
+a fresh hosted runner resolves the agent module before the adapter's bounded
+offline Go test. Counter, calendar, codec fixture, adapter, composition and
+production-codec paths trigger both push and PR checks.
 
 The wire codec is cross-language codec evidence only. No production
-`/node/v1/traffic` route, bearer resolver, authorization registry, exporter,
-history import or G2 acceptance exists. The isolated G0 transport remains in
-place. See the [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
+`/node/v1/traffic` route, bearer resolver, authorization registry, exporter
+daemon/agent wiring, history import or G2 acceptance exists. A counter-only
+exporter/state library exists but is not activated. The isolated G0 transport
+remains in place. See the [wire protocol guide](NODE_TRAFFIC_PROTOCOL.md).
 
 ### Traffic ingestion checks
 
@@ -736,16 +740,51 @@ The existing control-plane CI wildcard includes
 `tests/test_control_plane_traffic_ingest.py`; no workflow change is needed.
 Focused runs are listed in the registry section above. This is unexposed
 PostgreSQL evidence only: no HTTP/auth route, node/source registration or
-binding, exporter/ack scheduler, local ledger, policy generation, calendar
-inference, retention, history import or G2 acceptance is included. The retained
-G0 transport and legacy SQLite writers remain unchanged. See
-[CONTROL_PLANE.md](CONTROL_PLANE.md#traffic-ingestion-service) and
+binding, exporter daemon/agent wiring or scheduler, local ledger, policy
+generation, calendar inference, retention, history import or G2 acceptance is
+included. The retained G0 transport and legacy SQLite writers remain unchanged.
+See [CONTROL_PLANE.md](CONTROL_PLANE.md#traffic-ingestion-service) and
 [SECRET_HANDLING.md](SECRET_HANDLING.md#where-the-real-secrets-live).
 
 `tests/test_routes.py` uses Django's test client in isolated PostgreSQL processes.
 It checks database-only accounts, signed-download allowlists, legacy Basic/Bearer
 migration, token revocation, traffic-viewer permissions, personal-domain privacy,
 cache headers, and refusal to use inventory when PostgreSQL fails.
+
+### Counter export composition checks
+
+`node-agent/internal/accounting/export_state.go` adds bounded pending selection
+and durable exact acknowledgements over the existing `usage` ledger.
+`node-agent/internal/exporter/` adds a dedicated standard-library HTTPS client;
+production exporter code does not import `accounting`. `tests/test_node_counter_export.py`
+drives the actual Go store and client through a private loopback TLS handler.
+The handler checks a fixed synthetic bearer as fixture authentication, then
+calls the actual `ingest_page` against an isolated real PostgreSQL database with
+synthetic bound node, source and credential rows. It adds no production route,
+bearer resolver, registration or binding operation.
+
+The check compares exact canonical request bytes, keyed versions and digests,
+local `usage` counters, PostgreSQL payload bytes and durable SQLite
+acknowledgement rows. It covers the initial commit/receipt/ack loop, SQLite
+close/reopen with no HTTP resend, a local update that replaces central absolute
+values without a second total, a lost reply followed by an idempotent retry with
+no timestamp change, a local advance between selection and receipt followed by
+convergence, and malformed, wrong-coverage or error responses that cannot
+acknowledge any partial page. Missing Go or PostgreSQL tooling fails in the
+required profile; ordinary fast-suite skips follow the existing opt-in
+convention.
+
+```sh
+SBM_REQUIRE_POSTGRES=1 SBM_REQUIRE_NODE_G0=1 pixi run -e node-g0 test tests/test_node_counter_export.py
+```
+
+The `node-agent` workflow runs that command as a mandatory PostgreSQL-capable
+step with both flags. `PendingCounters` selects by current version under the
+supported `Record` invariant. Its SQL can scan retained `usage` rows and sort
+the pending projection, so the page size bounds returned rows, not scan work;
+that is an accepted limitation, not a performance guarantee or an index/query
+redesign. The exporter and acknowledgement state are not wired to an agent or
+daemon and do not accept G2/G3.
 
 ## Mobile import checks
 

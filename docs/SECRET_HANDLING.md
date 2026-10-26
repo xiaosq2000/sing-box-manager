@@ -1,6 +1,6 @@
 # Secret Handling and Runtime Inventory
 
-Checked on 2026-10-25.
+Checked on 2026-10-26.
 
 Do not put real passwords, obfs secrets or inline TLS material into configuration
 builders or checked-in fixtures.
@@ -296,6 +296,19 @@ New accounts use subscription links and need no portal password.
   boundary, do not log raw request pages or names, and do not expose snapshots in
   Admin. The unexposed `ingest_page` service returns receipt bytes only and does
   not fetch protocol secrets
+- the counter export library stores only `(credential, day)`, the acknowledged
+  version and its lowercase SHA-256 digest in `counter_export_ack`. Treat that
+  acknowledged counter metadata, its credential IDs and the local source ID as
+  sensitive, linkable user data. The acknowledgement table lives in the same private SQLite
+  database as the usage ledger. Keep the database and its WAL/shared-memory
+  files at mode `0600` within the existing private directory boundary. The
+  table keeps no receipt payload, bearer token, outbox or second usage ledger.
+  The exporter bearer is a caller-supplied opaque token and is not persisted by
+  this library; it must not appear in errors or logs. The composition test uses
+  synthetic tokens and generates private TLS material at runtime under its
+  temporary test directory. No production bearer resolver or token storage is
+  implemented; activation still requires registered identities and a
+  restore/quarantine gate
 - TLS certificate and key source files live at `deployment.tls.certificate_path` and `deployment.tls.key_path`
 - when `deployment.tls.self_signed_cert` is `true`, `sbm release` reads those files and inlines their PEM lines into the rendered sing-box JSON
 - use `pixi run sops <your config file>` to edit the encrypted inventory

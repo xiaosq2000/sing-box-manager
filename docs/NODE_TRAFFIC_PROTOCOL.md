@@ -1,6 +1,6 @@
 # Node traffic wire protocol v1
 
-Checked on 2026-10-25.
+Checked on 2026-10-26.
 
 This guide describes the `node-traffic-v1` wire schema implemented by the pure
 Python and Go codecs. It is node traffic schema 1, not the desktop subscription
@@ -9,10 +9,13 @@ effects.
 
 An unexposed PostgreSQL ingestion service stores validated pages through
 `ingest_page(node_id, raw_body)`. It has no HTTP route or bearer resolver yet.
-The retained `/node-g0/v1/` fixture transport and legacy traffic stores keep
-their existing local SQLite writers; this codec does not replace or retire them.
-No production route, authorization registry, exporter, local ledger wiring,
-history import or full G2/G3 acceptance exists. See
+A counter-only local library can select pending rows, send one bounded page over
+HTTPS, and durably acknowledge exact receipts. It has no daemon or agent-loop
+wiring, scheduler, registration, binding or production authorization. The
+retained `/node-g0/v1/` fixture transport and legacy traffic stores keep their
+existing local SQLite writers; this codec does not replace or retire them. No
+production route, authorization registry, exporter daemon/agent wiring, history
+import or full G2/G3 acceptance exists. See
 [MULTI_NODE_SPEC.md](MULTI_NODE_SPEC.md#7-traffic-accounting-and-synchronization)
 for the target accounting contract and
 [NODE_ACCEPTANCE.md](NODE_ACCEPTANCE.md#g2-progress) for the current evidence
@@ -117,8 +120,8 @@ Receipt coverage is checked before acknowledging anything:
 - Order is not significant.
 - Duplicate request keys are rejected before receipt matching.
 
-The codec does not compare receipt versions or digests with the request. A
-future exporter acknowledges only an exact match to its current local
+The codec does not compare receipt versions or digests with the request. The
+counter exporter acknowledges only an exact match to its current local
 key/version/digest; that acknowledgement and any database write are outside
 this codec.
 
@@ -271,15 +274,76 @@ implemented. Existing unbound or no-snapshot legacy state remains unchanged;
 controlled write closure, binding and consumer gates remain prerequisites before
 activation.
 
+## Local counter export and acknowledgement library
+
+`node-agent/internal/accounting/export_state.go` adds
+`Store.PendingCounters(ctx, limit)` and
+`Store.AcknowledgeCounters(ctx, request, response)`.
+`node-agent/internal/exporter/` adds a dedicated standard-library HTTPS client
+that consumes those methods through a small interface. Production exporter code
+does not import `accounting`; composition is test-only.
+
+`PendingCounters` selects actual `usage` counter rows in deterministic
+`(day, credential)` order, probing `counter_export_ack` by `(credential, day)`.
+A missing or changed acknowledged version is pending. This relies on the
+supported `Record` invariant: changing bucket values increments the version,
+and keys or source identity do not change in place. The SQL can scan retained
+`usage` rows and sort the pending projection; the page size bounds returned
+rows, not SQL scan work. That is an accepted limitation, not an index or query
+redesign and not a performance guarantee. No arbitrary SQL tamper or restored
+stale-source recovery is implemented.
+
+`counter_export_ack` is in the same private SQLite database and is keyed by
+`(credential, day)`. It stores only the acknowledged version and lowercase
+SHA-256 digest; there is no receipt history, token, payload copy or outbox. The
+acknowledgement transaction fully validates the request and response through
+the actual codec, requires a counter-only page whose source matches the store,
+reads each current `usage` row, reconstructs its actual wire snapshot, and
+writes only when key, version and digest all match. Older, ahead or mismatched
+receipts stay pending, missing rows create no orphan acknowledgement, and an
+existing acknowledgement is never downgraded. The count is returned only after
+commit; a failure rolls back the whole acknowledgement operation.
+
+The exporter accepts `1..1024` returned rows, emits the canonical
+`node-traffic-v1` request to `/node/v1/traffic`, sends `Authorization: Bearer`
+with a caller-supplied opaque token, verifies TLS, reads a bounded response, and
+parses exact receipt coverage before calling the store. One `ExportOnce` selects
+one page and makes at most one POST. It has no retries, scheduler, multi-page
+drain or production server route.
+
+Test-only composition drives the actual Go store and client through a private
+loopback TLS handler. That handler checks a fixed synthetic bearer as fixture
+authentication, then calls the actual `ingest_page` against an isolated real
+PostgreSQL database with synthetic bound node, source and credential rows. The
+checks cover canonical request bytes and exact keyed versions/digests, a
+committed snapshot and durable SQLite acknowledgement, close/reopen with zero
+selection and no HTTP resend, a local update that creates a new pending version
+and replaces central absolute values, a committed request with a lost reply and
+an idempotent retry, a local advance between selection and receipt, and
+malformed, wrong-coverage or error responses that cannot acknowledge any part
+of a page.
+
+This is an unactivated library. It does not add a production `/node/v1/traffic`
+route, bearer resolver, node/source registration or binding, policy generation,
+calendar inference, history import, retention, restore/quarantine gate, agent
+loop or daemon. A restored old database is not an authorized continuation.
+The retained `Store.Snapshots`/G0 contract, its `LIMIT 100` selection and its
+legacy digest are unchanged; they are not this pending-page implementation or
+the wire-v1 digest. G0 contract/transport evidence and legacy SQLite behavior
+remain in place. Production activation still requires registered identities, an
+authenticated production route/resolver, controlled write closure and a
+restore/quarantine gate.
+
 ## Current limits
 
-- The unexposed service has no HTTP route, bearer resolution, node/source
-  creation or registration, identity binding, exporter or acknowledgement
-  scheduler, local ledger wiring, policy generation, calendar inference,
-  retention, monthly history import or full G2/G3 acceptance.
-- It writes PostgreSQL snapshots only. It adds no local SQLite writer; the
-  retained G0 transport and legacy traffic stores keep their existing local
-  writers.
+- The unexposed ingestion service and the counter-only exporter/state library
+  have no production HTTP route, bearer resolution, node/source creation or
+  registration, identity binding, exporter daemon/agent wiring or scheduler,
+  local ledger wiring, policy generation, calendar inference, retention,
+  monthly history import, restore/quarantine gate or full G2/G3 acceptance.
+- The ingestion service writes PostgreSQL snapshots only. It adds no local
+  SQLite writer; the retained G0 transport and legacy traffic stores keep their
+  existing local writers.
 - The codec does not resolve per-credential accounting calendars, provider
   resets or time zones. It validates the supplied `accounting_date`.
 - The isolated `/node-g0/v1/` transport remains a prototype fixture and is not
